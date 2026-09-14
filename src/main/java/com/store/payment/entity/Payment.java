@@ -1,0 +1,34 @@
+package com.store.payment.entity;
+
+import com.store.common.entity.BaseEntity;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.math.BigDecimal;
+
+@Entity
+@Table(name = "payments")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Payment extends BaseEntity {
+
+    @Column(name = "order_id", nullable = false, unique = true)
+    private Long orderId;
+
+    @Column(nullable = false, precision = 10, scale = 2)
+    private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentMethod method;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentStatus status;
+
+    @Column(name = "transaction_id")
+    private String transactionId;
+}
