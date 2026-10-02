@@ -7,7 +7,14 @@ import lombok.Data;
 @Builder
 public class ShippingAddressResponse {
     private Long id;
+    private String label;
+    private String recipientName;
+    private String phone;
     private String street;
+    private String area;
+    private String building;
+    private String apartment;
+    private String notes;
     private String city;
     private String state;
     private String country;
