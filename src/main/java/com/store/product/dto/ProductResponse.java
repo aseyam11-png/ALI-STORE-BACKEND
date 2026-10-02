@@ -26,4 +26,6 @@ public class ProductResponse {
     private String brandName;
     private List<String> images;
     private String primaryImageUrl;
+    private java.time.LocalDateTime createdAt;
+    private java.time.LocalDateTime updatedAt;
 }
