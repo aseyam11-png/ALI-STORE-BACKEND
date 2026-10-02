@@ -20,20 +20,44 @@ public class CartController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<CartResponse>> getCart(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(ApiResponse.success(cartService.getCartByUserEmail(userDetails.getUsername()), "Cart retrieved successfully"));
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        cartService.getCartByUserEmail(userDetails.getUsername()),
+                        "Cart retrieved successfully"
+                )
+        );
     }
 
     @PostMapping("/items")
     public ResponseEntity<ApiResponse<CartResponse>> addItem(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody CartItemRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(cartService.addItemToCart(userDetails.getUsername(), request), "Item added to cart"));
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        cartService.addItemToCart(userDetails.getUsername(), request),
+                        "Item added to cart"
+                )
+        );
     }
 
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<ApiResponse<CartResponse>> removeItem(
             @AuthenticationPrincipal UserDetails userDetails,
             @PathVariable Long itemId) {
-        return ResponseEntity.ok(ApiResponse.success(cartService.removeItemFromCart(userDetails.getUsername(), itemId), "Item removed from cart"));
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        cartService.removeItemFromCart(userDetails.getUsername(), itemId),
+                        "Item removed from cart"
+                )
+        );
+    }
+
+    @DeleteMapping
+    public ResponseEntity<ApiResponse<Void>> clearCart(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        cartService.clearCart(userDetails.getUsername());
+        return ResponseEntity.ok(
+                ApiResponse.success(null, "Cart cleared successfully")
+        );
     }
 }
