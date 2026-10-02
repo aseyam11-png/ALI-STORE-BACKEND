@@ -61,6 +61,11 @@ public class CouponService {
         }
     }
 
+    public void releaseRedemption(String code) {
+        if (code == null || code.isBlank()) return;
+        couponRepository.releaseRedemption(code.trim().toUpperCase());
+    }
+
     public CouponResponse createCoupon(CouponRequest request) {
         if (couponRepository.existsByCode(request.getCode())) {
             throw new ConflictException("Coupon code already exists");
