@@ -168,10 +168,12 @@ public class ProductService {
         Product product = productRepository.findById(id)
                 .filter(p -> CUSTOMER_VISIBLE_DETAIL_STATUSES.contains(p.getStatus()))
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
-        if (!Boolean.TRUE.equals(product.getCategory().getActive())) {
+        if (!Boolean.TRUE.equals(product.getCategory().getActive())
+                || product.getSupplier() == null
+                || product.getSupplier().getStatus() != SupplierStatus.ACTIVE
+                || !Boolean.TRUE.equals(product.getSupplier().getFulfillmentEnabled())) {
             throw new ResourceNotFoundException("Product not found with id: " + id);
         }
-        ensureSupplierCanFulfill(product.getSupplier());
         return mapToResponse(product);
     }
 
@@ -179,10 +181,12 @@ public class ProductService {
     public ProductResponse getProductBySlug(String slug) {
         Product product = productRepository.findBySlugAndStatusIn(slug, CUSTOMER_VISIBLE_DETAIL_STATUSES)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with slug: " + slug));
-        if (!Boolean.TRUE.equals(product.getCategory().getActive())) {
+        if (!Boolean.TRUE.equals(product.getCategory().getActive())
+                || product.getSupplier() == null
+                || product.getSupplier().getStatus() != SupplierStatus.ACTIVE
+                || !Boolean.TRUE.equals(product.getSupplier().getFulfillmentEnabled())) {
             throw new ResourceNotFoundException("Product not found with slug: " + slug);
         }
-        ensureSupplierCanFulfill(product.getSupplier());
         return mapToResponse(product);
     }
 
