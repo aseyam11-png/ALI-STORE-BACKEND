@@ -13,4 +13,7 @@ public class OrderRequest {
     // coupon's stored percentage (see OrderService) - the client only supplies the code,
     // never the discount amount itself.
     private String couponCode;
+
+    /** STANDARD or EXPRESS; the backend recalculates the amount. */
+    private String shippingMethod = "STANDARD";
 }
