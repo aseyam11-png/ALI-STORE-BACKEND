@@ -52,6 +52,15 @@ public class PaymentService {
             throw new BusinessException("Payment amount does not match the order total");
         }
 
+        if (order.getItems().stream().anyMatch(item ->
+                item.getSupplier() == null
+                        || item.getSupplierSku() == null
+                        || item.getSupplierSku().isBlank()
+                        || item.getSupplierCost() == null
+                        || item.getSupplierCost().signum() <= 0)) {
+            throw new BusinessException("Order contains an item without a valid external supplier mapping");
+        }
+
         paymentRepository.findByOrderId(request.getOrderId()).ifPresent(existing -> {
             throw new ConflictException("A payment attempt already exists for this order");
         });
