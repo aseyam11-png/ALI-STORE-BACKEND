@@ -45,6 +45,21 @@ app:
   auth:
     cookie-name: ${AUTH_COOKIE_NAME:ali_store_session}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
+    cookie-same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+  shipping:
+    currency: ${STORE_CURRENCY:SAR}
+    standard-cost: ${SHIPPING_STANDARD_COST:15}
+    express-cost: ${SHIPPING_EXPRESS_COST:35}
+    free-threshold: ${SHIPPING_FREE_THRESHOLD:250}
+    standard-min-days: ${SHIPPING_STANDARD_MIN_DAYS:7}
+    standard-max-days: ${SHIPPING_STANDARD_MAX_DAYS:15}
+    express-min-days: ${SHIPPING_EXPRESS_MIN_DAYS:2}
+    express-max-days: ${SHIPPING_EXPRESS_MAX_DAYS:5}
+  supplier-sync:
+    enabled: ${SUPPLIER_SYNC_ENABLED:false}
+    poll-ms: ${SUPPLIER_SYNC_POLL_MS:60000}
+    inventory-path: ${SUPPLIER_INVENTORY_PATH:/v1/inventory}
+    api-token: ${SUPPLIER_API_TOKEN:}
   fulfillment:
     enabled: ${FULFILLMENT_ENABLED:false}
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}
