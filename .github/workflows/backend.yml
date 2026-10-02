@@ -1,3 +1,7 @@
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
 name: ALI STORE Backend CI
 
 on:
