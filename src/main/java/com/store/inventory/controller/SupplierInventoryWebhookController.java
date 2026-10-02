@@ -28,7 +28,7 @@ public class SupplierInventoryWebhookController {
     private final ProductRepository productRepository;
     private final SupplierRepository supplierRepository;
 
-    @Value("\${app.fulfillment.webhook-token:}")
+    @Value("${app.fulfillment.webhook-token:}")
     private String webhookToken;
 
     @PostMapping("/inventory/update")
