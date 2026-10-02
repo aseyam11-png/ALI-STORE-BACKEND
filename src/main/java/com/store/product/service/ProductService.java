@@ -19,6 +19,7 @@ import com.store.product.entity.Product;
 import com.store.product.entity.ProductImage;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.pricing.service.PricingService;
 import com.store.product.repository.ProductSpecifications;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.entity.SupplierStatus;
@@ -49,6 +50,7 @@ public class ProductService {
     private final BrandRepository brandRepository;
     private final SupplierRepository supplierRepository;
     private final InventoryService inventoryService;
+    private final PricingService pricingService;
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
@@ -190,7 +192,12 @@ public class ProductService {
             product.setSupplier(supplier);
         }
         if (request.getSupplierSku() != null && !request.getSupplierSku().isBlank()) product.setSupplierSku(request.getSupplierSku().trim());
-        if (request.getSupplierCost() != null) product.setSupplierCost(request.getSupplierCost());
+        if (request.getSupplierCost() != null) {
+            product.setSupplierCost(request.getSupplierCost());
+            if (request.getPrice() == null) {
+                product.setPrice(pricingService.calculateSellingPrice(product));
+            }
+        }
         if (request.getStatus() != null) {
             if (request.getStatus() == ProductStatus.ACTIVE) validatePublishable(product);
             product.setStatus(request.getStatus());
