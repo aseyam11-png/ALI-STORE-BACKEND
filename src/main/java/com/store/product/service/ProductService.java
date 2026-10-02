@@ -117,7 +117,7 @@ public class ProductService {
 
     public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, Long brandId,
                                                          BigDecimal minPrice, BigDecimal maxPrice,
-                                                         PublicAvailability availability, String sort,
+                                                         PublicAvailability availability, boolean discountOnly, String sort,
                                                          int page, int pageSize) {
         if (page < 0) throw new BusinessException("page must be >= 0");
         if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
@@ -133,6 +133,9 @@ public class ProductService {
         if (availability == PublicAvailability.IN_STOCK || availability == PublicAvailability.OUT_OF_STOCK) {
             spec = spec.and(ProductSpecifications.hasAvailability(availability));
         }
+        if (discountOnly) {
+            spec = spec.and(ProductSpecifications.hasDiscount());
+        }
 
         Pageable pageable = PageRequest.of(page, pageSize, resolveSort(sort));
         Page<ProductResponse> results = productRepository.findAll(spec, pageable).map(this::mapToResponse);
@@ -144,6 +147,8 @@ public class ProductService {
         return switch (sort) {
             case "price_asc" -> Sort.by(Sort.Direction.ASC, "price");
             case "price_desc" -> Sort.by(Sort.Direction.DESC, "price");
+            case "newest" -> Sort.by(Sort.Direction.DESC, "createdAt");
+            case "discount_desc" -> Sort.by(Sort.Direction.DESC, "discountPercentage");
             case "rating_desc", "reviews_desc" -> throw new BusinessException("Sort '" + sort + "' is not supported: no review/rating aggregation exists yet");
             default -> throw new BusinessException("Unsupported sort: " + sort);
         };
