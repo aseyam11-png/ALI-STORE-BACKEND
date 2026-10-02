@@ -33,6 +33,7 @@ public class ProductController {
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(required = false) PublicAvailability availability,
+            @RequestParam(defaultValue = "false") boolean discountOnly,
             @RequestParam(defaultValue = "relevance") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
@@ -46,6 +47,7 @@ public class ProductController {
                         minPrice,
                         maxPrice,
                         availability,
+                        discountOnly,
                         sort,
                         page,
                         pageSize
