@@ -174,7 +174,8 @@ class CartOrderInventoryTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalAmount").value(75.0))
+                .andExpect(jsonPath("$.data.totalAmount").value(90.0))
+                .andExpect(jsonPath("$.data.shippingAmount").value(15.0))
                 .andReturn().getResponse().getContentAsString();
 
         long orderId = objectMapper.readTree(orderResponse).path("data").path("id").asLong();
@@ -330,7 +331,7 @@ class CartOrderInventoryTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "orderId", orderId,
-                                "amount", 25.00,
+                                "amount", 40.00,
                                 "method", "CASH_ON_DELIVERY"))))
                 .andExpect(status().isCreated());
 
@@ -520,7 +521,8 @@ class CartOrderInventoryTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St", "couponCode", "SAVE10"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalAmount").value(45.0))
+                .andExpect(jsonPath("$.data.totalAmount").value(60.0))
+                .andExpect(jsonPath("$.data.shippingAmount").value(15.0))
                 .andExpect(jsonPath("$.data.discountAmount").value(5.0))
                 .andExpect(jsonPath("$.data.couponCode").value("SAVE10"));
     }
