@@ -32,7 +32,8 @@ public class CategoryService {
         Category parent = null;
         if (request.getParentId() != null) {
             parent = categoryRepository.findById(request.getParentId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Parent category not found with id: " + request.getParentId()));
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Parent category not found with id: " + request.getParentId()));
             if (!Boolean.TRUE.equals(parent.getActive())) {
                 throw new BusinessException("A category cannot be created under an inactive parent");
             }
@@ -41,6 +42,7 @@ public class CategoryService {
         String slug = (request.getSlug() != null && !request.getSlug().isBlank())
                 ? SlugUtils.slugify(request.getSlug())
                 : SlugUtils.uniqueSlugify(name, categoryRepository::existsBySlug);
+
         if (categoryRepository.existsBySlug(slug)) {
             throw new ConflictException("Category slug already exists: " + slug);
         }
@@ -58,7 +60,8 @@ public class CategoryService {
     @Transactional
     public CategoryResponse updateCategory(Long id, CategoryUpdateRequest request) {
         Category category = categoryRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Category not found with id: " + id));
 
         if (request.getName() != null && !request.getName().isBlank()) {
             String name = request.getName().trim();
@@ -78,31 +81,48 @@ public class CategoryService {
                 if (category.getParent() != null && !Boolean.TRUE.equals(category.getParent().getActive())) {
                     throw new BusinessException("A category cannot be activated while its parent is inactive");
                 }
+                category.setActive(true);
+            } else {
+                category.setActive(false);
+                deactivateDescendants(category);
             }
-            category.setActive(request.getActive());
         }
 
         if (request.getParentId() != null) {
             if (request.getParentId().equals(id)) {
                 throw new BusinessException("A category cannot be its own parent");
             }
+
             Category parent = categoryRepository.findById(request.getParentId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Parent category not found with id: " + request.getParentId()));
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Parent category not found with id: " + request.getParentId()));
+
             assertNoCycle(category, parent);
-            category.setParent(parent);
             if (Boolean.TRUE.equals(category.getActive()) && !Boolean.TRUE.equals(parent.getActive())) {
                 throw new BusinessException("An active category cannot have an inactive parent");
             }
+            category.setParent(parent);
         }
 
         return mapToResponse(categoryRepository.save(category));
+    }
+
+    private void deactivateDescendants(Category category) {
+        for (Category child : categoryRepository.findByParentId(category.getId())) {
+            if (Boolean.TRUE.equals(child.getActive())) {
+                child.setActive(false);
+                categoryRepository.save(child);
+            }
+            deactivateDescendants(child);
+        }
     }
 
     private void assertNoCycle(Category category, Category proposedParent) {
         Category current = proposedParent;
         while (current != null) {
             if (current.getId().equals(category.getId())) {
-                throw new BusinessException("Cannot set parent: this would create a circular category hierarchy");
+                throw new BusinessException(
+                        "Cannot set parent: this would create a circular category hierarchy");
             }
             current = current.getParent();
         }
@@ -110,16 +130,15 @@ public class CategoryService {
 
     @Transactional
     public CategoryResponse setActive(Long id, boolean active) {
-        return updateCategory(id, new CategoryUpdateRequest() {{
-            setActive(active);
-        }});
+        CategoryUpdateRequest request = new CategoryUpdateRequest();
+        request.setActive(active);
+        return updateCategory(id, request);
     }
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> getAllCategories() {
         return categoryRepository.findAll().stream()
-                .filter(category -> Boolean.TRUE.equals(category.getActive()))
-                .filter(category -> category.getParent() == null || Boolean.TRUE.equals(category.getParent().getActive()))
+                .filter(this::isEffectivelyActive)
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -127,17 +146,28 @@ public class CategoryService {
     @Transactional(readOnly = true)
     public CategoryResponse getCategoryById(Long id) {
         Category category = categoryRepository.findById(id)
-                .filter(c -> Boolean.TRUE.equals(c.getActive()))
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));
+                .filter(this::isEffectivelyActive)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Category not found with id: " + id));
         return mapToResponse(category);
     }
 
     @Transactional(readOnly = true)
     public CategoryResponse getCategoryBySlug(String slug) {
         Category category = categoryRepository.findBySlug(slug)
-                .filter(c -> Boolean.TRUE.equals(c.getActive()))
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found with slug: " + slug));
+                .filter(this::isEffectivelyActive)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Category not found with slug: " + slug));
         return mapToResponse(category);
+    }
+
+    private boolean isEffectivelyActive(Category category) {
+        Category current = category;
+        while (current != null) {
+            if (!Boolean.TRUE.equals(current.getActive())) return false;
+            current = current.getParent();
+        }
+        return true;
     }
 
     private CategoryResponse mapToResponse(Category category) {
