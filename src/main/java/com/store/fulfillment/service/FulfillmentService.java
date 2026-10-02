@@ -96,12 +96,8 @@ public class FulfillmentService {
         tasks.stream()
                 .filter(task -> task.getShipment().getSupplierOrderId() == null)
                 .forEach(task -> {
-                    if (task.getAttempts() >= 5) {
-                        task.setStatus(FulfillmentTaskStatus.FAILED);
-                    } else {
-                        task.setStatus(FulfillmentTaskStatus.PENDING);
-                        task.setNextAttemptAt(LocalDateTime.now());
-                    }
+                    task.setStatus(FulfillmentTaskStatus.PENDING);
+                    task.setNextAttemptAt(LocalDateTime.now());
                     taskRepository.save(task);
                 });
     }
