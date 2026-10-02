@@ -3,7 +3,7 @@ CREATE TABLE pricing_rules (
     name VARCHAR(255) NOT NULL,
     scope VARCHAR(20) NOT NULL,
     rule_type VARCHAR(20) NOT NULL,
-    value NUMERIC(12,2) NOT NULL,
+    markup_value NUMERIC(12,2) NOT NULL,
     priority INTEGER NOT NULL DEFAULT 0,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     product_id BIGINT REFERENCES products(id) ON DELETE CASCADE,
@@ -31,4 +31,4 @@ ALTER TABLE pricing_rules
 
 ALTER TABLE pricing_rules
     ADD CONSTRAINT chk_pricing_rule_value
-    CHECK (value >= 0);
+    CHECK (markup_value >= 0);
