@@ -30,6 +30,16 @@ public class CartController {
         return ResponseEntity.ok(ApiResponse.success(cartService.addItemToCart(userDetails.getUsername(), request), "Item added to cart"));
     }
 
+    @PutMapping("/items/product/{productId}")
+    public ResponseEntity<ApiResponse<CartResponse>> setItemQuantity(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long productId,
+            @Valid @RequestBody CartItemRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                cartService.setItemQuantity(userDetails.getUsername(), productId, request.getQuantity()),
+                "Cart item quantity updated"));
+    }
+
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<ApiResponse<CartResponse>> removeItem(
             @AuthenticationPrincipal UserDetails userDetails,
