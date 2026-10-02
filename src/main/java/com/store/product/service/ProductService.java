@@ -40,9 +40,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ProductService {
-    private static final String DEFAULT_CURRENCY = "USD";
+    private static final String DEFAULT_CURRENCY = "SAR";
     private static final int MAX_PAGE_SIZE = 100;
-    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
+    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -114,7 +114,8 @@ public class ProductService {
         return mapToAdminResponse(saved);
     }
 
-    public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, Long brandId,
+    public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, String categorySlug,
+                                                         Long brandId, String brandName,
                                                          BigDecimal minPrice, BigDecimal maxPrice,
                                                          PublicAvailability availability, String sort,
                                                          int page, int pageSize) {
@@ -124,9 +125,25 @@ public class ProductService {
         }
 
         Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE));
+
         if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.nameOrSkuContains(q.trim()));
-        if (categoryId != null) spec = spec.and(ProductSpecifications.inCategory(categoryId));
-        if (brandId != null) spec = spec.and(ProductSpecifications.hasBrand(brandId));
+
+        if (categoryId != null) {
+            spec = spec.and(ProductSpecifications.inCategory(categoryId));
+        } else if (categorySlug != null && !categorySlug.isBlank()) {
+            Category category = categoryRepository.findBySlug(categorySlug.trim())
+                    .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + categorySlug));
+            spec = spec.and(ProductSpecifications.inCategory(category.getId()));
+        }
+
+        if (brandId != null) {
+            spec = spec.and(ProductSpecifications.hasBrand(brandId));
+        } else if (brandName != null && !brandName.isBlank()) {
+            Brand brand = brandRepository.findByName(brandName.trim())
+                    .orElseThrow(() -> new ResourceNotFoundException("Brand not found: " + brandName));
+            spec = spec.and(ProductSpecifications.hasBrand(brand.getId()));
+        }
+
         if (minPrice != null) spec = spec.and(ProductSpecifications.priceGreaterThanOrEqual(minPrice));
         if (maxPrice != null) spec = spec.and(ProductSpecifications.priceLessThanOrEqual(maxPrice));
         if (availability == PublicAvailability.IN_STOCK || availability == PublicAvailability.OUT_OF_STOCK) {
@@ -143,7 +160,6 @@ public class ProductService {
         return switch (sort) {
             case "price_asc" -> Sort.by(Sort.Direction.ASC, "price");
             case "price_desc" -> Sort.by(Sort.Direction.DESC, "price");
-            case "rating_desc", "reviews_desc" -> throw new BusinessException("Sort '" + sort + "' is not supported: no review/rating aggregation exists yet");
             default -> throw new BusinessException("Unsupported sort: " + sort);
         };
     }

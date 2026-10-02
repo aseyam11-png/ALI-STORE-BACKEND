@@ -27,7 +27,9 @@ public class ProductController {
     public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> search(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Long category,
+            @RequestParam(required = false) String categorySlug,
             @RequestParam(required = false) Long brand,
+            @RequestParam(required = false) String brandName,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(required = false) PublicAvailability availability,
@@ -35,7 +37,7 @@ public class ProductController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(ApiResponse.success(
-                productService.searchProducts(q, category, brand, minPrice, maxPrice, availability, sort, page, pageSize),
+                productService.searchProducts(q, category, categorySlug, brand, brandName, minPrice, maxPrice, availability, sort, page, pageSize),
                 "Products retrieved successfully"));
     }
 

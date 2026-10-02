@@ -2,6 +2,7 @@ package com.store.cart.controller;
 
 import com.store.cart.dto.CartItemRequest;
 import com.store.cart.dto.CartResponse;
+import com.store.cart.dto.UpdateCartItemRequest;
 import com.store.cart.service.CartService;
 import com.store.common.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -30,10 +31,26 @@ public class CartController {
         return ResponseEntity.ok(ApiResponse.success(cartService.addItemToCart(userDetails.getUsername(), request), "Item added to cart"));
     }
 
+    @PutMapping("/items/{itemId}")
+    public ResponseEntity<ApiResponse<CartResponse>> updateItem(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long itemId,
+            @Valid @RequestBody UpdateCartItemRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                cartService.updateItemQuantity(userDetails.getUsername(), itemId, request),
+                "Cart item updated"));
+    }
+
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<ApiResponse<CartResponse>> removeItem(
             @AuthenticationPrincipal UserDetails userDetails,
             @PathVariable Long itemId) {
         return ResponseEntity.ok(ApiResponse.success(cartService.removeItemFromCart(userDetails.getUsername(), itemId), "Item removed from cart"));
+    }
+
+    @DeleteMapping("/items")
+    public ResponseEntity<ApiResponse<CartResponse>> clearCart(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success(cartService.clearCart(userDetails.getUsername()), "Cart cleared"));
     }
 }

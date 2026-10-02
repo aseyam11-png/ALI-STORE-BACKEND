@@ -3,6 +3,7 @@ package com.store.cart.service;
 import com.store.cart.dto.CartItemRequest;
 import com.store.cart.dto.CartItemResponse;
 import com.store.cart.dto.CartResponse;
+import com.store.cart.dto.UpdateCartItemRequest;
 import com.store.cart.entity.Cart;
 import com.store.cart.entity.CartItem;
 import com.store.cart.repository.CartItemRepository;
@@ -33,7 +34,7 @@ public class CartService {
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
 
-    @Transactional
+    @Transactional(readOnly = true)
     public CartResponse getCartByUserEmail(String email) {
         Cart cart = getOrCreateCart(email);
         return mapToResponse(cart.getId());
@@ -43,19 +44,46 @@ public class CartService {
     public CartResponse addItemToCart(String email, CartItemRequest request) {
         Cart cart = getOrCreateCart(email);
         Product product = productRepository.findById(request.getProductId())
+                .filter(candidate -> candidate.getStatus().name().equals("ACTIVE"))
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + request.getProductId()));
 
+        CartItem existing = cartItemRepository.findByCartIdAndProductId(cart.getId(), product.getId())
+                .orElse(null);
+        int current = existing == null ? 0 : existing.getQuantity();
+        int requestedTotal = current + request.getQuantity();
+
+        int available = inventoryService.getAvailableQuantity(product.getId());
+        if (available < requestedTotal) {
+            throw new BusinessException("Insufficient stock for product: " + product.getName());
+        }
+
+        CartItem item = existing == null
+                ? CartItem.builder().cart(cart).product(product).quantity(request.getQuantity()).build()
+                : existing;
+        item.setQuantity(requestedTotal);
+        cartItemRepository.save(item);
+
+        return mapToResponse(cart.getId());
+    }
+
+    @Transactional
+    public CartResponse updateItemQuantity(String email, Long itemId, UpdateCartItemRequest request) {
+        Cart cart = getOrCreateCart(email);
+        CartItem item = cartItemRepository.findById(itemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found with id: " + itemId));
+
+        if (!item.getCart().getId().equals(cart.getId())) {
+            throw new ForbiddenException("This cart item does not belong to the current user");
+        }
+
+        Product product = item.getProduct();
         int available = inventoryService.getAvailableQuantity(product.getId());
         if (available < request.getQuantity()) {
             throw new BusinessException("Insufficient stock for product: " + product.getName());
         }
 
-        CartItem cartItem = cartItemRepository.findByCartIdAndProductId(cart.getId(), product.getId())
-                .orElse(CartItem.builder().cart(cart).product(product).quantity(0).build());
-
-        cartItem.setQuantity(cartItem.getQuantity() + request.getQuantity());
-        cartItemRepository.save(cartItem);
-
+        item.setQuantity(request.getQuantity());
+        cartItemRepository.save(item);
         return mapToResponse(cart.getId());
     }
 
@@ -73,10 +101,16 @@ public class CartService {
         return mapToResponse(cart.getId());
     }
 
+    @Transactional
+    public CartResponse clearCart(String email) {
+        Cart cart = getOrCreateCart(email);
+        cartItemRepository.deleteAll(cartItemRepository.findByCartId(cart.getId()));
+        return mapToResponse(cart.getId());
+    }
+
     private Cart getOrCreateCart(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
         return cartRepository.findByUserId(user.getId())
                 .orElseGet(() -> cartRepository.save(Cart.builder().user(user).build()));
     }

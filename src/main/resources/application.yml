@@ -45,9 +45,16 @@ app:
   auth:
     cookie-name: ${AUTH_COOKIE_NAME:ali_store_session}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
+    cookie-same-site: ${AUTH_COOKIE_SAME_SITE:Strict}
   fulfillment:
     enabled: ${FULFILLMENT_ENABLED:false}
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}
     api-token: ${SUPPLIER_API_TOKEN:}
     webhook-token: ${SUPPLIER_WEBHOOK_TOKEN:}
     poll-ms: ${FULFILLMENT_POLL_MS:10000}
+  inventory-sync:
+    enabled: ${SUPPLIER_INVENTORY_SYNC_ENABLED:false}
+    api-path: ${SUPPLIER_INVENTORY_API_PATH:/v1/inventory/{supplierSku}}
+    api-token: ${SUPPLIER_API_TOKEN:}
+    markup-percentage: ${SUPPLIER_MARKUP_PERCENTAGE:30}
+    poll-ms: ${SUPPLIER_INVENTORY_SYNC_POLL_MS:60000}
