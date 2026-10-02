@@ -305,7 +305,7 @@ class FoundationIntegrationTest {
     }
 
     @Test
-    void legacyB2BQuotationEndpoint_isRemoved() throws Exception {
+    void legacyB2BEndpoints_areRemoved() throws Exception {
         User regular = createUser("quotationcustomer@example.com", userRole);
 
         mockMvc.perform(post("/api/v1/quotations")
@@ -314,6 +314,31 @@ class FoundationIntegrationTest {
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "rfqId", 1, "sellerId", 1, "totalPrice", 10.00))))
                 .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/v1/rfqs")
+                        .header("Authorization", "Bearer " + tokenFor(regular))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/v1/sellers")
+                        .header("Authorization", "Bearer " + tokenFor(regular)))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/v1/b2b")
+                        .header("Authorization", "Bearer " + tokenFor(regular)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void supplierWebhook_requiresItsDedicatedSecret() throws Exception {
+        mockMvc.perform(post("/api/v1/integrations/suppliers/shipments/update")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "supplierCode", "TEST-SUPPLIER",
+                                "supplierOrderId", "SUP-ORDER-1",
+                                "status", "IN_TRANSIT"))))
+                .andExpect(status().isUnauthorized());
     }
 
 }
