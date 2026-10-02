@@ -38,6 +38,7 @@ management:
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000}
+  issuer: ${JWT_ISSUER:ali-store-backend}
 
 app:
   cors:
@@ -46,9 +47,15 @@ app:
     cookie-name: ${AUTH_COOKIE_NAME:ali_store_session}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
     cookie-same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+  inventory-sync:
+    enabled: ${INVENTORY_SYNC_ENABLED:false}
+    poll-ms: ${INVENTORY_SYNC_POLL_MS:300000}
+    api-path: ${SUPPLIER_INVENTORY_API_PATH:/v1/inventory}
+    stale-after-ms: ${INVENTORY_STALE_AFTER_MS:1800000}
   fulfillment:
     enabled: ${FULFILLMENT_ENABLED:false}
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}
     api-token: ${SUPPLIER_API_TOKEN:}
     webhook-token: ${SUPPLIER_WEBHOOK_TOKEN:}
     poll-ms: ${FULFILLMENT_POLL_MS:10000}
+    webhook-max-skew-seconds: ${SUPPLIER_WEBHOOK_MAX_SKEW_SECONDS:300}
