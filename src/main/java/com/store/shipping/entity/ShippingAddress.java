@@ -17,8 +17,22 @@ public class ShippingAddress {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String label;
+
+    private String recipientName;
+
+    private String phone;
+
     @Column(nullable = false)
     private String street;
+
+    private String area;
+
+    private String building;
+
+    private String apartment;
+
+    private String notes;
 
     @Column(nullable = false)
     private String city;
