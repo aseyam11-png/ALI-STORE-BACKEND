@@ -349,12 +349,11 @@ class CartOrderInventoryTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PROCESSING"));
 
-        Shipment shipment = shipmentRepository.save(Shipment.builder()
-                .orderId(orderId)
-                .supplier(product.getSupplier())
-                .shippingAddressSnapshot("1 Main St")
-                .status(ShipmentStatus.SHIPPED)
-                .build());
+        Shipment shipment = shipmentRepository.findByOrderIdOrderByIdAsc(orderId).stream()
+                .findFirst()
+                .orElseThrow();
+        shipment.setStatus(ShipmentStatus.SHIPPED);
+        shipmentRepository.saveAndFlush(shipment);
 
         mockMvc.perform(patch("/api/v1/admin/orders/" + orderId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
