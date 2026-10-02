@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,13 +26,17 @@ public class ShippingAddressService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        if (Boolean.TRUE.equals(request.getIsDefault())) {
+            shippingAddressRepository.clearDefaultForUser(user.getId());
+        }
+
         ShippingAddress address = ShippingAddress.builder()
                 .user(user)
-                .street(request.getStreet())
-                .city(request.getCity())
-                .state(request.getState())
-                .country(request.getCountry())
-                .postalCode(request.getPostalCode())
+                .street(request.getStreet().trim())
+                .city(request.getCity().trim())
+                .state(request.getState() == null ? null : request.getState().trim())
+                .country(request.getCountry().trim())
+                .postalCode(request.getPostalCode() == null ? null : request.getPostalCode().trim())
                 .isDefault(Boolean.TRUE.equals(request.getIsDefault()))
                 .build();
 
@@ -46,10 +49,61 @@ public class ShippingAddressService {
 
         return shippingAddressRepository.findByUserId(user.getId()).stream()
                 .map(this::mapToResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     public ShippingAddressResponse getMyAddressById(String email, Long id) {
+        return mapToResponse(getOwnedAddress(email, id));
+    }
+
+    @Transactional
+    public ShippingAddressResponse updateAddress(
+            String email,
+            Long id,
+            ShippingAddressRequest request) {
+
+        ShippingAddress address = getOwnedAddress(email, id);
+
+        if (Boolean.TRUE.equals(request.getIsDefault())) {
+            shippingAddressRepository.clearDefaultForUser(address.getUser().getId());
+        }
+
+        address.setStreet(request.getStreet().trim());
+        address.setCity(request.getCity().trim());
+        address.setState(request.getState() == null ? null : request.getState().trim());
+        address.setCountry(request.getCountry().trim());
+        address.setPostalCode(request.getPostalCode() == null ? null : request.getPostalCode().trim());
+        address.setIsDefault(Boolean.TRUE.equals(request.getIsDefault()));
+
+        return mapToResponse(shippingAddressRepository.save(address));
+    }
+
+    @Transactional
+    public void deleteAddress(String email, Long id) {
+        ShippingAddress address = getOwnedAddress(email, id);
+        boolean wasDefault = Boolean.TRUE.equals(address.getIsDefault());
+        Long userId = address.getUser().getId();
+
+        shippingAddressRepository.delete(address);
+
+        if (wasDefault) {
+            shippingAddressRepository.findFirstByUserIdOrderByIdAsc(userId)
+                    .ifPresent(next -> {
+                        next.setIsDefault(true);
+                        shippingAddressRepository.save(next);
+                    });
+        }
+    }
+
+    @Transactional
+    public ShippingAddressResponse setDefaultAddress(String email, Long id) {
+        ShippingAddress address = getOwnedAddress(email, id);
+        shippingAddressRepository.clearDefaultForUser(address.getUser().getId());
+        address.setIsDefault(true);
+        return mapToResponse(shippingAddressRepository.save(address));
+    }
+
+    private ShippingAddress getOwnedAddress(String email, Long id) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -60,7 +114,7 @@ public class ShippingAddressService {
             throw new ForbiddenException("You do not have access to this shipping address");
         }
 
-        return mapToResponse(address);
+        return address;
     }
 
     private ShippingAddressResponse mapToResponse(ShippingAddress address) {
