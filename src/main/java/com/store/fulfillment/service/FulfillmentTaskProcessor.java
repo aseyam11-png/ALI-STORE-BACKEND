@@ -143,7 +143,6 @@ public class FulfillmentTaskProcessor {
         return SupplierFulfillmentRequest.Item.builder()
                 .supplierSku(item.getSupplierSku())
                 .quantity(item.getQuantity())
-                .supplierUnitCost(item.getSupplierUnitCost())
                 .build();
     }
 
