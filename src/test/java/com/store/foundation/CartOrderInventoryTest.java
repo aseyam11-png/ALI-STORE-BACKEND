@@ -11,6 +11,9 @@ import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.supplier.entity.Supplier;
+import com.store.supplier.repository.SupplierRepository;
+import com.store.inventory.enums.InventorySource;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -56,12 +59,14 @@ class CartOrderInventoryTest {
     @Autowired private JwtService jwtService;
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private ProductRepository productRepository;
+    @Autowired private SupplierRepository supplierRepository;
     @Autowired private InventoryRepository inventoryRepository;
     @Autowired private CouponRepository couponRepository;
 
     private Role userRole;
     private Role adminRole;
     private Category category;
+    private Supplier supplier;
 
     @BeforeEach
     void setUp() {
@@ -70,6 +75,7 @@ class CartOrderInventoryTest {
         adminRole = roleRepository.findByName("ROLE_ADMIN")
                 .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
         category = categoryRepository.save(Category.builder().name("General").slug("general").active(true).build());
+        supplier = supplierRepository.save(Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build());
     }
 
     private User createUser(String email) {
@@ -94,8 +100,10 @@ class CartOrderInventoryTest {
     private Product productWithStock(String sku, int quantity) {
         Product product = productRepository.save(Product.builder()
                 .name("Product " + sku).slug("product-" + sku.toLowerCase()).price(new BigDecimal("25.00"))
-                .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category).build());
-        inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0).lowStockThreshold(5).build());
+                .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category)
+                .supplier(supplier).supplierSku("SUP-" + sku).supplierCost(new BigDecimal("10.00")).build());
+        inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0).lowStockThreshold(5)
+                .source(InventorySource.MANUAL).lastSyncedAt(java.time.LocalDateTime.now()).build());
         return product;
     }
 
@@ -147,7 +155,7 @@ class CartOrderInventoryTest {
     }
 
     @Test
-    void orderCreation_succeedsAndDeductsInventory_andEnforcesOwnership() throws Exception {
+    void orderCreation_reservesInventory_andEnforcesOwnership() throws Exception {
         User owner = createUser("orderowner@example.com");
         User intruder = createUser("orderintruder@example.com");
         Product product = productWithStock("ORDER-1", 5);
@@ -167,7 +175,8 @@ class CartOrderInventoryTest {
         long orderId = objectMapper.readTree(orderResponse).path("data").path("id").asLong();
 
         Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
-        Assertions.assertEquals(2, inventory.getQuantity());
+        Assertions.assertEquals(5, inventory.getQuantity());
+        Assertions.assertEquals(3, inventory.getReservedQuantity());
 
         mockMvc.perform(get("/api/v1/orders/" + orderId).header("Authorization", "Bearer " + tokenFor(owner)))
                 .andExpect(status().isOk());
@@ -292,10 +301,21 @@ class CartOrderInventoryTest {
                         .content(objectMapper.writeValueAsString(Map.of("status", "SHIPPED"))))
                 .andExpect(status().isBadRequest());
 
-        // PENDING -> PROCESSING is legal.
+        // Fulfillment cannot start until a payment is recorded and confirmed.
         mockMvc.perform(patch("/api/v1/admin/orders/" + orderId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("status", "PROCESSING"))))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/v1/payments").header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "orderId", orderId,
+                                "amount", 25.00,
+                                "method", "CASH_ON_DELIVERY"))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/orders/" + orderId).header("Authorization", "Bearer " + tokenFor(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PROCESSING"));
 
@@ -345,7 +365,7 @@ class CartOrderInventoryTest {
                 .andReturn().getResponse().getContentAsString();
         long addressId = objectMapper.readTree(addressResponse).path("data").path("id").asLong();
 
-        Map<String, Object> shipmentBody = Map.of("orderId", orderId, "shippingAddressId", addressId, "carrier", "DHL");
+        Map<String, Object> shipmentBody = Map.of("orderId", orderId, "supplierId", supplier.getId(), "shippingAddressId", addressId, "carrier", "DHL");
 
         // A customer must not be able to create a shipment at all.
         mockMvc.perform(post("/api/v1/shipments").header("Authorization", "Bearer " + tokenFor(owner))
@@ -380,7 +400,7 @@ class CartOrderInventoryTest {
         mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "DELIVERED"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("DELIVERED"));
+                .andExpect(jsonPath("$.data.status").value("DELIVERED"));
 
         // ... but DELIVERED is terminal: no transition back to SHIPPED is allowed.
         mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
@@ -413,7 +433,7 @@ class CartOrderInventoryTest {
 
         String shipmentResponse = mockMvc.perform(post("/api/v1/shipments").header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("orderId", orderId, "shippingAddressId", addressId))))
+                        .content(objectMapper.writeValueAsString(Map.of("orderId", orderId, "supplierId", supplier.getId(), "shippingAddressId", addressId))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long shipmentId = objectMapper.readTree(shipmentResponse).path("id").asLong();
