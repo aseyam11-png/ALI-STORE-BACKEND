@@ -81,6 +81,18 @@ public class OrderService {
             throw new BusinessException("Cannot place order with an empty cart");
         }
 
+        String orderCurrency = cartItems.get(0).getProduct().getCurrency();
+        if (orderCurrency == null || orderCurrency.isBlank()) {
+            throw new BusinessException("Product currency is not configured");
+        }
+
+        boolean mixedCurrency = cartItems.stream()
+                .anyMatch(item -> item.getProduct().getCurrency() == null
+                        || !orderCurrency.equalsIgnoreCase(item.getProduct().getCurrency()));
+        if (mixedCurrency) {
+            throw new BusinessException("A single order cannot contain products in different currencies");
+        }
+
         BigDecimal subtotal = cartItems.stream()
                 .map(item -> item.getProduct().getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
