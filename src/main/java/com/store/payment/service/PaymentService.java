@@ -1,6 +1,7 @@
 package com.store.payment.service;
 
 import com.store.common.exception.BusinessException;
+import com.store.common.response.PageResponse;
 import com.store.common.exception.ConflictException;
 import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.ResourceNotFoundException;
@@ -18,6 +19,8 @@ import com.store.payment.repository.PaymentRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -122,6 +125,17 @@ public class PaymentService {
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found for order id: " + orderId));
         return mapToResponse(payment);
+    }
+
+    public PageResponse<PaymentResponse> getAllForAdmin(Pageable pageable) {
+        Page<Payment> page = paymentRepository.findAll(pageable);
+        return PageResponse.of(
+                page.getContent().stream().map(this::mapToResponse).toList(),
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.isLast());
     }
 
     private PaymentResponse mapToResponse(Payment payment) {
