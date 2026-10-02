@@ -1,5 +1,6 @@
 package com.store.inventory.dto;
 
+import com.store.inventory.enums.PublicAvailability;
 import lombok.Builder;
 import lombok.Data;
 
@@ -13,4 +14,5 @@ public class InventoryResponse {
     private Integer availableQuantity;
     private Integer lowStockThreshold;
     private Boolean isLowStock;
+    private PublicAvailability availability;
 }

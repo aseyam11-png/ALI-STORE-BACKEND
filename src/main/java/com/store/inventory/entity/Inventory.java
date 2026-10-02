@@ -1,6 +1,7 @@
 package com.store.inventory.entity;
 
 import com.store.common.entity.BaseEntity;
+import com.store.product.entity.Product;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -13,11 +14,13 @@ import lombok.*;
 @Builder
 public class Inventory extends BaseEntity {
 
-    @Column(name = "product_id", nullable = false, unique = true)
-    private Long productId;
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", nullable = false, unique = true)
+    private Product product;
 
     @Column(nullable = false)
-    private Integer quantity;
+    @Builder.Default
+    private Integer quantity = 0;
 
     @Column(name = "reserved_quantity", nullable = false)
     @Builder.Default
@@ -26,4 +29,7 @@ public class Inventory extends BaseEntity {
     @Column(name = "low_stock_threshold")
     @Builder.Default
     private Integer lowStockThreshold = 5;
+
+    @Version
+    private Long version;
 }

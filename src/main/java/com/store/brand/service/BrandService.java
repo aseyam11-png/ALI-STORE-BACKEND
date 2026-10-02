@@ -4,6 +4,8 @@ import com.store.brand.dto.BrandRequest;
 import com.store.brand.dto.BrandResponse;
 import com.store.brand.entity.Brand;
 import com.store.brand.repository.BrandRepository;
+import com.store.common.exception.ConflictException;
+import com.store.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -24,13 +26,13 @@ public class BrandService {
 
     public BrandResponse getBrandById(Long id) {
         Brand brand = brandRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Brand not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Brand not found with id: " + id));
         return mapToResponse(brand);
     }
 
     public BrandResponse createBrand(BrandRequest request) {
         if (brandRepository.existsByName(request.getName())) {
-            throw new RuntimeException("Brand name already exists");
+            throw new ConflictException("Brand name already exists");
         }
 
         Brand brand = Brand.builder()
@@ -45,7 +47,7 @@ public class BrandService {
 
     public BrandResponse updateBrand(Long id, BrandRequest request) {
         Brand brand = brandRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Brand not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Brand not found with id: " + id));
 
         brand.setName(request.getName());
         brand.setDescription(request.getDescription());
@@ -57,7 +59,7 @@ public class BrandService {
 
     public void deleteBrand(Long id) {
         if (!brandRepository.existsById(id)) {
-            throw new RuntimeException("Brand not found with id: " + id);
+            throw new ResourceNotFoundException("Brand not found with id: " + id);
         }
         brandRepository.deleteById(id);
     }

@@ -8,6 +8,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,13 +20,17 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<PaymentResponse>> processPayment(@Valid @RequestBody PaymentRequest request) {
+    public ResponseEntity<ApiResponse<PaymentResponse>> processPayment(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody PaymentRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(paymentService.processPayment(request), "Payment processed successfully"));
+                .body(ApiResponse.success(paymentService.processPayment(userDetails.getUsername(), request), "Payment processed successfully"));
     }
 
     @GetMapping("/order/{orderId}")
-    public ResponseEntity<ApiResponse<PaymentResponse>> getPaymentByOrderId(@PathVariable Long orderId) {
-        return ResponseEntity.ok(ApiResponse.success(paymentService.getPaymentByOrderId(orderId), "Payment retrieved successfully"));
+    public ResponseEntity<ApiResponse<PaymentResponse>> getPaymentByOrderId(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long orderId) {
+        return ResponseEntity.ok(ApiResponse.success(paymentService.getPaymentByOrderId(userDetails.getUsername(), orderId), "Payment retrieved successfully"));
     }
 }

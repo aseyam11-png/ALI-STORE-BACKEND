@@ -1,6 +1,6 @@
 package com.store.b2b.entity;
 
-import com.store.auth.entity.User;
+import com.store.user.entity.User;
 import com.store.b2b.enums.RFQStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -37,6 +37,7 @@ public class RFQ {
     private User user;
 
     @OneToMany(mappedBy = "rfq", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private List<RFQItem> items = new ArrayList<>();
 
     private LocalDateTime createdAt;

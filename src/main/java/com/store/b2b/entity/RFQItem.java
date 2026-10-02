@@ -1,6 +1,6 @@
 package com.store.b2b.entity;
 
-import com.store.catalog.entity.Product;
+import com.store.product.entity.Product;
 import jakarta.persistence.*;
 import lombok.*;
 

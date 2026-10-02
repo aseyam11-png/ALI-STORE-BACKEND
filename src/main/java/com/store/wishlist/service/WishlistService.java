@@ -1,5 +1,9 @@
 package com.store.wishlist.service;
 
+import com.store.common.exception.ConflictException;
+import com.store.common.exception.ResourceNotFoundException;
+import com.store.user.entity.User;
+import com.store.user.repository.UserRepository;
 import com.store.wishlist.dto.WishlistRequest;
 import com.store.wishlist.dto.WishlistResponse;
 import com.store.wishlist.entity.Wishlist;
@@ -16,17 +20,21 @@ import java.util.stream.Collectors;
 public class WishlistService {
 
     private final WishlistRepository wishlistRepository;
+    private final UserRepository userRepository;
 
-    public List<WishlistResponse> getUserWishlist(Long userId) {
+    public List<WishlistResponse> getMyWishlist(String email) {
+        Long userId = resolveUserId(email);
         return wishlistRepository.findByUserId(userId).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
     @Transactional
-    public WishlistResponse addToWishlist(Long userId, WishlistRequest request) {
+    public WishlistResponse addToWishlist(String email, WishlistRequest request) {
+        Long userId = resolveUserId(email);
+
         if (wishlistRepository.existsByUserIdAndProductId(userId, request.getProductId())) {
-            throw new RuntimeException("Product is already in wishlist");
+            throw new ConflictException("Product is already in wishlist");
         }
 
         Wishlist wishlist = Wishlist.builder()
@@ -39,11 +47,19 @@ public class WishlistService {
     }
 
     @Transactional
-    public void removeFromWishlist(Long userId, Long productId) {
+    public void removeFromWishlist(String email, Long productId) {
+        Long userId = resolveUserId(email);
+
         if (!wishlistRepository.existsByUserIdAndProductId(userId, productId)) {
-            throw new RuntimeException("Product not found in wishlist");
+            throw new ResourceNotFoundException("Product not found in wishlist");
         }
         wishlistRepository.deleteByUserIdAndProductId(userId, productId);
+    }
+
+    private Long resolveUserId(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return user.getId();
     }
 
     private WishlistResponse mapToResponse(Wishlist wishlist) {

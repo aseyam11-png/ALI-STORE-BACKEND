@@ -1,0 +1,36 @@
+# Production profile. Activate with SPRING_PROFILES_ACTIVE=prod.
+# No default credentials anywhere in this file - every secret-bearing value
+# must come from the environment, and startup fails fast if one is missing.
+server:
+  # Assumes production sits behind a TLS-terminating reverse proxy/load balancer
+  # (standard for a Spring Boot app - see application.yml, there is no server.ssl.*
+  # config here). Without this, request.isSecure() always reads false behind the
+  # proxy, so Spring Security's default HSTS header writer would never fire even
+  # though the client is actually on HTTPS.
+  #
+  # "native" (not "framework") deliberately: framework's ForwardedHeaderFilter trusts
+  # X-Forwarded-* unconditionally from any peer, with no allowlist - exactly what we
+  # do NOT want (see ClientIpResolver's javadoc for the same concern applied to rate
+  # limiting). "native" engages the embedded Tomcat connector's RemoteIpValve, which
+  # only trusts X-Forwarded-Proto/-For when the IMMEDIATE TCP peer matches its
+  # internal-proxies pattern. Unset here, that pattern falls back to Tomcat's own
+  # built-in default (RFC1918 private ranges + loopback only) - safe for the common
+  # case of a load balancer/ingress on a private subnet in front of this app. If this
+  # is ever deployed with a proxy NOT on a private address, override
+  # server.tomcat.remoteip.internal-proxies explicitly to match the real deployment,
+  # rather than relying on this default.
+  forward-headers-strategy: native
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    show-sql: false
+
+# A real PaymentProvider bean MUST be supplied for this profile - MockPaymentProvider
+# is annotated @Profile("!prod") and will not be available here, so the application
+# fails to start rather than silently accepting fake payments (see payment.provider package).

@@ -21,11 +21,12 @@ public class Shipment extends BaseEntity {
     @Column(name = "tracking_number", unique = true)
     private String trackingNumber;
 
-    @Column(name = "carrier_name")
-    private String carrierName;
+    @Column(name = "carrier")
+    private String carrier;
 
-    @Column(name = "shipping_address", nullable = false)
-    private String shippingAddress;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shipping_address_id", nullable = false)
+    private ShippingAddress shippingAddress;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -33,4 +34,10 @@ public class Shipment extends BaseEntity {
 
     @Column(name = "estimated_delivery_date")
     private LocalDateTime estimatedDeliveryDate;
+
+    @Column(name = "shipped_at")
+    private LocalDateTime shippedAt;
+
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
 }

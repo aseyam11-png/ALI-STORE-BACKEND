@@ -13,15 +13,15 @@ public class ProductRequest {
     @NotBlank(message = "Product name is required")
     private String name;
 
+    private String slug;
+
     private String description;
 
     @NotNull(message = "Price is required")
     @Min(value = 0, message = "Price must be positive")
     private BigDecimal price;
 
-    @NotNull(message = "Stock quantity is required")
-    @Min(value = 0, message = "Stock quantity cannot be negative")
-    private Integer stockQuantity;
+    private String currency;
 
     @NotBlank(message = "SKU is required")
     private String sku;
@@ -30,4 +30,6 @@ public class ProductRequest {
 
     @NotNull(message = "Category ID is required")
     private Long categoryId;
+
+    private Long brandId;
 }

@@ -13,6 +13,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * ALI STORE is a single-merchant B2C dropshipping store, not a seller
+ * marketplace - this module is legacy/deferred and is not part of the
+ * customer-facing architecture. Kept only for compilation compatibility with
+ * existing production-shaped code; must not be extended with new marketplace
+ * features. See QuotationController for the access-control note.
+ */
 @Service
 @RequiredArgsConstructor
 public class QuotationService {

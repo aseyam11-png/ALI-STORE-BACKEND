@@ -1,12 +1,12 @@
 package com.store.order.controller;
 
 import com.store.common.response.ApiResponse;
+import com.store.common.response.PageResponse;
 import com.store.order.dto.OrderRequest;
 import com.store.order.dto.OrderResponse;
 import com.store.order.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,9 +28,16 @@ public class OrderController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<Page<OrderResponse>>> getUserOrders(
+    public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getUserOrders(
             @AuthenticationPrincipal UserDetails userDetails,
             Pageable pageable) {
         return ResponseEntity.ok(ApiResponse.success(orderService.getUserOrders(userDetails.getUsername(), pageable), "Orders retrieved successfully"));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<OrderResponse>> getOrderById(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(orderService.getOrderById(userDetails.getUsername(), id), "Order retrieved successfully"));
     }
 }

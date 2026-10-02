@@ -8,6 +8,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,24 +26,24 @@ public class ReviewController {
         return ResponseEntity.ok(ApiResponse.success(reviewService.getReviewsByProduct(productId), "Reviews retrieved successfully"));
     }
 
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<ApiResponse<List<ReviewResponse>>> getReviewsByUser(@PathVariable Long userId) {
-        return ResponseEntity.ok(ApiResponse.success(reviewService.getReviewsByUser(userId), "User reviews retrieved successfully"));
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse<List<ReviewResponse>>> getMyReviews(@AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success(reviewService.getMyReviews(userDetails.getUsername()), "Your reviews retrieved successfully"));
     }
 
     @PostMapping
     public ResponseEntity<ApiResponse<ReviewResponse>> addReview(
-            @RequestHeader("X-User-Id") Long userId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody ReviewRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(reviewService.addReview(userId, request), "Review added successfully"));
+                .body(ApiResponse.success(reviewService.addReview(userDetails.getUsername(), request), "Review added successfully"));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteReview(
             @PathVariable Long id,
-            @RequestHeader("X-User-Id") Long userId) {
-        reviewService.deleteReview(id, userId);
+            @AuthenticationPrincipal UserDetails userDetails) {
+        reviewService.deleteReview(userDetails.getUsername(), id);
         return ResponseEntity.ok(ApiResponse.success(null, "Review deleted successfully"));
     }
 }

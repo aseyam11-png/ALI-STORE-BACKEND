@@ -1,11 +1,17 @@
 package com.store.review.service;
 
+import com.store.common.exception.ConflictException;
+import com.store.common.exception.ForbiddenException;
+import com.store.common.exception.ResourceNotFoundException;
 import com.store.review.dto.ReviewRequest;
 import com.store.review.dto.ReviewResponse;
 import com.store.review.entity.Review;
 import com.store.review.repository.ReviewRepository;
+import com.store.user.entity.User;
+import com.store.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -15,6 +21,7 @@ import java.util.stream.Collectors;
 public class ReviewService {
 
     private final ReviewRepository reviewRepository;
+    private final UserRepository userRepository;
 
     public List<ReviewResponse> getReviewsByProduct(Long productId) {
         return reviewRepository.findByProductId(productId).stream()
@@ -22,15 +29,19 @@ public class ReviewService {
                 .collect(Collectors.toList());
     }
 
-    public List<ReviewResponse> getReviewsByUser(Long userId) {
+    public List<ReviewResponse> getMyReviews(String email) {
+        Long userId = resolveUserId(email);
         return reviewRepository.findByUserId(userId).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
-    public ReviewResponse addReview(Long userId, ReviewRequest request) {
+    @Transactional
+    public ReviewResponse addReview(String email, ReviewRequest request) {
+        Long userId = resolveUserId(email);
+
         if (reviewRepository.existsByProductIdAndUserId(request.getProductId(), userId)) {
-            throw new RuntimeException("You have already reviewed this product");
+            throw new ConflictException("You have already reviewed this product");
         }
 
         Review review = Review.builder()
@@ -44,15 +55,24 @@ public class ReviewService {
         return mapToResponse(saved);
     }
 
-    public void deleteReview(Long reviewId, Long userId) {
+    @Transactional
+    public void deleteReview(String email, Long reviewId) {
+        Long userId = resolveUserId(email);
+
         Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found with id: " + reviewId));
+                .orElseThrow(() -> new ResourceNotFoundException("Review not found with id: " + reviewId));
 
         if (!review.getUserId().equals(userId)) {
-            throw new RuntimeException("You are not authorized to delete this review");
+            throw new ForbiddenException("You are not authorized to delete this review");
         }
 
         reviewRepository.delete(review);
+    }
+
+    private Long resolveUserId(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return user.getId();
     }
 
     private ReviewResponse mapToResponse(Review review) {

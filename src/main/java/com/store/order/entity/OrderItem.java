@@ -1,7 +1,6 @@
 package com.store.order.entity;
 
-import com.store.catalog.entity.ProductVariant;
-import com.store.seller.entity.Seller;
+import com.store.product.entity.Product;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -34,10 +33,6 @@ public class OrderItem {
     private Order order;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "variant_id", nullable = false)
-    private ProductVariant productVariant;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "seller_id", nullable = false)
-    private Seller seller;
+    @JoinColumn(name = "product_id", nullable = false)
+    private Product product;
 }

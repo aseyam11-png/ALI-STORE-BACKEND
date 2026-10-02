@@ -1,7 +1,6 @@
 package com.store.cart.entity;
 
-import com.store.catalog.entity.Product;
-import com.store.catalog.entity.ProductVariant;
+import com.store.product.entity.Product;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -23,12 +22,8 @@ public class CartItem {
     private Cart cart;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id")
+    @JoinColumn(name = "product_id", nullable = false)
     private Product product;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "variant_id")
-    private ProductVariant variant;
 
     @Column(nullable = false)
     private Integer quantity;

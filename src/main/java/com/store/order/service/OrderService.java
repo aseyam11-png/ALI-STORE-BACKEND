@@ -1,7 +1,16 @@
 package com.store.order.service;
 
 import com.store.cart.entity.Cart;
+import com.store.cart.entity.CartItem;
+import com.store.cart.repository.CartItemRepository;
 import com.store.cart.repository.CartRepository;
+import com.store.common.exception.BusinessException;
+import com.store.common.exception.ForbiddenException;
+import com.store.common.exception.ResourceNotFoundException;
+import com.store.common.response.PageResponse;
+import com.store.coupon.entity.Coupon;
+import com.store.coupon.service.CouponService;
+import com.store.inventory.service.InventoryService;
 import com.store.order.dto.OrderItemResponse;
 import com.store.order.dto.OrderRequest;
 import com.store.order.dto.OrderResponse;
@@ -18,52 +27,97 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
+    // Legal order lifecycle transitions. Anything not listed here (e.g. DELIVERED -> PENDING,
+    // or any transition out of a terminal state) is rejected by updateOrderStatus.
+    private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED_TRANSITIONS = new EnumMap<>(OrderStatus.class);
+
+    static {
+        ALLOWED_TRANSITIONS.put(OrderStatus.PENDING, EnumSet.of(OrderStatus.PROCESSING, OrderStatus.CANCELLED));
+        ALLOWED_TRANSITIONS.put(OrderStatus.PROCESSING, EnumSet.of(OrderStatus.SHIPPED, OrderStatus.CANCELLED));
+        ALLOWED_TRANSITIONS.put(OrderStatus.SHIPPED, EnumSet.of(OrderStatus.DELIVERED));
+        ALLOWED_TRANSITIONS.put(OrderStatus.DELIVERED, EnumSet.noneOf(OrderStatus.class));
+        ALLOWED_TRANSITIONS.put(OrderStatus.CANCELLED, EnumSet.noneOf(OrderStatus.class));
+    }
+
     private final OrderRepository orderRepository;
     private final CartRepository cartRepository;
+    private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
+    private final InventoryService inventoryService;
+    private final CouponService couponService;
 
     @Transactional
     public OrderResponse createOrder(String email, OrderRequest request) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        Cart cart = cartRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Cart is empty"));
+        Cart cart = cartRepository.findWithLockByUserId(user.getId())
+                .orElseThrow(() -> new BusinessException("Cart is empty"));
 
-        if (cart.getItems().isEmpty()) {
-            throw new RuntimeException("Cannot place order with an empty cart");
+        List<CartItem> cartItems = cartItemRepository.findByCartId(cart.getId());
+        if (cartItems.isEmpty()) {
+            throw new BusinessException("Cannot place order with an empty cart");
         }
 
-        BigDecimal totalAmount = cart.getItems().stream()
+        BigDecimal subtotal = cartItems.stream()
                 .map(item -> item.getProduct().getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        String couponCode = null;
+        BigDecimal discountAmount = BigDecimal.ZERO;
+        if (request.getCouponCode() != null && !request.getCouponCode().isBlank()) {
+            // Re-validated here (active + not expired) rather than trusting the client's
+            // claim that the coupon it's referencing is still usable, and the discount
+            // percentage is always read from the stored Coupon, never from the request.
+            Coupon coupon = couponService.validateAndGetCoupon(request.getCouponCode());
+            couponService.checkMinimumOrder(coupon, subtotal);
+            couponCode = coupon.getCode();
+            discountAmount = subtotal.multiply(coupon.getDiscountPercentage())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            if (discountAmount.compareTo(subtotal) > 0) {
+                discountAmount = subtotal;
+            }
+            // Atomic UPDATE ... WHERE - safe under concurrent redemption of the same coupon
+            // (see CouponRepository.tryRedeem's javadoc). Participates in this same
+            // transaction, so it rolls back if order creation fails for any other reason.
+            couponService.redeem(coupon);
+        }
+
+        BigDecimal totalAmount = subtotal.subtract(discountAmount);
 
         Order order = Order.builder()
                 .user(user)
                 .status(OrderStatus.PENDING)
                 .shippingAddress(request.getShippingAddress())
                 .totalAmount(totalAmount)
+                .couponCode(couponCode)
+                .discountAmount(discountAmount)
                 .build();
 
-        List<OrderItem> orderItems = cart.getItems().stream().map(cartItem -> {
-            if (cartItem.getProduct().getStockQuantity() < cartItem.getQuantity()) {
-                throw new RuntimeException("Insufficient stock for product: " + cartItem.getProduct().getName());
-            }
-            // خصم الكمية من المخزون
-            cartItem.getProduct().setStockQuantity(cartItem.getProduct().getStockQuantity() - cartItem.getQuantity());
+        List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
+            inventoryService.deductStock(cartItem.getProduct().getId(), cartItem.getQuantity());
+
+            BigDecimal unitPrice = cartItem.getProduct().getPrice();
+            BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
 
             return OrderItem.builder()
                     .order(order)
                     .product(cartItem.getProduct())
                     .quantity(cartItem.getQuantity())
-                    .price(cartItem.getProduct().getPrice())
+                    .unitPrice(unitPrice)
+                    .subtotal(itemSubtotal)
                     .build();
         }).collect(Collectors.toList());
 
@@ -71,38 +125,74 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        // تفريغ السلة بعد إنشاء الطلب بنجاح
-        cart.getItems().clear();
-        cartRepository.save(cart);
+        cartItemRepository.deleteAll(cartItems);
 
         return mapToResponse(savedOrder);
     }
 
-    public Page<OrderResponse> getUserOrders(String email, Pageable pageable) {
+    public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        return orderRepository.findByUserId(user.getId(), pageable)
-                .map(this::mapToResponse);
+        Page<OrderResponse> page = orderRepository.findByUserId(user.getId(), pageable).map(this::mapToResponse);
+        return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages(), page.isLast());
+    }
+
+    public OrderResponse getOrderById(String email, Long orderId) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+
+        if (!order.getUser().getId().equals(user.getId())) {
+            throw new ForbiddenException("This order does not belong to you");
+        }
+
+        return mapToResponse(order);
+    }
+
+    public PageResponse<OrderResponse> getAllOrdersForAdmin(Pageable pageable) {
+        Page<OrderResponse> page = orderRepository.findAll(pageable).map(this::mapToResponse);
+        return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages(), page.isLast());
+    }
+
+    @Transactional
+    public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+
+        OrderStatus currentStatus = order.getStatus();
+        Set<OrderStatus> allowedNextStatuses = ALLOWED_TRANSITIONS.getOrDefault(currentStatus, EnumSet.noneOf(OrderStatus.class));
+        if (!allowedNextStatuses.contains(newStatus)) {
+            throw new BusinessException("Cannot transition order from " + currentStatus + " to " + newStatus);
+        }
+
+        order.setStatus(newStatus);
+        Order saved = orderRepository.save(order);
+        return mapToResponse(saved);
     }
 
     private OrderResponse mapToResponse(Order order) {
-        List<OrderItemResponse> itemResponses = order.getItems().stream().map(item -> {
-            BigDecimal subTotal = item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
-            return OrderItemResponse.builder()
-                    .id(item.getId())
-                    .productId(item.getProduct().getId())
-                    .productName(item.getProduct().getName())
-                    .quantity(item.getQuantity())
-                    .price(item.getPrice())
-                    .subTotal(subTotal)
-                    .build();
-        }).collect(Collectors.toList());
+        List<OrderItemResponse> itemResponses = order.getItems().stream().map(item ->
+                OrderItemResponse.builder()
+                        .id(item.getId())
+                        .productId(item.getProduct().getId())
+                        .productName(item.getProduct().getName())
+                        .quantity(item.getQuantity())
+                        .price(item.getUnitPrice())
+                        .subTotal(item.getSubtotal())
+                        .build()
+        ).collect(Collectors.toList());
 
         return OrderResponse.builder()
                 .id(order.getId())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())
+                .couponCode(order.getCouponCode())
+                .discountAmount(order.getDiscountAmount())
                 .shippingAddress(order.getShippingAddress())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)

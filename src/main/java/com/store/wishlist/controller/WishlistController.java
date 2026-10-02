@@ -8,6 +8,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,23 +22,23 @@ public class WishlistController {
     private final WishlistService wishlistService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<WishlistResponse>>> getUserWishlist(@RequestHeader("X-User-Id") Long userId) {
-        return ResponseEntity.ok(ApiResponse.success(wishlistService.getUserWishlist(userId), "Wishlist retrieved successfully"));
+    public ResponseEntity<ApiResponse<List<WishlistResponse>>> getMyWishlist(@AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success(wishlistService.getMyWishlist(userDetails.getUsername()), "Wishlist retrieved successfully"));
     }
 
     @PostMapping
     public ResponseEntity<ApiResponse<WishlistResponse>> addToWishlist(
-            @RequestHeader("X-User-Id") Long userId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody WishlistRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(wishlistService.addToWishlist(userId, request), "Added to wishlist successfully"));
+                .body(ApiResponse.success(wishlistService.addToWishlist(userDetails.getUsername(), request), "Added to wishlist successfully"));
     }
 
     @DeleteMapping("/product/{productId}")
     public ResponseEntity<ApiResponse<Void>> removeFromWishlist(
-            @RequestHeader("X-User-Id") Long userId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @PathVariable Long productId) {
-        wishlistService.removeFromWishlist(userId, productId);
+        wishlistService.removeFromWishlist(userDetails.getUsername(), productId);
         return ResponseEntity.ok(ApiResponse.success(null, "Removed from wishlist successfully"));
     }
 }

@@ -1,6 +1,6 @@
 package com.store.shipping.entity;
 
-import com.store.auth.entity.User;
+import com.store.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 

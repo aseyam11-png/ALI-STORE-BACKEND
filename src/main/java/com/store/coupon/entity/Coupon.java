@@ -28,4 +28,18 @@ public class Coupon extends BaseEntity {
     @Column(name = "is_active")
     @Builder.Default
     private Boolean isActive = true;
+
+    // Null = unlimited. Redemption is enforced atomically via CouponRepository.tryRedeem's
+    // single UPDATE ... WHERE statement, not by reading this field and writing it back -
+    // see that method's javadoc for why.
+    @Column(name = "usage_limit")
+    private Integer usageLimit;
+
+    @Column(name = "times_used", nullable = false)
+    @Builder.Default
+    private Integer timesUsed = 0;
+
+    // Null = no minimum. Checked against the cart subtotal server-side in OrderService.
+    @Column(name = "minimum_order_amount", precision = 10, scale = 2)
+    private BigDecimal minimumOrderAmount;
 }

@@ -1,10 +1,15 @@
 package com.store.shipping.controller;
 
-import com.store.shipping.entity.ShippingAddress;
+import com.store.common.response.ApiResponse;
+import com.store.shipping.dto.ShippingAddressRequest;
+import com.store.shipping.dto.ShippingAddressResponse;
 import com.store.shipping.service.ShippingAddressService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,17 +22,23 @@ public class ShippingAddressController {
     private final ShippingAddressService shippingAddressService;
 
     @PostMapping
-    public ResponseEntity<ShippingAddress> createAddress(@RequestParam Long userId, @RequestBody ShippingAddress address) {
-        return new ResponseEntity<>(shippingAddressService.createAddress(userId, address), HttpStatus.CREATED);
+    public ResponseEntity<ApiResponse<ShippingAddressResponse>> createAddress(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody ShippingAddressRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(shippingAddressService.createAddress(userDetails.getUsername(), request), "Shipping address created successfully"));
     }
 
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<ShippingAddress>> getUserAddresses(@PathVariable Long userId) {
-        return ResponseEntity.ok(shippingAddressService.getUserAddresses(userId));
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse<List<ShippingAddressResponse>>> getMyAddresses(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success(shippingAddressService.getMyAddresses(userDetails.getUsername()), "Shipping addresses retrieved successfully"));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ShippingAddress> getAddressById(@PathVariable Long id) {
-        return ResponseEntity.ok(shippingAddressService.getAddressById(id));
+    public ResponseEntity<ApiResponse<ShippingAddressResponse>> getAddressById(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(shippingAddressService.getMyAddressById(userDetails.getUsername(), id), "Shipping address retrieved successfully"));
     }
 }

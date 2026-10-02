@@ -1,6 +1,6 @@
 package com.store.seller.entity;
 
-import com.store.auth.entity.User;
+import com.store.user.entity.User;
 import com.store.seller.enums.SellerStatus;
 import jakarta.persistence.*;
 import lombok.*;

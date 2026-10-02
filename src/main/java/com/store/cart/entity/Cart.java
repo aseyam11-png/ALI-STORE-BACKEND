@@ -1,6 +1,6 @@
 package com.store.cart.entity;
 
-import com.store.auth.entity.User;
+import com.store.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -26,6 +26,7 @@ public class Cart {
     private User user;
 
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private List<CartItem> items = new ArrayList<>();
 
     private LocalDateTime updatedAt;

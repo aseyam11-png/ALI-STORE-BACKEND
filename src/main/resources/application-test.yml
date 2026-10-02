@@ -1,0 +1,30 @@
+# Test-only profile: an isolated in-memory H2 database, never used outside automated tests.
+# Flyway is disabled here and Hibernate generates the schema for the test slice instead,
+# because the real Flyway migrations are written for PostgreSQL. Flyway-against-real-Postgres
+# is validated separately (see the stabilization report) - this profile only proves the
+# application context, entity mappings, and business logic are correct.
+spring:
+  datasource:
+    url: jdbc:h2:mem:store_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  flyway:
+    enabled: false
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+# Test-only signing key - never used outside the automated test suite.
+jwt:
+  secret: dGVzdC1vbmx5LWp3dC1zaWduaW5nLXNlY3JldC1ub3QtZm9yLXByb2R1Y3Rpb24tdXNlLTEyMzQ1Njc4OTA=
+  expiration: 3600000
+
+app:
+  cors:
+    allowed-origins: http://localhost:3000

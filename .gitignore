@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Secrets ###
+# Local env files carrying JWT_SECRET/DB_PASSWORD/etc must never be committed.
+.env
+.env.*
+!.env.example

@@ -14,6 +14,8 @@ public class OrderResponse {
     private Long id;
     private OrderStatus status;
     private BigDecimal totalAmount;
+    private String couponCode;
+    private BigDecimal discountAmount;
     private String shippingAddress;
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;

@@ -2,6 +2,7 @@ package com.store.admin.service;
 
 import com.store.admin.dto.UpdateUserRoleRequest;
 import com.store.admin.dto.UserResponse;
+import com.store.common.exception.ResourceNotFoundException;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -29,10 +30,10 @@ public class AdminService {
     @Transactional
     public UserResponse updateUserRole(Long userId, UpdateUserRoleRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         Role role = roleRepository.findByName(request.getRoleName())
-                .orElseThrow(() -> new RuntimeException("Role not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + request.getRoleName()));
 
         user.setRole(role);
         User updatedUser = userRepository.save(user);
@@ -43,7 +44,7 @@ public class AdminService {
     @Transactional
     public UserResponse toggleUserStatus(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         user.setIsEnabled(!user.getIsEnabled());
         User updatedUser = userRepository.save(user);

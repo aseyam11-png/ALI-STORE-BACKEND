@@ -1,8 +1,8 @@
 package com.store.auth.dto;
 
+import com.store.common.validation.ValidPasswordLength;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -25,7 +25,10 @@ public class RegisterRequest {
     private String email;
 
     @NotBlank(message = "Password is required")
-    @Size(min = 6, message = "Password must be at least 6 characters long")
+    // Byte length, not character length - see ValidPasswordLength's javadoc. BCrypt only
+    // hashes the first 72 BYTES; a character-count @Size would let a Unicode-heavy password
+    // silently exceed that and truncate without the user ever being told.
+    @ValidPasswordLength
     private String password;
 
     private String phoneNumber;
