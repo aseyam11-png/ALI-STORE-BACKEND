@@ -5,10 +5,13 @@ import com.store.common.exception.ConflictException;
 import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.order.entity.Order;
+import com.store.order.entity.OrderStatus;
 import com.store.order.repository.OrderRepository;
+import com.store.order.service.OrderService;
 import com.store.payment.dto.PaymentRequest;
 import com.store.payment.dto.PaymentResponse;
 import com.store.payment.entity.Payment;
+import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.provider.PaymentProvider;
 import com.store.payment.repository.PaymentRepository;
@@ -27,6 +30,7 @@ public class PaymentService {
     private final UserRepository userRepository;
     private final PaymentProvider paymentProvider;
     private final PaymentReservationService paymentReservationService;
+    private final OrderService orderService;
 
     @Transactional
     public PaymentResponse processPayment(String email, PaymentRequest request) {
@@ -40,32 +44,58 @@ public class PaymentService {
             throw new ForbiddenException("This order does not belong to you");
         }
 
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new ConflictException("Payment can only be started for a pending order");
+        }
+
         if (order.getTotalAmount().compareTo(request.getAmount()) != 0) {
             throw new BusinessException("Payment amount does not match the order total");
         }
 
-        paymentRepository.findByOrderId(request.getOrderId()).ifPresent(p -> {
-            throw new ConflictException("Payment already exists for order id: " + request.getOrderId());
+        paymentRepository.findByOrderId(request.getOrderId()).ifPresent(existing -> {
+            throw new ConflictException("A payment attempt already exists for this order");
         });
 
-        // Reserve the payment slot in its OWN transaction (REQUIRES_NEW, commits
-        // immediately) BEFORE calling the provider - see PaymentReservationService for why.
-        // payments.order_id is unique (V3 migration), so if two concurrent requests both
-        // pass the pre-check above, only one of these reservations can succeed - the loser
-        // fails here with a DataIntegrityViolationException (-> clean 409, see
-        // GlobalExceptionHandler) and never reaches paymentProvider.charge(...).
-        Payment reserved = paymentReservationService.reserve(request.getOrderId(), request.getAmount(), request.getMethod());
+        if (request.getMethod() == PaymentMethod.CASH_ON_DELIVERY) {
+            Payment codPayment = paymentRepository.save(Payment.builder()
+                    .orderId(request.getOrderId())
+                    .amount(request.getAmount())
+                    .method(PaymentMethod.CASH_ON_DELIVERY)
+                    .status(PaymentStatus.PENDING)
+                    .build());
 
-        // Deterministic per-order key. A real provider implementation must use this to
-        // deduplicate retried charges (see PaymentProvider#charge's javadoc for the
-        // documented limitation: MockPaymentProvider does not actually honor it).
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
+            return mapToResponse(codPayment);
+        }
+
+        Payment reserved = paymentReservationService.reserve(
+                request.getOrderId(), request.getAmount(), request.getMethod());
+
         String idempotencyKey = "order-" + order.getId();
-        PaymentProvider.PaymentResult result = paymentProvider.charge(order.getId(), request.getAmount(), request.getMethod(), idempotencyKey);
+
+        PaymentProvider.PaymentResult result;
+        try {
+            result = paymentProvider.charge(
+                    order.getId(), request.getAmount(), request.getMethod(), idempotencyKey);
+        } catch (RuntimeException ex) {
+            // The gateway outcome is unknown. Keep the durable PENDING payment
+            // reservation so reconciliation/webhooks can resolve it later.
+            throw ex;
+        }
 
         reserved.setStatus(result.success() ? PaymentStatus.COMPLETED : PaymentStatus.FAILED);
         reserved.setTransactionId(result.transactionId());
 
         Payment saved = paymentRepository.save(reserved);
+
+        if (result.success()) {
+            // Stock remains reserved until the external supplier accepts the fulfillment task.
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
+        } else {
+            // Failed payment must never enter fulfillment; cancellation releases reservations.
+            orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
+        }
+
         return mapToResponse(saved);
     }
 
