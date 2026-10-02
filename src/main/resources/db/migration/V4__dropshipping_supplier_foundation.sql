@@ -78,3 +78,17 @@ CREATE TABLE IF NOT EXISTS fulfillment_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_fulfillment_tasks_due
     ON fulfillment_tasks(status, next_attempt_at);
+
+
+ALTER TABLE inventories
+    ADD COLUMN IF NOT EXISTS source VARCHAR(30),
+    ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE inventories
+    DROP CONSTRAINT IF EXISTS chk_inventory_source;
+
+ALTER TABLE inventories
+    ADD CONSTRAINT chk_inventory_source
+    CHECK (source IS NULL OR source IN ('SUPPLIER_SYNC', 'MANUAL'));
+
+CREATE INDEX IF NOT EXISTS idx_inventories_last_synced_at ON inventories(last_synced_at);
