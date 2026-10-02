@@ -18,6 +18,9 @@ public interface FulfillmentTaskRepository extends JpaRepository<FulfillmentTask
     List<FulfillmentTask> findTop20ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
             FulfillmentTaskStatus status, LocalDateTime now);
 
+    List<FulfillmentTask> findTop20ByStatusAndUpdatedAtBeforeOrderByIdAsc(
+            FulfillmentTaskStatus status, LocalDateTime cutoff);
+
     boolean existsByShipmentId(Long shipmentId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
