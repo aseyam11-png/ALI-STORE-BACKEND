@@ -40,7 +40,7 @@ public class SecurityConfig {
     private final ObjectMapper objectMapper;
     private final ClientIpResolver clientIpResolver;
 
-    @Value("\${app.cors.allowed-origins:http://localhost:3000}")
+    @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
 
     @Bean
