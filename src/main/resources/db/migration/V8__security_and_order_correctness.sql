@@ -48,3 +48,7 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires_at
     ON revoked_tokens(expires_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_transaction_id
+    ON payments(transaction_id)
+    WHERE transaction_id IS NOT NULL;
