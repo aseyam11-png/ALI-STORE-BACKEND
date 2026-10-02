@@ -29,6 +29,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -265,6 +266,13 @@ class CartOrderInventoryTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St", "couponCode", "ROLLBACK10"))))
                 .andExpect(status().isBadRequest());
+
+        // The test class itself is transactional, so the service marks the current
+        // transaction rollback-only. End that transaction before checking the persisted
+        // state; otherwise the assertion can still see the uncommitted UPDATE.
+        TestTransaction.flagForRollback();
+        TestTransaction.end();
+        TestTransaction.start();
 
         Coupon persisted = couponRepository.findByCode("ROLLBACK10").orElseThrow();
         Assertions.assertEquals(0, persisted.getTimesUsed(),
