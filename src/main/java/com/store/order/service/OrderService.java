@@ -250,12 +250,16 @@ public class OrderService {
                 .stream().map(this::mapShipment)
                 .collect(Collectors.toList());
 
+        var payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())
                 .couponCode(order.getCouponCode())
                 .discountAmount(order.getDiscountAmount())
+                .paymentMethod(payment != null ? payment.getMethod().name() : null)
+                .paymentStatus(payment != null ? payment.getStatus().name() : null)
                 .shippingAddress(order.getShippingAddress())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
