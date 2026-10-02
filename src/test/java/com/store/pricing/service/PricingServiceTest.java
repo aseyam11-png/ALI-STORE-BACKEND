@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class PricingServiceTest {
@@ -43,7 +44,8 @@ class PricingServiceTest {
 
     @Test
     void calculateSellingPrice_appliesFixedCategoryMarkup() {
-        Category category = new Category();
+        Category category = mock(Category.class);
+        when(category.getId()).thenReturn(10L);
         Product product = Product.builder()
                 .supplierCost(new BigDecimal("40.00"))
                 .category(category)
@@ -68,11 +70,12 @@ class PricingServiceTest {
 
     @Test
     void calculateSellingPrice_prefersProductRuleOverCategoryRuleAtSamePriority() {
-        Category category = new Category();
-        Product product = Product.builder()
-                .supplierCost(new BigDecimal("100.00"))
-                .category(category)
-                .build();
+        Category category = mock(Category.class);
+        when(category.getId()).thenReturn(10L);
+        Product product = mock(Product.class);
+        when(product.getSupplierCost()).thenReturn(new BigDecimal("100.00"));
+        when(product.getCategory()).thenReturn(category);
+        when(product.getId()).thenReturn(100L);
 
         PricingRule categoryRule = PricingRule.builder()
                 .scope(PricingRuleScope.CATEGORY)
