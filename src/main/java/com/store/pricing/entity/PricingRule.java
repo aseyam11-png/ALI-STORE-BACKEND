@@ -31,7 +31,7 @@ public class PricingRule extends BaseEntity {
     @Column(nullable = false, length = 20)
     private PricingRuleType type;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "rule_value", nullable = false, precision = 12, scale = 2)
     private BigDecimal value;
 
     @Column(nullable = false)
