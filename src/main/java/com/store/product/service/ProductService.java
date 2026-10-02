@@ -18,6 +18,7 @@ import com.store.product.dto.ProductUpdateRequest;
 import com.store.product.entity.Product;
 import com.store.product.entity.ProductImage;
 import com.store.product.enums.ProductStatus;
+import com.store.product.enums.ProductModerationStatus;
 import com.store.product.repository.ProductRepository;
 import com.store.product.repository.ProductSpecifications;
 import com.store.supplier.entity.Supplier;
@@ -103,6 +104,7 @@ public class ProductService {
                 .supplierSku(request.getSupplierSku() == null ? null : request.getSupplierSku().trim())
                 .supplierCost(request.getSupplierCost())
                 .status(ProductStatus.DRAFT)
+                .moderationStatus(ProductModerationStatus.PENDING_REVIEW)
                 .build();
 
         if (request.getImageUrl() != null && !request.getImageUrl().isBlank()) {
@@ -124,7 +126,8 @@ public class ProductService {
             throw new BusinessException("pageSize must be between 1 and " + MAX_PAGE_SIZE);
         }
 
-        Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE));
+        Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE))
+                .and(ProductSpecifications.hasModerationStatus(ProductModerationStatus.PUBLISHED));
         if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.nameOrSkuContains(q.trim()));
         if (categoryId != null) spec = spec.and(ProductSpecifications.inCategory(categoryId));
         if (brandId != null) spec = spec.and(ProductSpecifications.hasBrand(brandId));
@@ -256,12 +259,52 @@ public class ProductService {
                 .images(imageUrls).primaryImageUrl(primaryImageUrl).build();
     }
 
+    @Transactional
+    public ProductAdminResponse submitForReview(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+        if (product.getModerationStatus() == ProductModerationStatus.PUBLISHED) {
+            throw new BusinessException("Published products are already approved");
+        }
+        product.setModerationStatus(ProductModerationStatus.PENDING_REVIEW);
+        product.setStatus(ProductStatus.DRAFT);
+        return mapToAdminResponse(productRepository.save(product));
+    }
+
+    @Transactional
+    public ProductAdminResponse approveModeration(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+        validatePublishable(product);
+        product.setModerationStatus(ProductModerationStatus.PUBLISHED);
+        product.setStatus(ProductStatus.ACTIVE);
+        return mapToAdminResponse(productRepository.save(product));
+    }
+
+    @Transactional
+    public ProductAdminResponse requestModerationChanges(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+        product.setModerationStatus(ProductModerationStatus.CHANGES_REQUESTED);
+        product.setStatus(ProductStatus.DRAFT);
+        return mapToAdminResponse(productRepository.save(product));
+    }
+
+    @Transactional
+    public ProductAdminResponse rejectModeration(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+        product.setModerationStatus(ProductModerationStatus.REJECTED);
+        product.setStatus(ProductStatus.DRAFT);
+        return mapToAdminResponse(productRepository.save(product));
+    }
+
     private ProductAdminResponse mapToAdminResponse(Product product) {
         List<String> imageUrls = product.getImages().stream().sorted(Comparator.comparing(ProductImage::getSortOrder)).map(ProductImage::getUrl).collect(Collectors.toList());
         String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
         return ProductAdminResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
-                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
+                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus()).moderationStatus(product.getModerationStatus())
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
