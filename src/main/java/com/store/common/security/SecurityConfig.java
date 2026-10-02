@@ -54,6 +54,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/logout",
                                 "/api/v1/integrations/suppliers/shipments/update",
+                                "/api/v1/integrations/suppliers/inventory/update",
                                 "/api/v1/health/**",
                                 "/actuator/health",
                                 "/actuator/health/**",
@@ -61,7 +62,8 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/v1/categories", "/api/v1/categories/**",
-                                "/api/v1/products", "/api/v1/products/**"
+                                "/api/v1/products", "/api/v1/products/**",
+                                "/api/v1/shipping/quote"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
