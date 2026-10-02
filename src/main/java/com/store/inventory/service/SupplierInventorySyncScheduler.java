@@ -2,6 +2,7 @@ package com.store.inventory.service;
 
 import com.store.product.entity.Product;
 import com.store.product.repository.ProductRepository;
+import com.store.pricing.service.PricingRuleService;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.entity.SupplierStatus;
 import com.store.supplier.repository.SupplierRepository;
@@ -25,6 +26,7 @@ public class SupplierInventorySyncScheduler {
     private final SupplierRepository supplierRepository;
     private final ProductRepository productRepository;
     private final InventoryService inventoryService;
+    private final PricingRuleService pricingRuleService;
     private final Environment environment;
 
     @Value("${app.fulfillment.inventory-sync-enabled:false}")
@@ -76,6 +78,12 @@ public class SupplierInventorySyncScheduler {
                 if (product == null || product.getSupplier() == null
                         || !supplier.getId().equals(product.getSupplier().getId())) continue;
 
+                if (item.supplierPrice() != null && item.supplierPrice().compareTo(java.math.BigDecimal.ZERO) > 0) {
+                    product.setSupplierCost(item.supplierPrice());
+                    productRepository.save(product);
+                    pricingRuleService.recalculateProduct(product.getId());
+                }
+
                 inventoryService.syncSupplierStock(
                         product.getId(),
                         Math.max(0, item.quantity()),
@@ -90,6 +98,7 @@ public class SupplierInventorySyncScheduler {
     public record SupplierInventoryItem(
             String supplierSku,
             int quantity,
+            java.math.BigDecimal supplierPrice,
             LocalDateTime syncedAt
     ) {}
 
