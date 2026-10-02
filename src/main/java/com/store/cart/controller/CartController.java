@@ -30,6 +30,14 @@ public class CartController {
         return ResponseEntity.ok(ApiResponse.success(cartService.addItemToCart(userDetails.getUsername(), request), "Item added to cart"));
     }
 
+    @DeleteMapping("/items")
+    public ResponseEntity<ApiResponse<CartResponse>> clearCart(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success(
+                cartService.clearCart(userDetails.getUsername()),
+                "Cart cleared successfully"));
+    }
+
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<ApiResponse<CartResponse>> removeItem(
             @AuthenticationPrincipal UserDetails userDetails,
