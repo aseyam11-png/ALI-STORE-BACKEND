@@ -9,11 +9,6 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 
-/**
- * Server-side query boundary for product listing/search. Deliberately built on
- * JPA Specifications rather than loading everything and filtering in Java, so
- * it stays correct as the catalog grows past what fits in memory.
- */
 public final class ProductSpecifications {
 
     private ProductSpecifications() {
@@ -39,8 +34,24 @@ public final class ProductSpecifications {
         return (root, query, cb) -> cb.equal(root.get("category").get("id"), categoryId);
     }
 
+    public static Specification<Product> hasCategoryName(String categoryName) {
+        String normalized = categoryName.trim().toLowerCase();
+        return (root, query, cb) -> cb.equal(
+                cb.lower(root.get("category").get("name")),
+                normalized
+        );
+    }
+
     public static Specification<Product> hasBrand(Long brandId) {
         return (root, query, cb) -> cb.equal(root.get("brand").get("id"), brandId);
+    }
+
+    public static Specification<Product> hasBrandName(String brandName) {
+        String normalized = brandName.trim().toLowerCase();
+        return (root, query, cb) -> cb.equal(
+                cb.lower(root.get("brand").get("name")),
+                normalized
+        );
     }
 
     public static Specification<Product> priceGreaterThanOrEqual(BigDecimal min) {
@@ -59,8 +70,20 @@ public final class ProductSpecifications {
                     .where(
                             cb.equal(inventoryRoot.get("product"), root),
                             availability == PublicAvailability.IN_STOCK
-                                    ? cb.greaterThan(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
-                                    : cb.lessThanOrEqualTo(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
+                                    ? cb.greaterThan(
+                                            cb.diff(
+                                                    inventoryRoot.get("quantity"),
+                                                    inventoryRoot.get("reservedQuantity")
+                                            ),
+                                            0
+                                    )
+                                    : cb.lessThanOrEqualTo(
+                                            cb.diff(
+                                                    inventoryRoot.get("quantity"),
+                                                    inventoryRoot.get("reservedQuantity")
+                                            ),
+                                            0
+                                    )
                     );
             return cb.exists(subquery);
         };
