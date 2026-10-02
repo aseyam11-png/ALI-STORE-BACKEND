@@ -1,6 +1,7 @@
 package com.store.product.dto;
 
 import com.store.product.enums.ProductStatus;
+import com.store.product.enums.ProductModerationStatus;
 import lombok.Builder;
 import lombok.Data;
 
@@ -18,6 +19,7 @@ public class ProductAdminResponse {
     private String currency;
     private String sku;
     private ProductStatus status;
+    private ProductModerationStatus moderationStatus;
     private Long categoryId;
     private String categoryName;
     private Long brandId;
