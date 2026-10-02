@@ -34,6 +34,9 @@ public class AuthController {
     private final Environment environment;
     private final TokenRevocationService tokenRevocationService;
 
+    @org.springframework.beans.factory.annotation.Value("${jwt.expiration:86400000}")
+    private long jwtExpirationMs;
+
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
             @Valid @RequestBody RegisterRequest request,
@@ -111,7 +114,7 @@ public class AuthController {
     }
 
     private void writeSessionCookie(HttpServletResponse servletResponse, String token) {
-        servletResponse.addHeader("Set-Cookie", buildCookie(token, 24 * 60 * 60).toString());
+        servletResponse.addHeader("Set-Cookie", buildCookie(token, Math.max(0, jwtExpirationMs / 1000)).toString());
     }
 
     private ResponseCookie buildCookie(String value, long maxAgeSeconds) {
