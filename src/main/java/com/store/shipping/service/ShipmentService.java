@@ -94,7 +94,7 @@ public class ShipmentService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
 
         if (!order.getUser().getId().equals(user.getId())) {
@@ -182,7 +182,7 @@ public class ShipmentService {
             String trackingNumber,
             String carrier,
             LocalDateTime estimatedDeliveryDate) {
-        Shipment shipment = shipmentRepository.findBySupplierOrderId(supplierOrderId)
+        Shipment shipment = shipmentRepository.findBySupplierOrderIdForUpdate(supplierOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shipment not found for supplier order id: " + supplierOrderId));
 
         if (shipment.getSupplier() == null
