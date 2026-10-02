@@ -125,7 +125,104 @@ public class ShipmentService {
             shipment.setDeliveredAt(LocalDateTime.now());
         }
 
-        return mapToResponse(shipmentRepository.save(shipment));
+        ShipmentResponse response = mapToResponse(shipmentRepository.save(shipment));
+        synchronizeOrderStatus(shipment.getOrderId());
+        return response;
+    }
+
+    /**
+     * Order status is an aggregate view of its supplier shipments:
+     * PROCESSING until shipment work starts, SHIPPED once any shipment is in transit,
+     * DELIVERED only when every shipment is delivered, and CANCELLED when every
+     * shipment is cancelled.
+     */
+    @Transactional
+    public void synchronizeOrderStatus(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+
+        if (order.getStatus() == com.store.order.entity.OrderStatus.CANCELLED
+                || order.getStatus() == com.store.order.entity.OrderStatus.DELIVERED) {
+            return;
+        }
+
+        List<Shipment> shipments = shipmentRepository.findByOrderIdOrderByIdAsc(orderId);
+        if (shipments.isEmpty()) {
+            return;
+        }
+
+        boolean allDelivered = shipments.stream().allMatch(s -> s.getStatus() == ShipmentStatus.DELIVERED);
+        boolean allCancelled = shipments.stream().allMatch(s -> s.getStatus() == ShipmentStatus.CANCELLED);
+        boolean anyInTransit = shipments.stream().anyMatch(s ->
+                s.getStatus() == ShipmentStatus.SHIPPED
+                        || s.getStatus() == ShipmentStatus.IN_TRANSIT
+                        || s.getStatus() == ShipmentStatus.DELIVERED);
+
+        if (allDelivered) {
+            order.setStatus(com.store.order.entity.OrderStatus.DELIVERED);
+        } else if (allCancelled) {
+            order.setStatus(com.store.order.entity.OrderStatus.CANCELLED);
+        } else if (anyInTransit && order.getStatus() == com.store.order.entity.OrderStatus.PROCESSING) {
+            order.setStatus(com.store.order.entity.OrderStatus.SHIPPED);
+        }
+
+        orderRepository.save(order);
+    }
+
+    /**
+     * Applies an idempotent status/tracking update received from an external supplier.
+     * The supplier may repeat the same webhook safely, while backward state transitions
+     * are rejected by the same shipment state machine used by admin operations.
+     */
+    @Transactional
+    public ShipmentResponse applySupplierUpdate(
+            String supplierCode,
+            String supplierOrderId,
+            ShipmentStatus newStatus,
+            String trackingNumber,
+            String carrier,
+            LocalDateTime estimatedDeliveryDate) {
+        Shipment shipment = shipmentRepository.findBySupplierOrderId(supplierOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shipment not found for supplier order id: " + supplierOrderId));
+
+        if (shipment.getSupplier() == null
+                || !shipment.getSupplier().getExternalCode().equals(supplierCode)) {
+            throw new ForbiddenException("Supplier is not authorized for this shipment");
+        }
+
+        if (newStatus == ShipmentStatus.PENDING) {
+            throw new BusinessException("Supplier webhook cannot move a shipment back to PENDING");
+        }
+
+        ShipmentStatus currentStatus = shipment.getStatus();
+        if (newStatus != currentStatus) {
+            Set<ShipmentStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(
+                    currentStatus, EnumSet.noneOf(ShipmentStatus.class));
+            if (!allowed.contains(newStatus)) {
+                throw new BusinessException("Cannot transition shipment from " + currentStatus + " to " + newStatus);
+            }
+            shipment.setStatus(newStatus);
+        }
+
+        if (trackingNumber != null && !trackingNumber.isBlank()) {
+            shipment.setTrackingNumber(trackingNumber.trim());
+        }
+        if (carrier != null && !carrier.isBlank()) {
+            shipment.setCarrier(carrier.trim());
+        }
+        if (estimatedDeliveryDate != null) {
+            shipment.setEstimatedDeliveryDate(estimatedDeliveryDate);
+        }
+        if (newStatus == ShipmentStatus.SHIPPED && shipment.getShippedAt() == null) {
+            shipment.setShippedAt(LocalDateTime.now());
+        }
+        if (newStatus == ShipmentStatus.DELIVERED && shipment.getDeliveredAt() == null) {
+            shipment.setDeliveredAt(LocalDateTime.now());
+        }
+
+        ShipmentResponse response = mapToResponse(shipmentRepository.save(shipment));
+        synchronizeOrderStatus(shipment.getOrderId());
+        return response;
     }
 
     private ShipmentResponse mapToResponse(Shipment shipment) {
