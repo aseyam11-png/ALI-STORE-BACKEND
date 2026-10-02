@@ -46,14 +46,16 @@ public class CartService {
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + request.getProductId()));
 
         int available = inventoryService.getAvailableQuantity(product.getId());
-        if (available < request.getQuantity()) {
-            throw new BusinessException("Insufficient stock for product: " + product.getName());
-        }
 
         CartItem cartItem = cartItemRepository.findByCartIdAndProductId(cart.getId(), product.getId())
                 .orElse(CartItem.builder().cart(cart).product(product).quantity(0).build());
 
-        cartItem.setQuantity(cartItem.getQuantity() + request.getQuantity());
+        int requestedTotal = cartItem.getQuantity() + request.getQuantity();
+        if (available < requestedTotal) {
+            throw new BusinessException("Insufficient stock for product: " + product.getName());
+        }
+
+        cartItem.setQuantity(requestedTotal);
         cartItemRepository.save(cartItem);
 
         return mapToResponse(cart.getId());
