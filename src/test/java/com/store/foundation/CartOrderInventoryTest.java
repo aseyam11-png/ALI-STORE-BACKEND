@@ -174,7 +174,9 @@ class CartOrderInventoryTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalAmount").value(75.0))
+                .andExpect(jsonPath("$.data.totalAmount").value(90.0))
+                .andExpect(jsonPath("$.data.shippingAmount").value(15.0))
+                .andExpect(jsonPath("$.data.shippingMethod").value("STANDARD"))
                 .andReturn().getResponse().getContentAsString();
 
         long orderId = objectMapper.readTree(orderResponse).path("data").path("id").asLong();
@@ -330,7 +332,7 @@ class CartOrderInventoryTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "orderId", orderId,
-                                "amount", 25.00,
+                                "amount", 40.00,
                                 "method", "CASH_ON_DELIVERY"))))
                 .andExpect(status().isCreated());
 
@@ -515,12 +517,13 @@ class CartOrderInventoryTest {
                 .andExpect(status().isBadRequest());
 
         // A valid, active coupon reduces the server-computed total - subtotal is 2 x 25.00 = 50.00,
-        // 10% off = 45.00. The client never supplies a discount amount, only the code.
+        // 10% off = 5.00; server shipping = 15.00; total = 60.00. The client never supplies a discount amount, only the code.
         mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St", "couponCode", "SAVE10"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalAmount").value(45.0))
+                .andExpect(jsonPath("$.data.totalAmount").value(60.0))
+                .andExpect(jsonPath("$.data.shippingAmount").value(15.0))
                 .andExpect(jsonPath("$.data.discountAmount").value(5.0))
                 .andExpect(jsonPath("$.data.couponCode").value("SAVE10"));
     }
