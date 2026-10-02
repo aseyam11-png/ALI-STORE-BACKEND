@@ -8,6 +8,7 @@ import com.store.order.entity.Order;
 import com.store.order.entity.OrderStatus;
 import com.store.order.repository.OrderRepository;
 import com.store.order.service.OrderService;
+import com.store.coupon.service.CouponService;
 import com.store.payment.dto.PaymentRequest;
 import com.store.payment.dto.PaymentResponse;
 import com.store.payment.entity.Payment;
@@ -31,6 +32,7 @@ public class PaymentService {
     private final PaymentProvider paymentProvider;
     private final PaymentReservationService paymentReservationService;
     private final OrderService orderService;
+    private final CouponService couponService;
 
     @Transactional
     public PaymentResponse processPayment(String email, PaymentRequest request) {
@@ -61,9 +63,10 @@ public class PaymentService {
             throw new BusinessException("Order contains an item without a valid external supplier mapping");
         }
 
-        paymentRepository.findByOrderId(request.getOrderId()).ifPresent(existing -> {
+        Payment existingPayment = paymentRepository.findByOrderId(request.getOrderId()).orElse(null);
+        if (existingPayment != null && existingPayment.getStatus() != PaymentStatus.FAILED) {
             throw new ConflictException("A payment attempt already exists for this order");
-        });
+        }
 
         if (request.getMethod() == PaymentMethod.CASH_ON_DELIVERY) {
             Payment codPayment = paymentRepository.save(Payment.builder()
@@ -77,8 +80,14 @@ public class PaymentService {
             return mapToResponse(codPayment);
         }
 
-        Payment reserved = paymentReservationService.reserve(
-                request.getOrderId(), request.getAmount(), request.getMethod());
+        Payment reserved = existingPayment != null
+                ? existingPayment
+                : paymentReservationService.reserve(request.getOrderId(), request.getAmount(), request.getMethod());
+        reserved.setAmount(request.getAmount());
+        reserved.setMethod(request.getMethod());
+        reserved.setStatus(PaymentStatus.PENDING);
+        reserved.setTransactionId(null);
+        reserved = paymentRepository.save(reserved);
 
         String idempotencyKey = "order-" + order.getId();
 
@@ -87,9 +96,11 @@ public class PaymentService {
             result = paymentProvider.charge(
                     order.getId(), request.getAmount(), request.getMethod(), idempotencyKey);
         } catch (RuntimeException ex) {
-            // The gateway outcome is unknown. Keep the durable PENDING payment
-            // reservation so reconciliation/webhooks can resolve it later.
-            throw ex;
+            // Unknown gateway outcome: persist PENDING and keep the order out of fulfillment.
+            reserved.setStatus(PaymentStatus.PENDING);
+            reserved.setTransactionId(null);
+            Payment pending = paymentRepository.save(reserved);
+            return mapToResponse(pending);
         }
 
         reserved.setStatus(result.success() ? PaymentStatus.COMPLETED : PaymentStatus.FAILED);
@@ -103,6 +114,7 @@ public class PaymentService {
         } else {
             // Failed payment must never enter fulfillment; cancellation releases reservations.
             orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
+            couponService.releaseRedemption(order.getCouponCode());
         }
 
         return mapToResponse(saved);
