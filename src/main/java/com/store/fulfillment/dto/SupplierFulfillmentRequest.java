@@ -21,6 +21,6 @@ public class SupplierFulfillmentRequest {
     public static class Item {
         String supplierSku;
         Integer quantity;
-        BigDecimal supplierUnitCost;
+
     }
 }
