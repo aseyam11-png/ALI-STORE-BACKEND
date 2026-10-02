@@ -3,6 +3,7 @@ package com.store.admin.controller;
 import com.store.common.response.ApiResponse;
 import com.store.common.response.PageResponse;
 import com.store.product.dto.ProductAdminResponse;
+import com.store.product.dto.ProductUpdateRequest;
 import com.store.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -21,6 +22,15 @@ public class AdminProductController {
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<ProductAdminResponse>>> getAll(Pageable pageable) {
         return ResponseEntity.ok(ApiResponse.success(productService.getAllForAdmin(pageable), "Products retrieved successfully"));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<ProductAdminResponse>> update(
+            @PathVariable Long id,
+            @RequestBody ProductUpdateRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                productService.updateProduct(id, request),
+                "Product updated successfully"));
     }
 
     @GetMapping("/{id}")
