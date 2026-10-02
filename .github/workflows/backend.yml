@@ -31,3 +31,6 @@ jobs:
 
       - name: Run tests
         run: bash ./mvnw -B test
+
+      - name: Run PostgreSQL integration test
+        run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test
