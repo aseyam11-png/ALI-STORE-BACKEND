@@ -114,6 +114,7 @@ public class ProductService {
         return mapToAdminResponse(saved);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, Long brandId,
                                                          BigDecimal minPrice, BigDecimal maxPrice,
                                                          PublicAvailability availability, String sort,
@@ -148,6 +149,7 @@ public class ProductService {
         };
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
         Product product = productRepository.findById(id)
                 .filter(p -> CUSTOMER_VISIBLE_DETAIL_STATUSES.contains(p.getStatus()))
@@ -155,16 +157,19 @@ public class ProductService {
         return mapToResponse(product);
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProductBySlug(String slug) {
         Product product = productRepository.findBySlugAndStatusIn(slug, CUSTOMER_VISIBLE_DETAIL_STATUSES)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with slug: " + slug));
         return mapToResponse(product);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<ProductAdminResponse> getAllForAdmin(Pageable pageable) {
         return toAdminPageResponse(productRepository.findAll(pageable).map(this::mapToAdminResponse));
     }
 
+    @Transactional(readOnly = true)
     public ProductAdminResponse getForAdmin(Long id) {
         return mapToAdminResponse(productRepository.findById(id).orElseThrow(() ->
                 new ResourceNotFoundException("Product not found with id: " + id)));
@@ -246,7 +251,10 @@ public class ProductService {
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
-                .images(imageUrls).primaryImageUrl(primaryImageUrl).build();
+                .images(imageUrls).primaryImageUrl(primaryImageUrl)
+                .createdAt(product.getCreatedAt())
+                .updatedAt(product.getUpdatedAt())
+                .build();
     }
 
     private ProductAdminResponse mapToAdminResponse(Product product) {
