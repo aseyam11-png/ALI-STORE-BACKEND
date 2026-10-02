@@ -256,6 +256,13 @@ class CartOrderInventoryTest {
                         .content(objectMapper.writeValueAsString(Map.of("productId", product.getId(), "quantity", 1))))
                 .andExpect(status().isOk());
 
+        // Commit the setup data first. The failing checkout transaction is then
+        // isolated, allowing us to verify that coupon redemption rolls back at the
+        // database boundary rather than merely seeing rollback-only state in memory.
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
         // Simulate another purchase reserving the only available unit before checkout,
         // so the coupon is validated/redeemed successfully but the later inventory check fails.
         Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
