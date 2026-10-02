@@ -4,11 +4,14 @@ import com.store.auth.dto.AuthResponse;
 import com.store.auth.dto.LoginRequest;
 import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
+import com.store.auth.service.TokenRevocationService;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
 import com.store.user.dto.MeResponse;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +19,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
@@ -28,6 +32,7 @@ public class AuthController {
     private final AuthService authService;
     private final UserRepository userRepository;
     private final Environment environment;
+    private final TokenRevocationService tokenRevocationService;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
@@ -45,6 +50,11 @@ public class AuthController {
         AuthResponse response = authService.login(request);
         writeSessionCookie(servletResponse, response.getToken());
         return ResponseEntity.ok(ApiResponse.success(response, "Login successful"));
+    }
+
+    @GetMapping("/csrf")
+    public ResponseEntity<ApiResponse<String>> csrf(CsrfToken csrfToken) {
+        return ResponseEntity.ok(ApiResponse.success(csrfToken.getToken(), "CSRF token generated"));
     }
 
     @GetMapping("/session")
@@ -71,9 +81,33 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(HttpServletResponse servletResponse) {
+    public ResponseEntity<ApiResponse<Void>> logout(
+            HttpServletRequest request,
+            HttpServletResponse servletResponse) {
+        String token = extractCookieToken(request);
+        if (token == null) token = extractBearerToken(request);
+        tokenRevocationService.revoke(token);
+
         servletResponse.addHeader("Set-Cookie", buildCookie("", 0).toString());
         return ResponseEntity.ok(ApiResponse.success(null, "Logged out successfully"));
+    }
+
+    private String extractBearerToken(HttpServletRequest request) {
+        String value = request.getHeader("Authorization");
+        return value != null && value.startsWith("Bearer ") ? value.substring(7) : null;
+    }
+
+    private String extractCookieToken(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) return null;
+
+        String cookieName = environment.getProperty(
+                "app.auth.cookie-name",
+                environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
+        for (Cookie cookie : cookies) {
+            if (cookieName.equals(cookie.getName())) return cookie.getValue();
+        }
+        return null;
     }
 
     private void writeSessionCookie(HttpServletResponse servletResponse, String token) {
