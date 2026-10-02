@@ -101,7 +101,7 @@ public class OrderService {
             couponService.redeem(coupon);
         }
 
-        var shippingQuote = shippingQuoteService.quote(request.getShippingMethod(), subtotal);
+        var shippingQuote = shippingQuoteService.quote(request.getShippingMethod() == null ? "STANDARD" : request.getShippingMethod(), subtotal);
         BigDecimal totalAmount = subtotal
                 .subtract(discountAmount)
                 .add(shippingQuote.getAmount());
