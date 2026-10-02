@@ -46,6 +46,7 @@ app:
     cookie-name: ${AUTH_COOKIE_NAME:ali_store_session}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
   fulfillment:
+    enabled: ${FULFILLMENT_ENABLED:false}
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}
     api-token: ${SUPPLIER_API_TOKEN:}
     poll-ms: ${FULFILLMENT_POLL_MS:10000}
