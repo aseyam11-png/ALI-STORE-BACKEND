@@ -20,3 +20,7 @@ app:
 # Production must provide a real PaymentProvider bean.
 # MockPaymentProvider is excluded from the prod profile and therefore fake
 # payments can never be accepted silently.
+
+  auth:
+    cookie-secure: ${AUTH_COOKIE_SECURE:true}
+    cookie-same-site: ${AUTH_COOKIE_SAME_SITE:None}
