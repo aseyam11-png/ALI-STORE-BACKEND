@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS pricing_rules (
     product_id BIGINT REFERENCES products(id) ON DELETE CASCADE,
     category_id BIGINT REFERENCES categories(id) ON DELETE CASCADE,
     type VARCHAR(20) NOT NULL CHECK (type IN ('FIXED', 'PERCENTAGE')),
-    value NUMERIC(12,2) NOT NULL CHECK (value > 0),
+    rule_value NUMERIC(12,2) NOT NULL CHECK (rule_value > 0),
     active BOOLEAN NOT NULL DEFAULT TRUE,
     priority INT NOT NULL DEFAULT 0 CHECK (priority >= 0),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS pricing_rules (
 CREATE INDEX IF NOT EXISTS idx_pricing_rules_product ON pricing_rules(product_id, active, priority);
 CREATE INDEX IF NOT EXISTS idx_pricing_rules_category ON pricing_rules(category_id, active, priority);
 
-INSERT INTO pricing_rules (name, category_id, type, value, active, priority)
+INSERT INTO pricing_rules (name, category_id, type, rule_value, active, priority)
 SELECT 'Fashion supplier markup', id, 'PERCENTAGE', 30, TRUE, 10
 FROM categories WHERE slug = 'fashion'
   AND NOT EXISTS (SELECT 1 FROM pricing_rules r WHERE r.category_id = categories.id);
