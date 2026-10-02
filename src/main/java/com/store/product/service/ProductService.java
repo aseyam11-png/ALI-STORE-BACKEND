@@ -238,11 +238,14 @@ public class ProductService {
 
     private ProductResponse mapToResponse(Product product) {
         List<String> imageUrls = product.getImages().stream().sorted(Comparator.comparing(ProductImage::getSortOrder)).map(ProductImage::getUrl).collect(Collectors.toList());
+        int availableQuantity = inventoryService.getAvailableQuantity(product.getId());
+
         String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
         return ProductResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
                 .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
+                .availableQuantity(availableQuantity)
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
