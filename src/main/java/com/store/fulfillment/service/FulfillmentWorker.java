@@ -12,6 +12,7 @@ public class FulfillmentWorker {
 
     @Scheduled(fixedDelay = 10000)
     public void poll() {
+        fulfillmentService.recoverStaleProcessingTasks();
         fulfillmentService.processDueTasks();
     }
 }
