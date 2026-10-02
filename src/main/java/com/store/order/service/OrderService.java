@@ -10,6 +10,8 @@ import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.PageResponse;
 import com.store.coupon.entity.Coupon;
 import com.store.coupon.service.CouponService;
+import com.store.fulfillment.entity.FulfillmentTask;
+import com.store.fulfillment.entity.FulfillmentTaskStatus;
 import com.store.fulfillment.service.FulfillmentService;
 import com.store.inventory.service.InventoryService;
 import com.store.order.dto.OrderItemResponse;
@@ -28,6 +30,7 @@ import com.store.payment.repository.PaymentRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
+import com.store.shipping.entity.ShipmentStatus;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -167,7 +170,7 @@ public class OrderService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
 
         if (!order.getUser().getId().equals(user.getId())) {
@@ -218,6 +221,7 @@ public class OrderService {
         }
 
         if (newStatus == OrderStatus.CANCELLED) {
+            validateCancellationAllowed(order);
             releaseOrderReservations(order);
         }
 
@@ -237,16 +241,27 @@ public class OrderService {
                 inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity()));
     }
 
+    private void validateCancellationAllowed(Order order) {
+        var shipments = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId());
+
+        if (shipments.stream().anyMatch(shipment ->
+                shipment.getSupplierOrderId() != null
+                        || shipment.getStatus() != ShipmentStatus.PENDING)) {
+            throw new BusinessException("Order cannot be cancelled after supplier fulfillment has started");
+        }
+
+        for (var shipment : shipments) {
+            FulfillmentTask task = fulfillmentService.findTaskByShipmentId(shipment.getId());
+            if (task != null && task.getStatus() == FulfillmentTaskStatus.PROCESSING) {
+                throw new BusinessException("Order cannot be cancelled while supplier fulfillment is in progress");
+            }
+        }
+    }
+
     @Transactional
     public void releaseOrderReservations(Order order) {
-        order.getItems().forEach(item -> {
-            try {
-                inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
-            } catch (BusinessException ignored) {
-                // Reservation may already have been committed after supplier acceptance.
-                // Cancellation must not corrupt inventory a second time.
-            }
-        });
+        order.getItems().forEach(item ->
+                inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity()));
     }
 
     private OrderResponse mapToResponse(Order order) {
