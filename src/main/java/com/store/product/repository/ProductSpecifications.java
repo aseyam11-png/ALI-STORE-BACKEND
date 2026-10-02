@@ -9,11 +9,6 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 
-/**
- * Server-side query boundary for product listing/search. Deliberately built on
- * JPA Specifications rather than loading everything and filtering in Java, so
- * it stays correct as the catalog grows past what fits in memory.
- */
 public final class ProductSpecifications {
 
     private ProductSpecifications() {
@@ -21,6 +16,17 @@ public final class ProductSpecifications {
 
     public static Specification<Product> hasStatus(ProductStatus status) {
         return (root, query, cb) -> cb.equal(root.get("status"), status);
+    }
+
+    public static Specification<Product> hasActiveCategory() {
+        return (root, query, cb) -> cb.isTrue(root.get("category").get("active"));
+    }
+
+    public static Specification<Product> hasActiveSupplier() {
+        return (root, query, cb) -> cb.and(
+                cb.equal(root.get("supplier").get("status"), com.store.supplier.entity.SupplierStatus.ACTIVE),
+                cb.isTrue(root.get("supplier").get("fulfillmentEnabled"))
+        );
     }
 
     public static Specification<Product> statusIn(ProductStatus... statuses) {
