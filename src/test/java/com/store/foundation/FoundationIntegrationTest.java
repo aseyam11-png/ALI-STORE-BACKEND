@@ -236,7 +236,7 @@ class FoundationIntegrationTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.slug").value("test-phone"))
-                .andExpect(jsonPath("$.data.currency").value("USD"))
+                .andExpect(jsonPath("$.data.currency").value("SAR"))
                 .andExpect(jsonPath("$.data.status").value("DRAFT"))
                 .andReturn().getResponse().getContentAsString();
 
