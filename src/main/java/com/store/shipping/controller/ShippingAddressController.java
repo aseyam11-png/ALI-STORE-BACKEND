@@ -35,6 +35,34 @@ public class ShippingAddressController {
         return ResponseEntity.ok(ApiResponse.success(shippingAddressService.getMyAddresses(userDetails.getUsername()), "Shipping addresses retrieved successfully"));
     }
 
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<ShippingAddressResponse>> updateAddress(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long id,
+            @Valid @RequestBody ShippingAddressRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                shippingAddressService.updateAddress(userDetails.getUsername(), id, request),
+                "Shipping address updated successfully"));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteAddress(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long id) {
+        shippingAddressService.deleteAddress(userDetails.getUsername(), id);
+        return ResponseEntity.ok(ApiResponse.success(null, "Shipping address deleted successfully"));
+    }
+
+    @PatchMapping("/{id}/default")
+    public ResponseEntity<ApiResponse<ShippingAddressResponse>> setDefaultAddress(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                shippingAddressService.setDefaultAddress(userDetails.getUsername(), id),
+                "Default shipping address updated successfully"));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<ShippingAddressResponse>> getAddressById(
             @AuthenticationPrincipal UserDetails userDetails,
