@@ -35,8 +35,13 @@ public class CouponService {
     // paths enforce the exact same active/expiry rule - checkout must never trust a
     // coupon a client claims is valid without re-validating it server-side.
     public Coupon validateAndGetCoupon(String code) {
-        Coupon coupon = couponRepository.findByCode(code)
-                .orElseThrow(() -> new ResourceNotFoundException("Coupon not found: " + code));
+        String normalizedCode = code == null ? null : code.trim().toUpperCase();
+        if (normalizedCode == null || normalizedCode.isBlank()) {
+            throw new BusinessException("Coupon code is required");
+        }
+
+        Coupon coupon = couponRepository.findByCode(normalizedCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Coupon not found: " + normalizedCode));
 
         if (!coupon.getIsActive() || coupon.getExpirationDate().isBefore(LocalDateTime.now())) {
             throw new BusinessException("Coupon is expired or inactive");
@@ -67,7 +72,7 @@ public class CouponService {
         }
 
         Coupon coupon = Coupon.builder()
-                .code(request.getCode().toUpperCase())
+                .code(request.getCode().trim().toUpperCase())
                 .discountPercentage(request.getDiscountPercentage())
                 .expirationDate(request.getExpirationDate())
                 .isActive(true)
