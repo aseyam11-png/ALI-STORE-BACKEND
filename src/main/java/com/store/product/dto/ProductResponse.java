@@ -22,6 +22,7 @@ public class ProductResponse {
     private PublicAvailability availability;
     private BigDecimal rating;
     private long reviewCount;
+    private int availableQuantity;
     private Long categoryId;
     private String categoryName;
     private String categorySlug;
