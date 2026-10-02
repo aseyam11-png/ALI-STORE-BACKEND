@@ -77,6 +77,8 @@ public class ProductService {
             throw new BusinessException("Supplier SKU is required when a supplier is mapped");
         }
 
+        validateCompareAtPrice(request.getPrice(), request.getCompareAtPrice());
+
         String slug = request.getSlug() != null && !request.getSlug().isBlank()
                 ? SlugUtils.slugify(request.getSlug())
                 : SlugUtils.uniqueSlugify(request.getName(), productRepository::existsBySlug);
@@ -94,6 +96,7 @@ public class ProductService {
                 .slug(slug)
                 .description(request.getDescription())
                 .price(request.getPrice())
+                .compareAtPrice(request.getCompareAtPrice())
                 .currency(currency)
                 .sku(request.getSku().trim())
                 .category(category)
@@ -123,6 +126,7 @@ public class ProductService {
             BigDecimal minPrice,
             BigDecimal maxPrice,
             PublicAvailability availability,
+            boolean discountOnly,
             String sort,
             int page,
             int pageSize) {
@@ -145,6 +149,9 @@ public class ProductService {
         if (maxPrice != null) spec = spec.and(ProductSpecifications.priceLessThanOrEqual(maxPrice));
         if (availability == PublicAvailability.IN_STOCK || availability == PublicAvailability.OUT_OF_STOCK) {
             spec = spec.and(ProductSpecifications.hasAvailability(availability));
+        }
+        if (discountOnly) {
+            spec = spec.and(ProductSpecifications.hasDiscount());
         }
 
         Pageable pageable = PageRequest.of(page, pageSize, resolveSort(sort));
@@ -196,6 +203,8 @@ public class ProductService {
         if (request.getName() != null && !request.getName().isBlank()) product.setName(request.getName().trim());
         if (request.getDescription() != null) product.setDescription(request.getDescription());
         if (request.getPrice() != null) product.setPrice(request.getPrice());
+        if (request.getCompareAtPrice() != null) product.setCompareAtPrice(request.getCompareAtPrice());
+        validateCompareAtPrice(product.getPrice(), product.getCompareAtPrice());
         if (request.getCurrency() != null && !request.getCurrency().isBlank()) product.setCurrency(request.getCurrency().toUpperCase());
         if (request.getCategoryId() != null) product.setCategory(categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + request.getCategoryId())));
@@ -214,6 +223,7 @@ public class ProductService {
             product.setStatus(request.getStatus());
         }
         if (product.getStatus() == ProductStatus.ACTIVE) validatePublishable(product);
+        validateCompareAtPrice(product.getPrice(), product.getCompareAtPrice());
 
         return mapToAdminResponse(productRepository.save(product));
     }
@@ -239,6 +249,24 @@ public class ProductService {
         if (sellingPrice.compareTo(supplierCost) < 0) {
             throw new BusinessException("Selling price cannot be lower than supplier cost");
         }
+    }
+
+    private void validateCompareAtPrice(BigDecimal sellingPrice, BigDecimal compareAtPrice) {
+        if (compareAtPrice != null && compareAtPrice.compareTo(sellingPrice) < 0) {
+            throw new BusinessException("Compare-at price cannot be lower than selling price");
+        }
+    }
+
+    private BigDecimal discountPercentage(Product product) {
+        if (product.getCompareAtPrice() == null
+                || product.getCompareAtPrice().compareTo(product.getPrice()) <= 0) {
+            return null;
+        }
+
+        return product.getCompareAtPrice()
+                .subtract(product.getPrice())
+                .multiply(BigDecimal.valueOf(100))
+                .divide(product.getCompareAtPrice(), 2, java.math.RoundingMode.HALF_UP);
     }
 
     private void validatePublishable(Product product) {
@@ -294,6 +322,8 @@ public class ProductService {
                 .slug(product.getSlug())
                 .description(product.getDescription())
                 .price(product.getPrice())
+                .originalPrice(product.getCompareAtPrice())
+                .discountPercentage(discountPercentage(product))
                 .currency(product.getCurrency())
                 .sku(product.getSku())
                 .status(product.getStatus())
@@ -325,6 +355,8 @@ public class ProductService {
                 .slug(product.getSlug())
                 .description(product.getDescription())
                 .price(product.getPrice())
+                .originalPrice(product.getCompareAtPrice())
+                .discountPercentage(discountPercentage(product))
                 .currency(product.getCurrency())
                 .sku(product.getSku())
                 .status(product.getStatus())
