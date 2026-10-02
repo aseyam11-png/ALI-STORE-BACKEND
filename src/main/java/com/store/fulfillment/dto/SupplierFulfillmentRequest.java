@@ -3,7 +3,6 @@ package com.store.fulfillment.dto;
 import lombok.Builder;
 import lombok.Value;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Value
