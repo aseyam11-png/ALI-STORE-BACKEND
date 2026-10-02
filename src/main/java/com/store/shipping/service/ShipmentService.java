@@ -94,7 +94,7 @@ public class ShipmentService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        Order order = orderRepository.findByIdForUpdate(orderId)
+        Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
 
         if (!order.getUser().getId().equals(user.getId())) {
@@ -138,7 +138,7 @@ public class ShipmentService {
      */
     @Transactional
     public void synchronizeOrderStatus(Long orderId) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
 
         if (order.getStatus() == com.store.order.entity.OrderStatus.CANCELLED
