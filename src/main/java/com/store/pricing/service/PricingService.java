@@ -98,7 +98,7 @@ public class PricingService {
                         Comparator
                                 .comparing((PricingRule candidate) -> candidate.getScope() == PricingRuleScope.PRODUCT ? 0 : 1)
                                 .thenComparing(PricingRule::getPriority, Comparator.reverseOrder())
-                                .thenComparing(PricingRule::getId))
+                                .thenComparing(PricingRule::getId, Comparator.nullsLast(Long::compareTo)))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("No active pricing rule matches this product"));
 
