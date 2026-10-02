@@ -11,6 +11,8 @@ import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.supplier.entity.Supplier;
+import com.store.supplier.repository.SupplierRepository;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -97,6 +99,7 @@ class PostgresConcurrencyIT {
     @Autowired private JwtService jwtService;
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private ProductRepository productRepository;
+    @Autowired private SupplierRepository supplierRepository;
     @Autowired private InventoryRepository inventoryRepository;
     @Autowired private CouponRepository couponRepository;
 
@@ -121,10 +124,14 @@ class PostgresConcurrencyIT {
     private Product productWithStock(String sku, int quantity) {
         Category category = categoryRepository.save(Category.builder()
                 .name("Category-" + sku).slug("category-" + sku.toLowerCase()).active(true).build());
+        Supplier supplier = supplierRepository.save(Supplier.builder()
+                .externalCode("SUP-" + sku).name("Test Supplier " + sku).build());
         Product product = productRepository.save(Product.builder()
                 .name("Product " + sku).slug("product-" + sku.toLowerCase()).price(new BigDecimal("25.00"))
-                .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category).build());
-        inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0).lowStockThreshold(5).build());
+                .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category)
+                .supplier(supplier).supplierSku("SUP-SKU-" + sku).supplierCost(new BigDecimal("10.00")).build());
+        inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0)
+                .lowStockThreshold(5).build());
         return product;
     }
 
