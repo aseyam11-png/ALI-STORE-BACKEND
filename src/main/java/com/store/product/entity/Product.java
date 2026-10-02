@@ -33,6 +33,14 @@ public class Product extends BaseEntity {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
+    /**
+     * Optional customer-facing reference price used to calculate a visible
+     * discount. Supplier cost is a separate internal field and is never
+     * exposed through ProductResponse.
+     */
+    @Column(name = "compare_at_price", precision = 10, scale = 2)
+    private BigDecimal compareAtPrice;
+
     @Column(nullable = false, length = 3)
     private String currency;
 
