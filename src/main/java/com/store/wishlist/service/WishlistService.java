@@ -3,6 +3,7 @@ package com.store.wishlist.service;
 import com.store.common.exception.ConflictException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.product.entity.Product;
+import com.store.product.entity.ProductImage;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
 import com.store.user.entity.User;
