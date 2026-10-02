@@ -182,6 +182,15 @@ public class OrderService {
         }
 
         if (newStatus == OrderStatus.PROCESSING) {
+            if (order.getItems().stream().anyMatch(item ->
+                    item.getSupplier() == null
+                            || item.getSupplierSku() == null
+                            || item.getSupplierSku().isBlank()
+                            || item.getSupplierCost() == null
+                            || item.getSupplierCost().signum() <= 0)) {
+                throw new BusinessException("Order cannot enter fulfillment without a valid external supplier mapping");
+            }
+
             Payment payment = paymentRepository.findByOrderId(orderId)
                     .orElseThrow(() -> new BusinessException("Order cannot start fulfillment before a payment method is recorded"));
 
