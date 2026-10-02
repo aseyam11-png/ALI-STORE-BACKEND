@@ -75,8 +75,12 @@ class CartOrderInventoryTest {
                 .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_USER").description("Standard customer role").build()));
         adminRole = roleRepository.findByName("ROLE_ADMIN")
                 .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
-        category = categoryRepository.save(Category.builder().name("General").slug("general").active(true).build());
-        supplier = supplierRepository.save(Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build());
+        category = categoryRepository.findByName("General")
+                .orElseGet(() -> categoryRepository.save(
+                        Category.builder().name("General").slug("general").active(true).build()));
+        supplier = supplierRepository.findByExternalCode("TEST-SUPPLIER")
+                .orElseGet(() -> supplierRepository.save(
+                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build()));
     }
 
     private User createUser(String email) {
