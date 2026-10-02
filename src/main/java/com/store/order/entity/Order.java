@@ -39,7 +39,8 @@ public class Order extends BaseEntity {
     private String shippingAddress;
 
     @Column(name = "reservation_expires_at", nullable = false)
-    private java.time.LocalDateTime reservationExpiresAt;
+    @Builder.Default
+    private java.time.LocalDateTime reservationExpiresAt = java.time.LocalDateTime.now().plusMinutes(30);
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
