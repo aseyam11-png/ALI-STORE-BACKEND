@@ -32,7 +32,14 @@ public class ShippingAddressService {
 
         ShippingAddress address = ShippingAddress.builder()
                 .user(user)
+                .label(request.getLabel())
+                .recipientName(request.getRecipientName())
+                .phone(request.getPhone())
                 .street(request.getStreet().trim())
+                .area(request.getArea())
+                .building(request.getBuilding())
+                .apartment(request.getApartment())
+                .notes(request.getNotes())
                 .city(request.getCity().trim())
                 .state(request.getState() == null ? null : request.getState().trim())
                 .country(request.getCountry().trim())
@@ -68,7 +75,14 @@ public class ShippingAddressService {
             shippingAddressRepository.clearDefaultForUser(address.getUser().getId());
         }
 
+        address.setLabel(request.getLabel());
+        address.setRecipientName(request.getRecipientName());
+        address.setPhone(request.getPhone());
         address.setStreet(request.getStreet().trim());
+        address.setArea(request.getArea());
+        address.setBuilding(request.getBuilding());
+        address.setApartment(request.getApartment());
+        address.setNotes(request.getNotes());
         address.setCity(request.getCity().trim());
         address.setState(request.getState() == null ? null : request.getState().trim());
         address.setCountry(request.getCountry().trim());
@@ -120,7 +134,14 @@ public class ShippingAddressService {
     private ShippingAddressResponse mapToResponse(ShippingAddress address) {
         return ShippingAddressResponse.builder()
                 .id(address.getId())
+                .label(address.getLabel())
+                .recipientName(address.getRecipientName())
+                .phone(address.getPhone())
                 .street(address.getStreet())
+                .area(address.getArea())
+                .building(address.getBuilding())
+                .apartment(address.getApartment())
+                .notes(address.getNotes())
                 .city(address.getCity())
                 .state(address.getState())
                 .country(address.getCountry())
