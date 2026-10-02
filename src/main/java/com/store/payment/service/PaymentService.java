@@ -4,6 +4,7 @@ import com.store.common.exception.BusinessException;
 import com.store.common.exception.ConflictException;
 import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.ResourceNotFoundException;
+import com.store.coupon.service.CouponService;
 import com.store.order.entity.Order;
 import com.store.order.entity.OrderStatus;
 import com.store.order.repository.OrderRepository;
@@ -24,13 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class PaymentService {
-
     private final PaymentRepository paymentRepository;
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
     private final PaymentProvider paymentProvider;
     private final PaymentReservationService paymentReservationService;
     private final OrderService orderService;
+    private final CouponService couponService;
 
     @Transactional
     public PaymentResponse processPayment(String email, PaymentRequest request) {
@@ -38,7 +39,8 @@ public class PaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         Order order = orderRepository.findById(request.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + request.getOrderId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found with id: " + request.getOrderId()));
 
         if (!order.getUser().getId().equals(user.getId())) {
             throw new ForbiddenException("This order does not belong to you");
@@ -80,28 +82,24 @@ public class PaymentService {
         Payment reserved = paymentReservationService.reserve(
                 request.getOrderId(), request.getAmount(), request.getMethod());
 
-        String idempotencyKey = "order-" + order.getId();
-
         PaymentProvider.PaymentResult result;
         try {
             result = paymentProvider.charge(
-                    order.getId(), request.getAmount(), request.getMethod(), idempotencyKey);
+                    order.getId(), request.getAmount(), request.getMethod(), "order-" + order.getId());
         } catch (RuntimeException ex) {
-            // The gateway outcome is unknown. Keep the durable PENDING payment
-            // reservation so reconciliation/webhooks can resolve it later.
+            // Gateway outcome is unknown; keep the payment reservation and coupon
+            // reservation durable so reconciliation can resolve the state later.
             throw ex;
         }
 
         reserved.setStatus(result.success() ? PaymentStatus.COMPLETED : PaymentStatus.FAILED);
         reserved.setTransactionId(result.transactionId());
-
         Payment saved = paymentRepository.save(reserved);
 
         if (result.success()) {
-            // Stock remains reserved until the external supplier accepts the fulfillment task.
             orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
         } else {
-            // Failed payment must never enter fulfillment; cancellation releases reservations.
+            couponService.releaseByCode(order.getCouponCode());
             orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         }
 
@@ -111,7 +109,6 @@ public class PaymentService {
     public PaymentResponse getPaymentByOrderId(String email, Long orderId) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
 

@@ -15,7 +15,6 @@ import com.store.inventory.service.InventoryService;
 import com.store.order.dto.OrderItemResponse;
 import com.store.order.dto.OrderRequest;
 import com.store.order.dto.OrderResponse;
-import com.store.order.dto.OrderStatusUpdateRequest;
 import com.store.order.dto.ShipmentSummaryResponse;
 import com.store.order.entity.Order;
 import com.store.order.entity.OrderItem;
@@ -25,10 +24,11 @@ import com.store.payment.entity.Payment;
 import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.repository.PaymentRepository;
-import com.store.user.entity.User;
-import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.repository.ShipmentRepository;
+import com.store.shipping.service.ShippingQuoteService;
+import com.store.user.entity.User;
+import com.store.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -66,6 +66,7 @@ public class OrderService {
     private final CouponService couponService;
     private final PaymentRepository paymentRepository;
     private final ShipmentRepository shipmentRepository;
+    private final ShippingQuoteService shippingQuoteService;
     private final FulfillmentService fulfillmentService;
 
     @Transactional
@@ -82,7 +83,8 @@ public class OrderService {
         }
 
         BigDecimal subtotal = cartItems.stream()
-                .map(item -> item.getProduct().getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .map(item -> item.getProduct().getPrice()
+                        .multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         String couponCode = null;
@@ -96,15 +98,26 @@ public class OrderService {
             if (discountAmount.compareTo(subtotal) > 0) {
                 discountAmount = subtotal;
             }
+            // Reserve one coupon use with the order transaction. A failed card
+            // payment releases it; successful payment keeps it consumed.
             couponService.redeem(coupon);
         }
 
-        BigDecimal totalAmount = subtotal.subtract(discountAmount);
+        var shippingQuote = shippingQuoteService.quote(
+                subtotal.subtract(discountAmount),
+                request.getShippingMethod());
+
+        BigDecimal totalAmount = subtotal
+                .subtract(discountAmount)
+                .add(shippingQuote.amount())
+                .setScale(2, RoundingMode.HALF_UP);
 
         Order order = Order.builder()
                 .user(user)
                 .status(OrderStatus.PENDING)
-                .shippingAddress(request.getShippingAddress())
+                .shippingAddress(request.getShippingAddress().trim())
+                .shippingAmount(shippingQuote.amount())
+                .shippingMethod(shippingQuote.method())
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
@@ -113,8 +126,9 @@ public class OrderService {
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
             var product = cartItem.getProduct();
 
-            if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
-                    || product.getSupplierCost() == null) {
+            if (product.getSupplier() == null || product.getSupplierSku() == null
+                    || product.getSupplierSku().isBlank() || product.getSupplierCost() == null
+                    || product.getSupplierCost().signum() <= 0) {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
 
@@ -163,12 +177,6 @@ public class OrderService {
         return mapToResponse(order);
     }
 
-    public PageResponse<OrderResponse> getAllOrdersForAdmin(Pageable pageable) {
-        Page<OrderResponse> page = orderRepository.findAll(pageable).map(this::mapToResponse);
-        return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
-                page.getTotalElements(), page.getTotalPages(), page.isLast());
-    }
-
     @Transactional
     public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
         Order order = orderRepository.findById(orderId)
@@ -193,12 +201,14 @@ public class OrderService {
             }
 
             Payment payment = paymentRepository.findByOrderId(orderId)
-                    .orElseThrow(() -> new BusinessException("Order cannot start fulfillment before a payment method is recorded"));
+                    .orElseThrow(() -> new BusinessException(
+                            "Order cannot start fulfillment before a payment method is recorded"));
 
             boolean cod = payment.getMethod() == PaymentMethod.CASH_ON_DELIVERY;
             boolean confirmed = payment.getStatus() == PaymentStatus.COMPLETED;
             if (!cod && !confirmed) {
-                throw new BusinessException("Order cannot start fulfillment before payment is confirmed");
+                throw new BusinessException(
+                        "Order cannot start fulfillment before payment is confirmed");
             }
         }
 
@@ -229,7 +239,6 @@ public class OrderService {
                 inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
             } catch (BusinessException ignored) {
                 // Reservation may already have been committed after supplier acceptance.
-                // Cancellation must not corrupt inventory a second time.
             }
         });
     }
@@ -246,14 +255,17 @@ public class OrderService {
                         .build()
         ).collect(Collectors.toList());
 
-        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
-                .stream().map(this::mapShipment)
-                .collect(Collectors.toList());
+        List<ShipmentSummaryResponse> shipmentResponses =
+                shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
+                        .stream().map(this::mapShipment)
+                        .collect(Collectors.toList());
 
         return OrderResponse.builder()
                 .id(order.getId())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())
+                .shippingAmount(order.getShippingAmount())
+                .shippingMethod(order.getShippingMethod())
                 .couponCode(order.getCouponCode())
                 .discountAmount(order.getDiscountAmount())
                 .shippingAddress(order.getShippingAddress())

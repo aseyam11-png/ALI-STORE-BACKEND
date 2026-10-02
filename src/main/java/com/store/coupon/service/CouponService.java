@@ -18,22 +18,16 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CouponService {
-
     private final CouponRepository couponRepository;
 
     public List<CouponResponse> getAllCoupons() {
-        return couponRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
+        return couponRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
     public CouponResponse getCouponByCode(String code) {
         return mapToResponse(validateAndGetCoupon(code));
     }
 
-    // Shared by getCouponByCode (customer lookup) and OrderService (checkout) so both
-    // paths enforce the exact same active/expiry rule - checkout must never trust a
-    // coupon a client claims is valid without re-validating it server-side.
     public Coupon validateAndGetCoupon(String code) {
         Coupon coupon = couponRepository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Coupon not found: " + code));
@@ -46,19 +40,30 @@ public class CouponService {
     }
 
     public void checkMinimumOrder(Coupon coupon, BigDecimal orderSubtotal) {
-        if (coupon.getMinimumOrderAmount() != null && orderSubtotal.compareTo(coupon.getMinimumOrderAmount()) < 0) {
-            throw new BusinessException("Order subtotal does not meet this coupon's minimum of " + coupon.getMinimumOrderAmount());
+        if (coupon.getMinimumOrderAmount() != null
+                && orderSubtotal.compareTo(coupon.getMinimumOrderAmount()) < 0) {
+            throw new BusinessException(
+                    "Order subtotal does not meet this coupon's minimum of " + coupon.getMinimumOrderAmount());
         }
     }
 
-    // Must be called within the caller's own transaction (see OrderService.createOrder) so
-    // that if order creation fails afterwards for any other reason, this redemption rolls
-    // back with it rather than permanently consuming a use for an order that never happened.
+    @org.springframework.transaction.annotation.Transactional
     public void redeem(Coupon coupon) {
         int updated = couponRepository.tryRedeem(coupon.getId());
         if (updated == 0) {
             throw new BusinessException("This coupon has reached its usage limit");
         }
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void releaseByCode(String code) {
+        if (code == null || code.isBlank()) return;
+        couponRepository.findByCode(code.trim())
+                .ifPresent(coupon -> {
+                    if (couponRepository.tryRelease(coupon.getId()) == 0) {
+                        throw new BusinessException("Coupon redemption release failed");
+                    }
+                });
     }
 
     public CouponResponse createCoupon(CouponRequest request) {
@@ -83,7 +88,6 @@ public class CouponService {
     public CouponResponse toggleCouponStatus(Long id) {
         Coupon coupon = couponRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Coupon not found with id: " + id));
-
         coupon.setIsActive(!coupon.getIsActive());
         Coupon updatedCoupon = couponRepository.save(coupon);
         return mapToResponse(updatedCoupon);
