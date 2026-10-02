@@ -29,6 +29,7 @@ import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.repository.ShipmentRepository;
+import com.store.shipping.service.ShippingQuoteService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -67,6 +68,7 @@ public class OrderService {
     private final PaymentRepository paymentRepository;
     private final ShipmentRepository shipmentRepository;
     private final FulfillmentService fulfillmentService;
+    private final ShippingQuoteService shippingQuoteService;
 
     @Transactional
     public OrderResponse createOrder(String email, OrderRequest request) {
@@ -99,7 +101,8 @@ public class OrderService {
             couponService.redeem(coupon);
         }
 
-        BigDecimal totalAmount = subtotal.subtract(discountAmount);
+        var shippingQuote = shippingQuoteService.quote(subtotal.subtract(discountAmount), request.getShippingMethod());
+        BigDecimal totalAmount = subtotal.subtract(discountAmount).add(shippingQuote.getAmount());
 
         Order order = Order.builder()
                 .user(user)
@@ -108,6 +111,8 @@ public class OrderService {
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
+                .shippingAmount(shippingQuote.getAmount())
+                .shippingMethod(shippingQuote.getMethod())
                 .build();
 
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
@@ -256,6 +261,9 @@ public class OrderService {
                 .totalAmount(order.getTotalAmount())
                 .couponCode(order.getCouponCode())
                 .discountAmount(order.getDiscountAmount())
+                .shippingAmount(order.getShippingAmount())
+                .shippingMethod(order.getShippingMethod())
+                .paymentStatus(paymentRepository.findByOrderId(order.getId()).map(p -> p.getStatus().name()).orElse("PENDING"))
                 .shippingAddress(order.getShippingAddress())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
