@@ -255,10 +255,10 @@ class CartOrderInventoryTest {
                         .content(objectMapper.writeValueAsString(Map.of("productId", product.getId(), "quantity", 1))))
                 .andExpect(status().isOk());
 
-        // Simulate another concurrent purchase depleting stock between add-to-cart and checkout,
+        // Simulate another purchase reserving the only available unit before checkout,
         // so the coupon is validated/redeemed successfully but the later inventory check fails.
         Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
-        inventory.setQuantity(0);
+        inventory.setReservedQuantity(1);
         inventoryRepository.saveAndFlush(inventory);
 
         mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(user))
