@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 public class ProductService {
     private static final String DEFAULT_CURRENCY = "USD";
     private static final int MAX_PAGE_SIZE = 100;
-    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
+    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
