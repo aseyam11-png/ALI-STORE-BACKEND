@@ -21,18 +21,23 @@ public class SupplierService {
     private final SupplierRepository supplierRepository;
 
     public PageResponse<SupplierResponse> getAll(Pageable pageable) {
-        Page<SupplierResponse> page = supplierRepository.findAll(pageable).map(this::map);
+        Pageable safe = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, pageable.getPageNumber()),
+                Math.min(Math.max(1, pageable.getPageSize()), 100),
+                pageable.getSort());
+        Page<SupplierResponse> page = supplierRepository.findAll(safe).map(this::map);
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
 
+    @Transactional(readOnly = true)
     public SupplierResponse getById(Long id) {
         return map(getEntity(id));
     }
 
     @Transactional
     public SupplierResponse create(SupplierRequest request) {
-        String code = request.getExternalCode().trim();
+        String code = request.getExternalCode().trim().toUpperCase();
         if (supplierRepository.existsByExternalCode(code)) {
             throw new ConflictException("Supplier external code already exists");
         }
@@ -52,7 +57,7 @@ public class SupplierService {
     @Transactional
     public SupplierResponse update(Long id, SupplierRequest request) {
         Supplier supplier = getEntity(id);
-        String code = request.getExternalCode().trim();
+        String code = request.getExternalCode().trim().toUpperCase();
 
         supplierRepository.findByExternalCode(code)
                 .filter(existing -> !existing.getId().equals(id))
@@ -63,12 +68,8 @@ public class SupplierService {
         supplier.setExternalCode(code);
         supplier.setName(request.getName().trim());
         supplier.setApiBaseUrl(normalizeUrl(request.getApiBaseUrl()));
-        if (request.getFulfillmentEnabled() != null) {
-            supplier.setFulfillmentEnabled(request.getFulfillmentEnabled());
-        }
-        if (request.getInventorySyncEnabled() != null) {
-            supplier.setInventorySyncEnabled(request.getInventorySyncEnabled());
-        }
+        if (request.getFulfillmentEnabled() != null) supplier.setFulfillmentEnabled(request.getFulfillmentEnabled());
+        if (request.getInventorySyncEnabled() != null) supplier.setInventorySyncEnabled(request.getInventorySyncEnabled());
 
         return map(supplierRepository.save(supplier));
     }
@@ -86,9 +87,7 @@ public class SupplierService {
     }
 
     private String normalizeUrl(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
+        if (value == null || value.isBlank()) return null;
         return value.trim().replaceAll("/+$", "");
     }
 
