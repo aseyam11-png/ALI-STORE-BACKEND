@@ -89,12 +89,12 @@ SELECT 'Fashion supplier markup', id, 'PERCENTAGE', 30, TRUE, 10
 FROM categories WHERE slug = 'fashion'
   AND NOT EXISTS (SELECT 1 FROM pricing_rules r WHERE r.category_id = categories.id);
 
-INSERT INTO pricing_rules (name, category_id, type, value, active, priority)
+INSERT INTO pricing_rules (name, category_id, type, rule_value, active, priority)
 SELECT 'Accessories supplier markup', id, 'PERCENTAGE', 25, TRUE, 10
 FROM categories WHERE slug = 'accessories'
   AND NOT EXISTS (SELECT 1 FROM pricing_rules r WHERE r.category_id = categories.id);
 
-INSERT INTO pricing_rules (name, category_id, type, value, active, priority)
+INSERT INTO pricing_rules (name, category_id, type, rule_value, active, priority)
 SELECT 'Beauty & Care supplier markup', id, 'PERCENTAGE', 35, TRUE, 10
 FROM categories WHERE slug = 'beauty-care'
   AND NOT EXISTS (SELECT 1 FROM pricing_rules r WHERE r.category_id = categories.id);
