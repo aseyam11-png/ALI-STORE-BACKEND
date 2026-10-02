@@ -32,6 +32,8 @@ import com.store.product.enums.ProductStatus;
 import com.store.shipping.entity.ShipmentStatus;
 import com.store.shipping.repository.ShipmentRepository;
 import com.store.supplier.entity.SupplierStatus;
+import com.store.user.entity.User;
+import com.store.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
