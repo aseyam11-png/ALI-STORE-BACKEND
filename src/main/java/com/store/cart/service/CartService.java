@@ -73,6 +73,13 @@ public class CartService {
         return mapToResponse(cart.getId());
     }
 
+
+    @Transactional
+    public void clearCart(String email) {
+        Cart cart = getOrCreateCart(email);
+        cartItemRepository.deleteByCartId(cart.getId());
+    }
+
     private Cart getOrCreateCart(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
