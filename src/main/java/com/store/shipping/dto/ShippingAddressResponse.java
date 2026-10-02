@@ -12,5 +12,12 @@ public class ShippingAddressResponse {
     private String state;
     private String country;
     private String postalCode;
+    private String label;
+    private String recipientName;
+    private String phone;
+    private String area;
+    private String building;
+    private String apartment;
+    private String notes;
     private Boolean isDefault;
 }
