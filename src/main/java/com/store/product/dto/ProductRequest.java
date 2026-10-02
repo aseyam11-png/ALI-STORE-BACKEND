@@ -1,5 +1,6 @@
 package com.store.product.dto;
 
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -21,6 +22,10 @@ public class ProductRequest {
     private BigDecimal price;
 
     private String currency;
+
+    @DecimalMin(value = "0.00", message = "Discount cannot be negative")
+    @DecimalMax(value = "100.00", message = "Discount cannot exceed 100%")
+    private BigDecimal discountPercentage;
 
     @NotBlank(message = "Store SKU is required")
     private String sku;
