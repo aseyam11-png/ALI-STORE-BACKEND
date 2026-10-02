@@ -436,7 +436,7 @@ class CartOrderInventoryTest {
                         .content(objectMapper.writeValueAsString(Map.of("orderId", orderId, "supplierId", supplier.getId(), "shippingAddressId", addressId))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        long shipmentId = objectMapper.readTree(shipmentResponse).path("id").asLong();
+        long shipmentId = objectMapper.readTree(shipmentResponse).path("data").path("id").asLong();
 
         // PENDING -> DELIVERED skips SHIPPED/IN_TRANSIT entirely - illegal.
         mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
