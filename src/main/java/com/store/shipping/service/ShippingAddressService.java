@@ -49,6 +49,67 @@ public class ShippingAddressService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
+    public ShippingAddressResponse updateAddress(String email, Long id, ShippingAddressRequest request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        ShippingAddress address = shippingAddressRepository.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> new ForbiddenException("You do not have access to this shipping address"));
+
+        address.setStreet(request.getStreet());
+        address.setCity(request.getCity());
+        address.setState(request.getState());
+        address.setCountry(request.getCountry());
+        address.setPostalCode(request.getPostalCode());
+
+        if (Boolean.TRUE.equals(request.getIsDefault())) {
+            shippingAddressRepository.findByUserId(user.getId()).forEach(existing -> {
+                if (!existing.getId().equals(id)) {
+                    existing.setIsDefault(false);
+                }
+            });
+            address.setIsDefault(true);
+        }
+
+        return mapToResponse(shippingAddressRepository.save(address));
+    }
+
+    @Transactional
+    public void deleteAddress(String email, Long id) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        ShippingAddress address = shippingAddressRepository.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> new ForbiddenException("You do not have access to this shipping address"));
+
+        boolean wasDefault = Boolean.TRUE.equals(address.getIsDefault());
+        shippingAddressRepository.delete(address);
+
+        if (wasDefault) {
+            shippingAddressRepository.findByUserId(user.getId()).stream()
+                    .findFirst()
+                    .ifPresent(next -> {
+                        next.setIsDefault(true);
+                        shippingAddressRepository.save(next);
+                    });
+        }
+    }
+
+    @Transactional
+    public ShippingAddressResponse setDefaultAddress(String email, Long id) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        ShippingAddress address = shippingAddressRepository.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> new ForbiddenException("You do not have access to this shipping address"));
+
+        shippingAddressRepository.findByUserId(user.getId()).forEach(existing ->
+                existing.setIsDefault(existing.getId().equals(id)));
+
+        return mapToResponse(shippingAddressRepository.save(address));
+    }
+
     public ShippingAddressResponse getMyAddressById(String email, Long id) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
