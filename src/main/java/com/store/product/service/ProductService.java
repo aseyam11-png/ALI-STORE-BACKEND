@@ -263,7 +263,10 @@ public class ProductService {
         String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
         return ProductResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
-                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
+                .price(product.getPrice()).discountPercentage(product.getDiscountPercentage()).originalPrice(product.getDiscountPercentage() != null && product.getDiscountPercentage().signum() > 0
+                        ? product.getPrice().divide(BigDecimal.ONE.subtract(product.getDiscountPercentage().divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP)), 2, java.math.RoundingMode.HALF_UP)
+                        : null)
+                .currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
                 .rating(reviewRepository.findByProductId(product.getId()).stream()
                         .map(r -> BigDecimal.valueOf(r.getRating()))
