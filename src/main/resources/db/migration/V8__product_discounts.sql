@@ -1,5 +1,5 @@
 ALTER TABLE products
-    ADD COLUMN IF NOT EXISTS discount_percentage NUMERIC(5, 2) NOT NULL DEFAULT 0
+    ADD COLUMN IF NOT EXISTS discount_percentage NUMERIC(5, 2) DEFAULT 0
         CHECK (discount_percentage >= 0 AND discount_percentage <= 100);
 
 UPDATE products SET discount_percentage = 20 WHERE sku = 'ALI-FASHION-001';
