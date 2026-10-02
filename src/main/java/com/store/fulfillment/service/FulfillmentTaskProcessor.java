@@ -35,6 +35,7 @@ public class FulfillmentTaskProcessor {
     private final ShipmentRepository shipmentRepository;
     private final InventoryService inventoryService;
     private final SupplierFulfillmentClient supplierFulfillmentClient;
+    private final ShipmentService shipmentService;
     private final PlatformTransactionManager transactionManager;
 
     public void processTask(Long taskId) {
@@ -62,16 +63,20 @@ public class FulfillmentTaskProcessor {
 
         Shipment shipment = task.getShipment();
         Order order = orderRepository.findById(shipment.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found with id: " + shipment.getOrderId()));
 
         if (order.getStatus() != OrderStatus.PROCESSING
                 || shipment.getStatus() != ShipmentStatus.PENDING
                 || shipment.getSupplier() == null
                 || shipment.getSupplier().getStatus() != SupplierStatus.ACTIVE
                 || !Boolean.TRUE.equals(shipment.getSupplier().getFulfillmentEnabled())) {
-            task.setStatus(FulfillmentTaskStatus.CANCELLED);
-            task.setLastError("Order, shipment, or supplier is no longer eligible for fulfillment");
-            taskRepository.save(task);
+            cancelTask(task, "Order, shipment, or supplier is no longer eligible for fulfillment");
+            return null;
+        }
+
+        if (task.getAttempts() >= MAX_ATTEMPTS) {
+            permanentlyFail(task, shipment, "Maximum fulfillment attempts reached before a successful supplier response");
             return null;
         }
 
@@ -82,9 +87,7 @@ public class FulfillmentTaskProcessor {
                 .toList();
 
         if (items.isEmpty()) {
-            task.setStatus(FulfillmentTaskStatus.FAILED);
-            task.setLastError("Shipment has no order items for its supplier");
-            taskRepository.save(task);
+            permanentlyFail(task, shipment, "Shipment has no order items for its supplier");
             return null;
         }
 
@@ -113,7 +116,8 @@ public class FulfillmentTaskProcessor {
 
         Shipment shipment = task.getShipment();
         Order order = orderRepository.findById(shipment.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found with id: " + shipment.getOrderId()));
 
         if (order.getStatus() != OrderStatus.PROCESSING || shipment.getStatus() != ShipmentStatus.PENDING) {
             task.setStatus(FulfillmentTaskStatus.CANCELLED);
@@ -148,23 +152,41 @@ public class FulfillmentTaskProcessor {
 
         task.setLastError(safeMessage(ex));
         if (task.getAttempts() >= MAX_ATTEMPTS) {
-            task.setStatus(FulfillmentTaskStatus.FAILED);
             Shipment shipment = task.getShipment();
-            if (shipment.getStatus() == ShipmentStatus.PENDING) {
-                shipment.setStatus(ShipmentStatus.CANCELLED);
-                shipmentRepository.save(shipment);
-            }
-            releaseSupplierReservations(shipment);
+            permanentlyFail(task, shipment, safeMessage(ex));
         } else {
             task.setStatus(FulfillmentTaskStatus.PENDING);
             task.setNextAttemptAt(LocalDateTime.now().plusMinutes(Math.min(30, task.getAttempts() * 2L)));
+            taskRepository.save(task);
         }
+    }
+
+    private void permanentlyFail(FulfillmentTask task, Shipment shipment, String reason) {
+        task.setStatus(FulfillmentTaskStatus.FAILED);
+        task.setLastError(reason);
+        taskRepository.save(task);
+
+        if (shipment.getStatus() == ShipmentStatus.PENDING) {
+            shipment.setStatus(ShipmentStatus.CANCELLED);
+            shipmentRepository.save(shipment);
+        }
+
+        releaseSupplierReservations(shipment);
+        shipmentService.synchronizeOrderStatus(shipment.getOrderId());
+    }
+
+    private void cancelTask(FulfillmentTask task, String reason) {
+        task.setStatus(FulfillmentTaskStatus.CANCELLED);
+        task.setLastError(reason);
         taskRepository.save(task);
     }
 
     private void releaseSupplierReservations(Shipment shipment) {
+        if (shipment.getSupplier() == null) return;
+
         Order order = orderRepository.findById(shipment.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found with id: " + shipment.getOrderId()));
 
         order.getItems().stream()
                 .filter(item -> item.getSupplier() != null
