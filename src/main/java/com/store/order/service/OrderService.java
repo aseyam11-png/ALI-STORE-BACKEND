@@ -187,8 +187,8 @@ public class OrderService {
                     item.getSupplier() == null
                             || item.getSupplierSku() == null
                             || item.getSupplierSku().isBlank()
-                            || item.getSupplierCost() == null
-                            || item.getSupplierCost().signum() <= 0)) {
+                            || item.getSupplierUnitCost() == null
+                            || item.getSupplierUnitCost().signum() <= 0)) {
                 throw new BusinessException("Order cannot enter fulfillment without a valid external supplier mapping");
             }
 
