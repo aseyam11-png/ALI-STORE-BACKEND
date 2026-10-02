@@ -12,6 +12,7 @@ import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.inventory.service.InventoryService;
 import com.store.product.entity.Product;
+import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
@@ -43,7 +44,8 @@ public class CartService {
     public CartResponse addItemToCart(String email, CartItemRequest request) {
         Cart cart = getOrCreateCart(email);
         Product product = productRepository.findById(request.getProductId())
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + request.getProductId()));
+                .filter(candidate -> candidate.getStatus() == ProductStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Active product not found with id: " + request.getProductId()));
 
         int available = inventoryService.getAvailableQuantity(product.getId());
         if (available < request.getQuantity()) {
@@ -56,6 +58,13 @@ public class CartService {
         cartItem.setQuantity(cartItem.getQuantity() + request.getQuantity());
         cartItemRepository.save(cartItem);
 
+        return mapToResponse(cart.getId());
+    }
+
+    @Transactional
+    public CartResponse clearCart(String email) {
+        Cart cart = getOrCreateCart(email);
+        cartItemRepository.deleteByCartId(cart.getId());
         return mapToResponse(cart.getId());
     }
 
