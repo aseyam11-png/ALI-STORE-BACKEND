@@ -10,6 +10,7 @@ import com.store.inventory.enums.PublicAvailability;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,9 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class InventoryService {
+
+    @Value("${app.inventory-sync.stale-after-ms:1800000}")
+    private long staleAfterMs;
 
     private final InventoryRepository inventoryRepository;
 
@@ -141,7 +145,16 @@ public class InventoryService {
     }
 
     private boolean isKnown(Inventory inventory) {
-        return inventory.getLastSyncedAt() != null || inventory.getSource() == InventorySource.MANUAL;
+        if (inventory.getSource() == InventorySource.MANUAL) {
+            return true;
+        }
+        if (inventory.getLastSyncedAt() == null) {
+            return false;
+        }
+        long age = java.time.Duration.between(
+                inventory.getLastSyncedAt(),
+                java.time.LocalDateTime.now()).toMillis();
+        return age >= 0 && age <= staleAfterMs;
     }
 
     private InventoryResponse mapToResponse(Inventory inventory) {
