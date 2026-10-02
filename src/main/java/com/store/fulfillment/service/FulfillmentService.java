@@ -64,6 +64,21 @@ public class FulfillmentService {
         }
     }
 
+    @Transactional
+    public void recoverStaleProcessingTasks() {
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(15);
+        List<FulfillmentTask> tasks = taskRepository
+                .findTop20ByStatusAndUpdatedAtBeforeOrderByIdAsc(FulfillmentTaskStatus.PROCESSING, cutoff);
+
+        tasks.stream()
+                .filter(task -> task.getShipment().getSupplierOrderId() == null)
+                .forEach(task -> {
+                    task.setStatus(FulfillmentTaskStatus.PENDING);
+                    task.setNextAttemptAt(LocalDateTime.now());
+                    taskRepository.save(task);
+                });
+    }
+
     public void processDueTasks() {
         List<Long> taskIds = taskRepository
                 .findTop20ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
