@@ -13,6 +13,7 @@ import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.repository.SupplierRepository;
+import com.store.inventory.enums.InventorySource;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -131,7 +132,7 @@ class PostgresConcurrencyIT {
                 .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category)
                 .supplier(supplier).supplierSku("SUP-SKU-" + sku).supplierCost(new BigDecimal("10.00")).build());
         inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0)
-                .lowStockThreshold(5).build());
+                .lowStockThreshold(5).source(InventorySource.MANUAL).lastSyncedAt(java.time.LocalDateTime.now()).build());
         return product;
     }
 
