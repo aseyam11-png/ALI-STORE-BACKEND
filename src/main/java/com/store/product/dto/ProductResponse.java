@@ -20,10 +20,16 @@ public class ProductResponse {
     private String sku;
     private ProductStatus status;
     private PublicAvailability availability;
+    private BigDecimal rating;
+    private long reviewCount;
     private Long categoryId;
     private String categoryName;
+    private String categorySlug;
     private Long brandId;
     private String brandName;
+    private String brandSlug;
     private List<String> images;
     private String primaryImageUrl;
+    private java.time.LocalDateTime createdAt;
+    private java.time.LocalDateTime updatedAt;
 }
