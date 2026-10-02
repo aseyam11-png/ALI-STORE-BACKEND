@@ -36,11 +36,13 @@ import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
@@ -121,6 +123,7 @@ public class OrderService {
                 .user(user)
                 .status(OrderStatus.PENDING)
                 .shippingAddress(request.getShippingAddress())
+                .reservationExpiresAt(LocalDateTime.now().plusMinutes(30))
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
@@ -160,6 +163,19 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         cartItemRepository.deleteAll(cartItems);
         return mapToResponse(savedOrder);
+    }
+
+    @Scheduled(fixedDelayString = "${app.orders.reservation-expiry-poll-ms:60000}")
+    @Transactional
+    public void expirePendingOrderReservations() {
+        LocalDateTime now = LocalDateTime.now();
+        List<Order> expiredOrders = orderRepository.findTop20ExpiredPendingOrdersForUpdate(now);
+
+        for (Order order : expiredOrders) {
+            releaseOrderReservations(order);
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(order);
+        }
     }
 
     @Transactional(readOnly = true)
