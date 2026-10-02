@@ -60,6 +60,15 @@ public class CartService {
             throw new BusinessException("Insufficient stock for product: " + product.getName());
         }
 
+        List<CartItem> existingItems = cartItemRepository.findByCartId(cart.getId());
+        String productCurrency = product.getCurrency();
+        if (existingItems.stream()
+                .map(item -> item.getProduct().getCurrency())
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(currency -> !currency.equalsIgnoreCase(productCurrency))) {
+            throw new BusinessException("A cart cannot contain products in different currencies");
+        }
+
         CartItem cartItem = cartItemRepository.findByCartIdAndProductId(cart.getId(), product.getId())
                 .orElse(CartItem.builder().cart(cart).product(product).quantity(0).build());
 
