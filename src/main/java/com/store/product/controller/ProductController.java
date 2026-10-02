@@ -49,6 +49,23 @@ public class ProductController {
         return ResponseEntity.ok(ApiResponse.success(productService.getProductBySlug(slug), "Product retrieved successfully"));
     }
 
+    @GetMapping("/admin")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<PageResponse<ProductAdminResponse>>> getAllForAdmin(
+            @org.springframework.data.web.PageableDefault(size = 50, sort = "id") org.springframework.data.domain.Pageable pageable) {
+        return ResponseEntity.ok(ApiResponse.success(
+                productService.getAllForAdmin(pageable),
+                "Admin products retrieved successfully"));
+    }
+
+    @GetMapping("/admin/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<ProductAdminResponse>> getForAdmin(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                productService.getForAdmin(id),
+                "Admin product retrieved successfully"));
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<ProductAdminResponse>> create(@Valid @RequestBody ProductRequest request) {
