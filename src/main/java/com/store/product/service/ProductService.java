@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ProductService {
-    private static final String DEFAULT_CURRENCY = "USD";
+    private static final String DEFAULT_CURRENCY = "SAR";
     private static final int MAX_PAGE_SIZE = 100;
     private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
 
@@ -95,6 +95,7 @@ public class ProductService {
                 .description(request.getDescription())
                 .price(request.getPrice())
                 .currency(currency)
+                .discountPercentage(request.getDiscountPercentage() != null ? request.getDiscountPercentage() : BigDecimal.ZERO)
                 .sku(request.getSku().trim())
                 .category(category)
                 .brand(brand)
@@ -179,6 +180,7 @@ public class ProductService {
         if (request.getDescription() != null) product.setDescription(request.getDescription());
         if (request.getPrice() != null) product.setPrice(request.getPrice());
         if (request.getCurrency() != null && !request.getCurrency().isBlank()) product.setCurrency(request.getCurrency().toUpperCase());
+        if (request.getDiscountPercentage() != null) product.setDiscountPercentage(request.getDiscountPercentage());
         if (request.getCategoryId() != null) product.setCategory(categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + request.getCategoryId())));
         if (request.getBrandId() != null) product.setBrand(brandRepository.findById(request.getBrandId())
@@ -241,7 +243,7 @@ public class ProductService {
         String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
         return ProductResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
-                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
+                .price(product.getPrice()).discountPercentage(product.getDiscountPercentage()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
