@@ -17,7 +17,6 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class Order extends BaseEntity {
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
@@ -28,6 +27,14 @@ public class Order extends BaseEntity {
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
+
+    @Column(name = "shipping_amount", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal shippingAmount = BigDecimal.ZERO;
+
+    @Column(name = "shipping_method", nullable = false, length = 20)
+    @Builder.Default
+    private String shippingMethod = "STANDARD";
 
     @Column(name = "coupon_code")
     private String couponCode;
