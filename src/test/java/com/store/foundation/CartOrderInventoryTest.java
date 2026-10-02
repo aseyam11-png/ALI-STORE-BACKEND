@@ -378,7 +378,7 @@ class CartOrderInventoryTest {
                         .content(objectMapper.writeValueAsString(shipmentBody)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        long shipmentId = objectMapper.readTree(shipmentResponse).path("id").asLong();
+        long shipmentId = objectMapper.readTree(shipmentResponse).path("data").path("id").asLong();
 
         // A customer must not be able to change shipment status (e.g. mark it DELIVERED).
         mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(owner))
