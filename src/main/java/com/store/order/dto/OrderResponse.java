@@ -13,6 +13,9 @@ import java.util.List;
 public class OrderResponse {
     private Long id;
     private OrderStatus status;
+    private BigDecimal subtotalAmount;
+    private BigDecimal shippingAmount;
+    private String shippingMethod;
     private BigDecimal totalAmount;
     private String couponCode;
     private BigDecimal discountAmount;
