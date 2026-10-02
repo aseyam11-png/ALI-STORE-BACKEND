@@ -349,10 +349,20 @@ class CartOrderInventoryTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PROCESSING"));
 
+        Shipment shipment = shipmentRepository.save(Shipment.builder()
+                .orderId(orderId)
+                .supplier(product.getSupplier())
+                .shippingAddressSnapshot("1 Main St")
+                .status(ShipmentStatus.SHIPPED)
+                .build());
+
         mockMvc.perform(patch("/api/v1/admin/orders/" + orderId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("status", "SHIPPED"))))
                 .andExpect(status().isOk());
+
+        shipment.setStatus(ShipmentStatus.DELIVERED);
+        shipmentRepository.saveAndFlush(shipment);
 
         mockMvc.perform(patch("/api/v1/admin/orders/" + orderId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
