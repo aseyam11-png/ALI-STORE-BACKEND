@@ -4,6 +4,7 @@ import com.store.brand.entity.Brand;
 import com.store.category.entity.Category;
 import com.store.common.entity.BaseEntity;
 import com.store.product.enums.ProductStatus;
+import com.store.product.enums.ProductModerationStatus;
 import com.store.supplier.entity.Supplier;
 import jakarta.persistence.*;
 import lombok.*;
@@ -48,6 +49,11 @@ public class Product extends BaseEntity {
     @Column(nullable = false)
     @Builder.Default
     private ProductStatus status = ProductStatus.ACTIVE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false)
+    @Builder.Default
+    private ProductModerationStatus moderationStatus = ProductModerationStatus.PUBLISHED;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = false)
