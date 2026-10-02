@@ -15,6 +15,8 @@ public class ProductAdminResponse {
     private String slug;
     private String description;
     private BigDecimal price;
+    private BigDecimal originalPrice;
+    private BigDecimal discountPercentage;
     private String currency;
     private String sku;
     private ProductStatus status;
