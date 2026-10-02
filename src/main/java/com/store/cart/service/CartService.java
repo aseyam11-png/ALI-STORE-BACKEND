@@ -63,7 +63,7 @@ public class CartService {
     public CartResponse removeItemFromCart(String email, Long itemId) {
         Cart cart = getOrCreateCart(email);
         CartItem item = cartItemRepository.findById(itemId)
-                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found with id: " + itemId));
+                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found: " + itemId));
 
         if (!item.getCart().getId().equals(cart.getId())) {
             throw new ForbiddenException("This cart item does not belong to the current user");
@@ -71,6 +71,12 @@ public class CartService {
 
         cartItemRepository.delete(item);
         return mapToResponse(cart.getId());
+    }
+
+    @Transactional
+    public void clearCart(String email) {
+        Cart cart = getOrCreateCart(email);
+        cartItemRepository.deleteByCartId(cart.getId());
     }
 
     private Cart getOrCreateCart(String email) {
