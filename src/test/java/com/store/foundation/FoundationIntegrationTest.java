@@ -219,8 +219,9 @@ class FoundationIntegrationTest {
         User admin = createUser("catalog-admin@example.com", adminRole);
         Category category = categoryRepository.save(Category.builder()
                 .name("Phones").slug("phones").active(true).build());
-        Supplier supplier = supplierRepository.save(Supplier.builder()
-                .externalCode("TEST-SUPPLIER").name("Test Supplier").build());
+        Supplier supplier = supplierRepository.findByExternalCode("TEST-SUPPLIER")
+                .orElseGet(() -> supplierRepository.save(
+                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build()));
 
         Map<String, Object> body = Map.of(
                 "name", "Test Phone", "price", 199.99, "sku", "PHN-001",
