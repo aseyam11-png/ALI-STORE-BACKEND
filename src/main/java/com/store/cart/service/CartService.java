@@ -26,7 +26,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CartService {
-
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final ProductRepository productRepository;
@@ -43,19 +42,45 @@ public class CartService {
     public CartResponse addItemToCart(String email, CartItemRequest request) {
         Cart cart = getOrCreateCart(email);
         Product product = productRepository.findById(request.getProductId())
+                .filter(p -> p.getStatus() == com.store.product.enums.ProductStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + request.getProductId()));
 
+        int existingQuantity = cartItemRepository.findByCartIdAndProductId(cart.getId(), product.getId())
+                .map(CartItem::getQuantity)
+                .orElse(0);
+
+        int requestedTotal = existingQuantity + request.getQuantity();
         int available = inventoryService.getAvailableQuantity(product.getId());
-        if (available < request.getQuantity()) {
+        if (available < requestedTotal) {
             throw new BusinessException("Insufficient stock for product: " + product.getName());
         }
 
         CartItem cartItem = cartItemRepository.findByCartIdAndProductId(cart.getId(), product.getId())
                 .orElse(CartItem.builder().cart(cart).product(product).quantity(0).build());
-
-        cartItem.setQuantity(cartItem.getQuantity() + request.getQuantity());
+        cartItem.setQuantity(requestedTotal);
         cartItemRepository.save(cartItem);
+        return mapToResponse(cart.getId());
+    }
 
+    @Transactional
+    public CartResponse updateItemQuantity(String email, Long itemId, int quantity) {
+        if (quantity < 1) throw new BusinessException("Quantity must be at least 1");
+
+        Cart cart = getOrCreateCart(email);
+        CartItem item = cartItemRepository.findById(itemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found with id: " + itemId));
+
+        if (!item.getCart().getId().equals(cart.getId())) {
+            throw new ForbiddenException("This cart item does not belong to the current user");
+        }
+
+        int available = inventoryService.getAvailableQuantity(item.getProduct().getId());
+        if (available < quantity) {
+            throw new BusinessException("Insufficient stock for product: " + item.getProduct().getName());
+        }
+
+        item.setQuantity(quantity);
+        cartItemRepository.save(item);
         return mapToResponse(cart.getId());
     }
 
@@ -73,10 +98,16 @@ public class CartService {
         return mapToResponse(cart.getId());
     }
 
+    @Transactional
+    public CartResponse clearCart(String email) {
+        Cart cart = getOrCreateCart(email);
+        cartItemRepository.deleteAll(cartItemRepository.findByCartId(cart.getId()));
+        return mapToResponse(cart.getId());
+    }
+
     private Cart getOrCreateCart(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
         return cartRepository.findByUserId(user.getId())
                 .orElseGet(() -> cartRepository.save(Cart.builder().user(user).build()));
     }
@@ -94,14 +125,9 @@ public class CartService {
                     .build();
         }).collect(Collectors.toList());
 
-        BigDecimal totalPrice = itemResponses.stream()
-                .map(CartItemResponse::getSubTotal)
+        BigDecimal totalPrice = itemResponses.stream().map(CartItemResponse::getSubTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return CartResponse.builder()
-                .id(cartId)
-                .items(itemResponses)
-                .totalPrice(totalPrice)
-                .build();
+        return CartResponse.builder().id(cartId).items(itemResponses).totalPrice(totalPrice).build();
     }
 }

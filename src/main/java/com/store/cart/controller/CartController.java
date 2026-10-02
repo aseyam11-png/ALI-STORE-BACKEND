@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/cart")
 @RequiredArgsConstructor
 public class CartController {
-
     private final CartService cartService;
 
     @GetMapping
@@ -30,10 +29,29 @@ public class CartController {
         return ResponseEntity.ok(ApiResponse.success(cartService.addItemToCart(userDetails.getUsername(), request), "Item added to cart"));
     }
 
+    @PutMapping("/items/{itemId}")
+    public ResponseEntity<ApiResponse<CartResponse>> updateItemQuantity(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long itemId,
+            @Valid @RequestBody CartItemRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                cartService.updateItemQuantity(userDetails.getUsername(), itemId, request.getQuantity()),
+                "Cart item quantity updated"));
+    }
+
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<ApiResponse<CartResponse>> removeItem(
             @AuthenticationPrincipal UserDetails userDetails,
             @PathVariable Long itemId) {
-        return ResponseEntity.ok(ApiResponse.success(cartService.removeItemFromCart(userDetails.getUsername(), itemId), "Item removed from cart"));
+        return ResponseEntity.ok(ApiResponse.success(
+                cartService.removeItemFromCart(userDetails.getUsername(), itemId),
+                "Item removed from cart"));
+    }
+
+    @DeleteMapping
+    public ResponseEntity<ApiResponse<CartResponse>> clearCart(@AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success(
+                cartService.clearCart(userDetails.getUsername()),
+                "Cart cleared"));
     }
 }
