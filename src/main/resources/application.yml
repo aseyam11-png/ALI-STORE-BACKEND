@@ -45,6 +45,13 @@ app:
   auth:
     cookie-name: ${AUTH_COOKIE_NAME:ali_store_session}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
+    cookie-same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+  shipping:
+    standard-rate: ${SHIPPING_STANDARD_RATE:0}
+    express-rate: ${SHIPPING_EXPRESS_RATE:8}
+    free-threshold: ${SHIPPING_FREE_THRESHOLD:0}
+    standard-estimate: ${SHIPPING_STANDARD_ESTIMATE:7-15 business days}
+    express-estimate: ${SHIPPING_EXPRESS_ESTIMATE:3-7 business days}
   fulfillment:
     enabled: ${FULFILLMENT_ENABLED:false}
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}
