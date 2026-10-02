@@ -19,5 +19,13 @@ public class ShippingAddressRequest {
 
     private String postalCode;
 
+    private String label;
+    private String recipientName;
+    private String phone;
+    private String area;
+    private String building;
+    private String apartment;
+    private String notes;
+
     private Boolean isDefault;
 }
