@@ -254,6 +254,7 @@ public class OrderService {
 
         if (newStatus == OrderStatus.CANCELLED) {
             validateCancellationAllowed(order);
+            fulfillmentService.cancelPendingWorkForOrder(orderId);
             releaseRemainingOrderReservations(order);
         }
 
@@ -266,7 +267,11 @@ public class OrderService {
     private void validateCancellationAllowed(Order order) {
         var shipments = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId());
         if (shipments.stream().anyMatch(shipment ->
-                shipment.getSupplierOrderId() != null || shipment.getStatus() != com.store.shipping.entity.ShipmentStatus.PENDING)) {
+                shipment.getSupplierOrderId() != null
+                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.PROCESSING
+                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.SHIPPED
+                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.IN_TRANSIT
+                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.DELIVERED)) {
             throw new BusinessException("Order cannot be cancelled after supplier fulfillment has started");
         }
         for (var shipment : shipments) {
