@@ -22,7 +22,9 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 
     Optional<Shipment> findByTrackingNumber(String trackingNumber);
 
-    Optional<Shipment> findBySupplierOrderId(String supplierOrderId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Shipment s join fetch s.supplier where s.supplierOrderId = :supplierOrderId")
+    Optional<Shipment> findBySupplierOrderIdForUpdate(String supplierOrderId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Shipment s join fetch s.supplier where s.id = :id")
