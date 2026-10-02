@@ -38,6 +38,9 @@ public class Order extends BaseEntity {
     @Column(nullable = false)
     private String shippingAddress;
 
+    @Column(name = "reservation_expires_at", nullable = false)
+    private java.time.LocalDateTime reservationExpiresAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
