@@ -60,6 +60,26 @@ public class CartService {
     }
 
     @Transactional
+    public CartResponse setItemQuantity(String email, Long productId, int quantity) {
+        if (quantity < 1) {
+            throw new BusinessException("Quantity must be at least 1");
+        }
+
+        Cart cart = getOrCreateCart(email);
+        CartItem item = cartItemRepository.findByCartIdAndProductId(cart.getId(), productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found for product id: " + productId));
+
+        int available = inventoryService.getAvailableQuantity(productId);
+        if (available < quantity) {
+            throw new BusinessException("Insufficient stock for product: " + item.getProduct().getName());
+        }
+
+        item.setQuantity(quantity);
+        cartItemRepository.save(item);
+        return mapToResponse(cart.getId());
+    }
+
+    @Transactional
     public CartResponse removeItemFromCart(String email, Long itemId) {
         Cart cart = getOrCreateCart(email);
         CartItem item = cartItemRepository.findById(itemId)
