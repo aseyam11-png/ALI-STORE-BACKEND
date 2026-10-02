@@ -21,7 +21,6 @@ public class SupplierInventorySyncService {
     private final PricingRuleService pricingRuleService;
     private final SupplierInventoryClient supplierInventoryClient;
 
-    @Transactional
     public void syncAll() {
         productRepository.findAll().stream()
                 .filter(p -> p.getSupplier() != null)
