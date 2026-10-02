@@ -259,7 +259,7 @@ class CartOrderInventoryTest {
         // so the coupon is validated/redeemed successfully but the later inventory check fails.
         Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
         inventory.setQuantity(0);
-        inventoryRepository.save(inventory);
+        inventoryRepository.saveAndFlush(inventory);
 
         mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(user))
                         .contentType(MediaType.APPLICATION_JSON)
