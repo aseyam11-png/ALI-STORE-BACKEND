@@ -11,6 +11,13 @@ import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.order.entity.Order;
+import com.store.order.entity.OrderItem;
+import com.store.order.entity.OrderStatus;
+import com.store.order.repository.OrderRepository;
+import com.store.shipping.entity.Shipment;
+import com.store.shipping.entity.ShipmentStatus;
+import com.store.shipping.repository.ShipmentRepository;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.repository.SupplierRepository;
 import com.store.inventory.enums.InventorySource;
@@ -34,7 +41,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -63,6 +72,8 @@ class CartOrderInventoryTest {
     @Autowired private SupplierRepository supplierRepository;
     @Autowired private InventoryRepository inventoryRepository;
     @Autowired private CouponRepository couponRepository;
+    @Autowired private OrderRepository orderRepository;
+    @Autowired private ShipmentRepository shipmentRepository;
 
     private Role userRole;
     private Role adminRole;
@@ -358,75 +369,72 @@ class CartOrderInventoryTest {
 
     @Test
     void shipments_areAdminManagedAndOwnershipCheckedOnRead() throws Exception {
-        // Regression test for a CRITICAL IDOR: ShipmentController previously had zero access
-        // control, letting any authenticated customer create/mutate shipments for any order
-        // and read any other customer's shipment/tracking data.
         User owner = createUser("shipmentowner@example.com");
         User intruder = createUser("shipmentintruder@example.com");
         User admin = createAdmin("shipmentadmin@example.com");
         Product product = productWithStock("SHIP-1", 5);
+        Order order = createProcessingOrder(owner, product);
 
-        mockMvc.perform(post("/api/v1/cart/items").header("Authorization", "Bearer " + tokenFor(owner))
+        String addressResponse = mockMvc.perform(post("/api/v1/shipping-addresses")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("productId", product.getId(), "quantity", 1))))
-                .andExpect(status().isOk());
-        String orderResponse = mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St"))))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        long orderId = objectMapper.readTree(orderResponse).path("data").path("id").asLong();
-
-        String addressResponse = mockMvc.perform(post("/api/v1/shipping-addresses").header("Authorization", "Bearer " + tokenFor(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("street", "1 Main St", "city", "Gaza", "country", "PS"))))
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("street", "1 Main St", "city", "Gaza", "country", "PS"))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long addressId = objectMapper.readTree(addressResponse).path("data").path("id").asLong();
 
-        Map<String, Object> shipmentBody = Map.of("orderId", orderId, "supplierId", supplier.getId(), "shippingAddressId", addressId, "carrier", "DHL");
+        Map<String, Object> shipmentBody = Map.of(
+                "orderId", order.getId(),
+                "supplierId", supplier.getId(),
+                "shippingAddressId", addressId,
+                "carrier", "DHL");
 
-        // A customer must not be able to create a shipment at all.
-        mockMvc.perform(post("/api/v1/shipments").header("Authorization", "Bearer " + tokenFor(owner))
+        mockMvc.perform(post("/api/v1/shipments")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(shipmentBody)))
                 .andExpect(status().isForbidden());
 
-        String shipmentResponse = mockMvc.perform(post("/api/v1/shipments").header("Authorization", "Bearer " + tokenFor(admin))
+        String shipmentResponse = mockMvc.perform(post("/api/v1/shipments")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(shipmentBody)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long shipmentId = objectMapper.readTree(shipmentResponse).path("data").path("id").asLong();
 
-        // A customer must not be able to change shipment status (e.g. mark it DELIVERED).
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(owner))
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
                         .param("status", "DELIVERED"))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
-                        .param("status", "PROCESSING"))
-                .andExpect(status().isOk());
+        // Supplier acceptance is what moves PENDING -> PROCESSING.
+        Shipment shipment = shipmentRepository.findById(shipmentId).orElseThrow();
+        shipment.setStatus(ShipmentStatus.PROCESSING);
+        shipmentRepository.saveAndFlush(shipment);
 
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "SHIPPED"))
                 .andExpect(status().isOk());
 
-        // Only the order's owner can read its shipment - not an arbitrary other customer.
-        mockMvc.perform(get("/api/v1/shipments/order/" + orderId).header("Authorization", "Bearer " + tokenFor(intruder)))
+        mockMvc.perform(get("/api/v1/shipments/order/" + order.getId())
+                        .header("Authorization", "Bearer " + tokenFor(intruder)))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(get("/api/v1/shipments/order/" + orderId).header("Authorization", "Bearer " + tokenFor(owner)))
+        mockMvc.perform(get("/api/v1/shipments/order/" + order.getId())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
                 .andExpect(status().isOk());
 
-        // State machine: SHIPPED -> DELIVERED is legal ...
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "DELIVERED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("DELIVERED"));
 
-        // ... but DELIVERED is terminal: no transition back to SHIPPED is allowed.
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "SHIPPED"))
                 .andExpect(status().isBadRequest());
     }
@@ -436,44 +444,69 @@ class CartOrderInventoryTest {
         User owner = createUser("shipstatecustomer@example.com");
         User admin = createAdmin("shipstateadmin@example.com");
         Product product = productWithStock("SHIPSTATE-1", 5);
+        Order order = createProcessingOrder(owner, product);
 
-        mockMvc.perform(post("/api/v1/cart/items").header("Authorization", "Bearer " + tokenFor(owner))
+        String addressResponse = mockMvc.perform(post("/api/v1/shipping-addresses")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("productId", product.getId(), "quantity", 1))))
-                .andExpect(status().isOk());
-        String orderResponse = mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St"))))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        long orderId = objectMapper.readTree(orderResponse).path("data").path("id").asLong();
-        String addressResponse = mockMvc.perform(post("/api/v1/shipping-addresses").header("Authorization", "Bearer " + tokenFor(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("street", "1 Main St", "city", "Gaza", "country", "PS"))))
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("street", "1 Main St", "city", "Gaza", "country", "PS"))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long addressId = objectMapper.readTree(addressResponse).path("data").path("id").asLong();
 
-        String shipmentResponse = mockMvc.perform(post("/api/v1/shipments").header("Authorization", "Bearer " + tokenFor(admin))
+        String shipmentResponse = mockMvc.perform(post("/api/v1/shipments")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("orderId", orderId, "supplierId", supplier.getId(), "shippingAddressId", addressId))))
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("orderId", order.getId(),
+                                        "supplierId", supplier.getId(),
+                                        "shippingAddressId", addressId))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long shipmentId = objectMapper.readTree(shipmentResponse).path("data").path("id").asLong();
 
-        // PENDING -> DELIVERED skips SHIPPED/IN_TRANSIT entirely - illegal.
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "DELIVERED"))
                 .andExpect(status().isBadRequest());
 
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "CANCELLED"))
                 .andExpect(status().isOk());
 
-        // CANCELLED is terminal - cannot be resurrected into DELIVERED (or anything else).
-        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "DELIVERED"))
                 .andExpect(status().isBadRequest());
+    }
+
+    private Order createProcessingOrder(User user, Product product) {
+        Order order = Order.builder()
+                .user(user)
+                .status(OrderStatus.PROCESSING)
+                .totalAmount(product.getPrice())
+                .currency(product.getCurrency())
+                .discountAmount(BigDecimal.ZERO)
+                .shippingAddress("1 Main St")
+                .reservationExpiresAt(java.time.LocalDateTime.now().plusMinutes(30))
+                .items(new ArrayList<>())
+                .build();
+
+        OrderItem item = OrderItem.builder()
+                .order(order)
+                .product(product)
+                .supplier(product.getSupplier())
+                .supplierSku(product.getSupplierSku())
+                .supplierUnitCost(product.getSupplierCost())
+                .quantity(1)
+                .unitPrice(product.getPrice())
+                .subtotal(product.getPrice())
+                .build();
+
+        order.getItems().add(item);
+        return orderRepository.save(order);
     }
 
     // NOTE: an automated multi-threaded regression test for the checkout double-submit race
