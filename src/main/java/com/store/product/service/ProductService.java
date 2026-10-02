@@ -10,6 +10,7 @@ import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.PageResponse;
 import com.store.common.util.SlugUtils;
 import com.store.inventory.enums.PublicAvailability;
+import com.store.review.repository.ReviewRepository;
 import com.store.inventory.service.InventoryService;
 import com.store.product.dto.ProductAdminResponse;
 import com.store.product.dto.ProductRequest;
@@ -40,7 +41,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ProductService {
-    private static final String DEFAULT_CURRENCY = "USD";
+    private static final String DEFAULT_CURRENCY = "SAR";
     private static final int MAX_PAGE_SIZE = 100;
     private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
 
@@ -49,6 +50,7 @@ public class ProductService {
     private final BrandRepository brandRepository;
     private final SupplierRepository supplierRepository;
     private final InventoryService inventoryService;
+    private final ReviewRepository reviewRepository;
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
@@ -114,7 +116,7 @@ public class ProductService {
         return mapToAdminResponse(saved);
     }
 
-    public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, Long brandId,
+    public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, String categorySlug, Long brandId, String brandSlug,
                                                          BigDecimal minPrice, BigDecimal maxPrice,
                                                          PublicAvailability availability, String sort,
                                                          int page, int pageSize) {
@@ -125,8 +127,23 @@ public class ProductService {
 
         Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE));
         if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.nameOrSkuContains(q.trim()));
-        if (categoryId != null) spec = spec.and(ProductSpecifications.inCategory(categoryId));
-        if (brandId != null) spec = spec.and(ProductSpecifications.hasBrand(brandId));
+        if (categoryId != null) {
+            spec = spec.and(ProductSpecifications.inCategory(categoryId));
+        } else if (categorySlug != null && !categorySlug.isBlank()) {
+            Long resolvedCategoryId = categoryRepository.findBySlug(categorySlug.trim())
+                    .map(Category::getId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Category not found with slug: " + categorySlug));
+            spec = spec.and(ProductSpecifications.inCategory(resolvedCategoryId));
+        }
+
+        if (brandId != null) {
+            spec = spec.and(ProductSpecifications.hasBrand(brandId));
+        } else if (brandSlug != null && !brandSlug.isBlank()) {
+            Long resolvedBrandId = brandRepository.findByNameIgnoreCase(brandSlug.trim())
+                    .map(Brand::getId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Brand not found with name: " + brandSlug));
+            spec = spec.and(ProductSpecifications.hasBrand(resolvedBrandId));
+        }
         if (minPrice != null) spec = spec.and(ProductSpecifications.priceGreaterThanOrEqual(minPrice));
         if (maxPrice != null) spec = spec.and(ProductSpecifications.priceLessThanOrEqual(maxPrice));
         if (availability == PublicAvailability.IN_STOCK || availability == PublicAvailability.OUT_OF_STOCK) {
@@ -139,11 +156,13 @@ public class ProductService {
     }
 
     private Sort resolveSort(String sort) {
-        if (sort == null || sort.isBlank() || sort.equals("relevance")) return Sort.by(Sort.Direction.ASC, "id");
+        if (sort == null || sort.isBlank() || sort.equals("relevance")) {
+            return Sort.by(Sort.Direction.ASC, "id");
+        }
         return switch (sort) {
             case "price_asc" -> Sort.by(Sort.Direction.ASC, "price");
             case "price_desc" -> Sort.by(Sort.Direction.DESC, "price");
-            case "rating_desc", "reviews_desc" -> throw new BusinessException("Sort '" + sort + "' is not supported: no review/rating aggregation exists yet");
+            case "newest" -> Sort.by(Sort.Direction.DESC, "createdAt");
             default -> throw new BusinessException("Unsupported sort: " + sort);
         };
     }
@@ -212,6 +231,9 @@ public class ProductService {
         if (supplier.getStatus() != SupplierStatus.ACTIVE || !Boolean.TRUE.equals(supplier.getFulfillmentEnabled())) {
             throw new BusinessException("Supplier is not active for fulfillment");
         }
+        if (supplier.getApiBaseUrl() == null || supplier.getApiBaseUrl().isBlank()) {
+            throw new BusinessException("Supplier fulfillment API is not configured");
+        }
     }
 
     private void validateSupplierCost(BigDecimal sellingPrice, BigDecimal supplierCost) {
@@ -243,10 +265,17 @@ public class ProductService {
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
                 .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
-                .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
+                .rating(reviewRepository.findByProductId(product.getId()).stream()
+                        .map(r -> BigDecimal.valueOf(r.getRating()))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
+                        .divide(BigDecimal.valueOf(Math.max(1, reviewRepository.findByProductId(product.getId()).size())), 2, java.math.RoundingMode.HALF_UP))
+                .reviewCount(reviewRepository.findByProductId(product.getId()).size())
+                .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName()).categorySlug(product.getCategory().getSlug())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
-                .images(imageUrls).primaryImageUrl(primaryImageUrl).build();
+                .brandSlug(product.getBrand() != null ? com.store.common.util.SlugUtils.slugify(product.getBrand().getName()) : null)
+                .images(imageUrls).primaryImageUrl(primaryImageUrl)
+                .createdAt(product.getCreatedAt()).updatedAt(product.getUpdatedAt()).build();
     }
 
     private ProductAdminResponse mapToAdminResponse(Product product) {
