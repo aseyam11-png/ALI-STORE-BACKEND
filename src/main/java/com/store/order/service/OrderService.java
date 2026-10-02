@@ -155,6 +155,17 @@ public class OrderService {
         return mapToResponse(savedOrder);
     }
 
+    public PageResponse<OrderResponse> getAllOrdersForAdmin(Pageable pageable) {
+        Page<OrderResponse> page = orderRepository.findAll(pageable).map(this::mapToResponse);
+        return PageResponse.of(
+                page.getContent(),
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.isLast());
+    }
+
     public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -264,6 +275,9 @@ public class OrderService {
                 .id(order.getId())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())
+                .currency(order.getItems().isEmpty()
+                        ? "USD"
+                        : order.getItems().get(0).getProduct().getCurrency())
                 .shippingAmount(order.getShippingAmount())
                 .shippingMethod(order.getShippingMethod())
                 .couponCode(order.getCouponCode())
