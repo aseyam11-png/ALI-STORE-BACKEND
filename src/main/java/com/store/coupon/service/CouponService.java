@@ -9,6 +9,7 @@ import com.store.coupon.entity.Coupon;
 import com.store.coupon.repository.CouponRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -22,18 +23,13 @@ public class CouponService {
     private final CouponRepository couponRepository;
 
     public List<CouponResponse> getAllCoupons() {
-        return couponRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
+        return couponRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
     public CouponResponse getCouponByCode(String code) {
         return mapToResponse(validateAndGetCoupon(code));
     }
 
-    // Shared by getCouponByCode (customer lookup) and OrderService (checkout) so both
-    // paths enforce the exact same active/expiry rule - checkout must never trust a
-    // coupon a client claims is valid without re-validating it server-side.
     public Coupon validateAndGetCoupon(String code) {
         String normalizedCode = code == null ? null : code.trim().toUpperCase();
         if (normalizedCode == null || normalizedCode.isBlank()) {
@@ -43,7 +39,8 @@ public class CouponService {
         Coupon coupon = couponRepository.findByCode(normalizedCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Coupon not found: " + normalizedCode));
 
-        if (!coupon.getIsActive() || coupon.getExpirationDate().isBefore(LocalDateTime.now())) {
+        if (!Boolean.TRUE.equals(coupon.getIsActive())
+                || !coupon.getExpirationDate().isAfter(LocalDateTime.now())) {
             throw new BusinessException("Coupon is expired or inactive");
         }
 
@@ -51,28 +48,28 @@ public class CouponService {
     }
 
     public void checkMinimumOrder(Coupon coupon, BigDecimal orderSubtotal) {
-        if (coupon.getMinimumOrderAmount() != null && orderSubtotal.compareTo(coupon.getMinimumOrderAmount()) < 0) {
-            throw new BusinessException("Order subtotal does not meet this coupon's minimum of " + coupon.getMinimumOrderAmount());
+        if (coupon.getMinimumOrderAmount() != null
+                && orderSubtotal.compareTo(coupon.getMinimumOrderAmount()) < 0) {
+            throw new BusinessException(
+                    "Order subtotal does not meet this coupon's minimum of " + coupon.getMinimumOrderAmount());
         }
     }
 
-    // Must be called within the caller's own transaction (see OrderService.createOrder) so
-    // that if order creation fails afterwards for any other reason, this redemption rolls
-    // back with it rather than permanently consuming a use for an order that never happened.
     public void redeem(Coupon coupon) {
-        int updated = couponRepository.tryRedeem(coupon.getId());
-        if (updated == 0) {
+        if (couponRepository.tryRedeem(coupon.getId()) == 0) {
             throw new BusinessException("This coupon has reached its usage limit");
         }
     }
 
+    @Transactional
     public CouponResponse createCoupon(CouponRequest request) {
-        if (couponRepository.existsByCode(request.getCode())) {
+        String code = request.getCode().trim().toUpperCase();
+        if (couponRepository.existsByCode(code)) {
             throw new ConflictException("Coupon code already exists");
         }
 
         Coupon coupon = Coupon.builder()
-                .code(request.getCode().trim().toUpperCase())
+                .code(code)
                 .discountPercentage(request.getDiscountPercentage())
                 .expirationDate(request.getExpirationDate())
                 .isActive(true)
@@ -81,19 +78,18 @@ public class CouponService {
                 .timesUsed(0)
                 .build();
 
-        Coupon savedCoupon = couponRepository.save(coupon);
-        return mapToResponse(savedCoupon);
+        return mapToResponse(couponRepository.save(coupon));
     }
 
+    @Transactional
     public CouponResponse toggleCouponStatus(Long id) {
         Coupon coupon = couponRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Coupon not found with id: " + id));
-
-        coupon.setIsActive(!coupon.getIsActive());
-        Coupon updatedCoupon = couponRepository.save(coupon);
-        return mapToResponse(updatedCoupon);
+        coupon.setIsActive(!Boolean.TRUE.equals(coupon.getIsActive()));
+        return mapToResponse(couponRepository.save(coupon));
     }
 
+    @Transactional
     public void deleteCoupon(Long id) {
         if (!couponRepository.existsById(id)) {
             throw new ResourceNotFoundException("Coupon not found with id: " + id);
