@@ -39,7 +39,7 @@ public class ShippingQuoteService {
         return switch (normalized) {
             case "STANDARD" -> ShippingQuoteResponse.builder()
                     .method("STANDARD")
-                    .amount(safeSubtotal.compareTo(freeShippingThreshold) >= 0 ? BigDecimal.ZERO : standardRate)
+                    .amount(safeSubtotal.compareTo(freeShippingThreshold) >= 0 ? BigDecimal.ZERO.setScale(2) : standardRate)
                     .currency(CURRENCY)
                     .estimatedDelivery(standardEstimate)
                     .build();
