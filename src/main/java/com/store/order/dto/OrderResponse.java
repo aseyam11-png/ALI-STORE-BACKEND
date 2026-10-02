@@ -19,6 +19,7 @@ public class OrderResponse {
     private String couponCode;
     private BigDecimal discountAmount;
     private String paymentStatus;
+    private String paymentMethod;
     private String shippingAddress;
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;
