@@ -86,10 +86,16 @@ public class AuthController {
         String name = environment.getProperty("app.auth.cookie-name",
                 environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
 
+        String sameSite = environment.getProperty("app.auth.cookie-same-site",
+                environment.getProperty("AUTH_COOKIE_SAME_SITE", secure ? "None" : "Lax"));
+        if ("None".equalsIgnoreCase(sameSite) && !secure) {
+            throw new IllegalStateException("SameSite=None requires AUTH_COOKIE_SECURE=true");
+        }
+
         return ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(secure)
-                .sameSite("Strict")
+                .sameSite(sameSite)
                 .path("/")
                 .maxAge(maxAgeSeconds)
                 .build();
