@@ -62,11 +62,20 @@ public class ProductService {
         Brand brand = request.getBrandId() == null ? null : brandRepository.findById(request.getBrandId())
                 .orElseThrow(() -> new ResourceNotFoundException("Brand not found with id: " + request.getBrandId()));
 
-        Supplier supplier = supplierRepository.findById(request.getSupplierId())
-                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + request.getSupplierId()));
+        Supplier supplier = null;
+        if (request.getSupplierId() != null) {
+            supplier = supplierRepository.findById(request.getSupplierId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + request.getSupplierId()));
+            ensureSupplierCanFulfill(supplier);
+        }
 
-        ensureSupplierCanFulfill(supplier);
-        validateSupplierCost(request.getPrice(), request.getSupplierCost());
+        if (request.getSupplierCost() != null) {
+            validateSupplierCost(request.getPrice(), request.getSupplierCost());
+        }
+
+        if (request.getSupplierId() != null && (request.getSupplierSku() == null || request.getSupplierSku().isBlank())) {
+            throw new BusinessException("Supplier SKU is required when a supplier is mapped");
+        }
 
         String slug = request.getSlug() != null && !request.getSlug().isBlank()
                 ? SlugUtils.slugify(request.getSlug())
@@ -90,7 +99,7 @@ public class ProductService {
                 .category(category)
                 .brand(brand)
                 .supplier(supplier)
-                .supplierSku(request.getSupplierSku().trim())
+                .supplierSku(request.getSupplierSku() == null ? null : request.getSupplierSku().trim())
                 .supplierCost(request.getSupplierCost())
                 .status(ProductStatus.DRAFT)
                 .build();
