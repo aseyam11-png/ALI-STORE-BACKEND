@@ -27,6 +27,15 @@ public class Order extends BaseEntity {
     private OrderStatus status;
 
     @Column(nullable = false, precision = 10, scale = 2)
+    private BigDecimal subtotalAmount;
+
+    @Column(nullable = false, precision = 10, scale = 2)
+    private BigDecimal shippingAmount;
+
+    @Column(nullable = false, length = 30)
+    private String shippingMethod;
+
+    @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
 
     @Column(name = "coupon_code")
