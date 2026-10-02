@@ -29,6 +29,7 @@ import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.repository.ShipmentRepository;
+import com.store.shipping.service.ShippingQuoteService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -66,6 +67,7 @@ public class OrderService {
     private final CouponService couponService;
     private final PaymentRepository paymentRepository;
     private final ShipmentRepository shipmentRepository;
+    private final ShippingQuoteService shippingQuoteService;
     private final FulfillmentService fulfillmentService;
 
     @Transactional
@@ -99,12 +101,18 @@ public class OrderService {
             couponService.redeem(coupon);
         }
 
-        BigDecimal totalAmount = subtotal.subtract(discountAmount);
+        var shippingQuote = shippingQuoteService.quote(request.getShippingMethod(), subtotal);
+        BigDecimal totalAmount = subtotal
+                .subtract(discountAmount)
+                .add(shippingQuote.getAmount());
 
         Order order = Order.builder()
                 .user(user)
                 .status(OrderStatus.PENDING)
-                .shippingAddress(request.getShippingAddress())
+                .shippingAddress(request.getShippingAddress().trim())
+                .subtotalAmount(subtotal)
+                .shippingAmount(shippingQuote.getAmount())
+                .shippingMethod(shippingQuote.getMethod())
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
@@ -253,6 +261,9 @@ public class OrderService {
         return OrderResponse.builder()
                 .id(order.getId())
                 .status(order.getStatus())
+                .subtotalAmount(order.getSubtotalAmount())
+                .shippingAmount(order.getShippingAmount())
+                .shippingMethod(order.getShippingMethod())
                 .totalAmount(order.getTotalAmount())
                 .couponCode(order.getCouponCode())
                 .discountAmount(order.getDiscountAmount())
