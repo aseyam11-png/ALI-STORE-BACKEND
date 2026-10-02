@@ -270,6 +270,7 @@ public class ProductService {
                         .reduce(BigDecimal.ZERO, BigDecimal::add)
                         .divide(BigDecimal.valueOf(Math.max(1, reviewRepository.findByProductId(product.getId()).size())), 2, java.math.RoundingMode.HALF_UP))
                 .reviewCount(reviewRepository.findByProductId(product.getId()).size())
+                .availableQuantity(inventoryService.getAvailableQuantity(product.getId()))
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName()).categorySlug(product.getCategory().getSlug())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
