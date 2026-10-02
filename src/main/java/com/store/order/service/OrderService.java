@@ -31,6 +31,7 @@ import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.entity.ShipmentStatus;
+import com.store.supplier.entity.SupplierStatus;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -128,9 +129,14 @@ public class OrderService {
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
             var product = cartItem.getProduct();
 
-            if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
-                    || product.getSupplierCost() == null) {
-                throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
+            if (product.getSupplier() == null
+                    || product.getSupplier().getStatus() != SupplierStatus.ACTIVE
+                    || !Boolean.TRUE.equals(product.getSupplier().getFulfillmentEnabled())
+                    || product.getSupplierSku() == null
+                    || product.getSupplierSku().isBlank()
+                    || product.getSupplierCost() == null
+                    || product.getSupplierCost().signum() <= 0) {
+                throw new BusinessException("Product is not configured for an active supplier fulfillment flow: " + product.getId());
             }
 
             inventoryService.reserveStock(product.getId(), cartItem.getQuantity());
@@ -203,11 +209,13 @@ public class OrderService {
         if (newStatus == OrderStatus.PROCESSING) {
             if (order.getItems().stream().anyMatch(item ->
                     item.getSupplier() == null
+                            || item.getSupplier().getStatus() != SupplierStatus.ACTIVE
+                            || !Boolean.TRUE.equals(item.getSupplier().getFulfillmentEnabled())
                             || item.getSupplierSku() == null
                             || item.getSupplierSku().isBlank()
                             || item.getSupplierUnitCost() == null
                             || item.getSupplierUnitCost().signum() <= 0)) {
-                throw new BusinessException("Order cannot enter fulfillment without a valid external supplier mapping");
+                throw new BusinessException("Order cannot enter fulfillment without an active supplier mapping");
             }
 
             Payment payment = paymentRepository.findByOrderId(orderId)
