@@ -58,3 +58,7 @@ app:
     api-token: ${SUPPLIER_API_TOKEN:}
     webhook-token: ${SUPPLIER_WEBHOOK_TOKEN:}
     poll-ms: ${FULFILLMENT_POLL_MS:10000}
+    inventory-sync-enabled: ${SUPPLIER_INVENTORY_SYNC_ENABLED:false}
+    inventory-poll-ms: ${SUPPLIER_INVENTORY_POLL_MS:60000}
+    inventory-initial-delay-ms: ${SUPPLIER_INVENTORY_INITIAL_DELAY_MS:15000}
+    inventory-api-path: ${SUPPLIER_INVENTORY_API_PATH:/v1/inventory}
