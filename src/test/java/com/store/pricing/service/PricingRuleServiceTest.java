@@ -57,9 +57,6 @@ class PricingRuleServiceTest {
 
         when(pricingRuleRepository.findByActiveTrueAndProductIdOrderByPriorityDescIdAsc(7L))
                 .thenReturn(List.of(productRule));
-        when(pricingRuleRepository.findByActiveTrueAndCategoryIdOrderByPriorityDescIdAsc(3L))
-                .thenReturn(List.of(categoryRule));
-
         assertEquals(new BigDecimal("120.00"), pricingRuleService.calculateSellingPrice(product));
     }
 
