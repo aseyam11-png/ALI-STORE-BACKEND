@@ -9,8 +9,9 @@ public class OrderRequest {
     @NotBlank(message = "Shipping address is required")
     private String shippingAddress;
 
-    @NotBlank(message = "Shipping method is required")
+    // Optional for backward compatibility. Server defaults to STANDARD.
     private String shippingMethod;
 
+    // Optional. The server validates and calculates the discount from the stored coupon.
     private String couponCode;
 }
