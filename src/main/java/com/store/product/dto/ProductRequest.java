@@ -20,6 +20,9 @@ public class ProductRequest {
     @DecimalMin(value = "0.00", message = "Selling price must not be negative")
     private BigDecimal price;
 
+    @DecimalMin(value = "0.00", message = "Compare-at price must not be negative")
+    private BigDecimal compareAtPrice;
+
     private String currency;
 
     @NotBlank(message = "Store SKU is required")
