@@ -14,4 +14,5 @@ public class CartItemResponse {
     private BigDecimal productPrice;
     private Integer quantity;
     private BigDecimal subTotal;
+    private String currency;
 }
