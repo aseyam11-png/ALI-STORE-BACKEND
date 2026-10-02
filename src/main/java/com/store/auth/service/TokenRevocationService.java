@@ -10,27 +10,31 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Service
 @RequiredArgsConstructor
 public class TokenRevocationService {
+
     private final RevokedTokenRepository repository;
     private final JwtService jwtService;
 
     @Transactional
     public void revoke(String token) {
         if (token == null || token.isBlank()) return;
+
         try {
             LocalDateTime expiresAt = jwtService.extractExpiration(token)
-                    .toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
-            if (!expiresAt.isAfter(LocalDateTime.now())) return;
+                    .toInstant().atZone(ZoneOffset.UTC).toLocalDateTime();
+            LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+            if (!expiresAt.isAfter(now)) return;
 
             String hash = sha256(token);
-            if (!repository.existsByTokenHashAndExpiresAtAfter(hash, LocalDateTime.now())) {
+            if (!repository.existsByTokenHashAndExpiresAtAfter(hash, now)) {
                 repository.save(RevokedToken.builder()
                         .tokenHash(hash)
                         .expiresAt(expiresAt)
-                        .revokedAt(LocalDateTime.now())
+                        .revokedAt(now)
                         .build());
             }
         } catch (RuntimeException ignored) {
@@ -41,13 +45,14 @@ public class TokenRevocationService {
     @Transactional(readOnly = true)
     public boolean isRevoked(String token) {
         if (token == null || token.isBlank()) return false;
-        return repository.existsByTokenHashAndExpiresAtAfter(sha256(token), LocalDateTime.now());
+        return repository.existsByTokenHashAndExpiresAtAfter(
+                sha256(token), LocalDateTime.now(ZoneOffset.UTC));
     }
 
     @Scheduled(fixedRate = 300000)
     @Transactional
     public void cleanup() {
-        repository.deleteExpired(LocalDateTime.now());
+        repository.deleteExpired(LocalDateTime.now(ZoneOffset.UTC));
     }
 
     private String sha256(String token) {
