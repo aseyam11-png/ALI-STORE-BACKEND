@@ -16,6 +16,8 @@ public class ProductResponse {
     private String slug;
     private String description;
     private BigDecimal price;
+    private BigDecimal discountPercentage;
+    private BigDecimal originalPrice;
     private String currency;
     private String sku;
     private ProductStatus status;
