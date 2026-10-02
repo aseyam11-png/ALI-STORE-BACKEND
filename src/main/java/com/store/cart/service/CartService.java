@@ -149,10 +149,17 @@ public class CartService {
                 .map(CartItemResponse::getSubTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        String currency = itemResponses.stream()
+                .map(CartItemResponse::getCurrency)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+
         return CartResponse.builder()
                 .id(cartId)
                 .items(itemResponses)
                 .totalPrice(totalPrice)
+                .currency(currency)
                 .build();
     }
 }
