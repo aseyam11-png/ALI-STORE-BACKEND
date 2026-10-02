@@ -10,7 +10,6 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      # Flyway is the sole schema authority. Hibernate must never auto-mutate the schema.
       ddl-auto: none
     properties:
       hibernate:
@@ -31,8 +30,6 @@ management:
   endpoints:
     web:
       exposure:
-        # Only health/info - never env/beans/mappings/configprops, which can
-        # leak configuration and internal wiring details.
         include: health,info
   endpoint:
     health:
@@ -45,3 +42,10 @@ jwt:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  auth:
+    cookie-name: ${AUTH_COOKIE_NAME:ali_store_session}
+    cookie-secure: ${AUTH_COOKIE_SECURE:false}
+  fulfillment:
+    api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}
+    api-token: ${SUPPLIER_API_TOKEN:}
+    poll-ms: ${FULFILLMENT_POLL_MS:10000}

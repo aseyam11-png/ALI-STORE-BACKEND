@@ -1,26 +1,29 @@
 package com.store.product.dto;
 
 import com.store.product.enums.ProductStatus;
-import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.DecimalMin;
 import lombok.Data;
 
 import java.math.BigDecimal;
 
-/**
- * Partial update - every field is optional; only non-null fields are applied.
- * Used by the admin-only PATCH endpoint.
- */
 @Data
 public class ProductUpdateRequest {
 
     private String name;
     private String description;
 
-    @Min(value = 0, message = "Price must be positive")
+    @DecimalMin(value = "0.00", message = "Selling price must not be negative")
     private BigDecimal price;
 
     private String currency;
     private Long categoryId;
     private Long brandId;
+
+    private Long supplierId;
+    private String supplierSku;
+
+    @DecimalMin(value = "0.01", message = "Supplier cost must be greater than zero")
+    private BigDecimal supplierCost;
+
     private ProductStatus status;
 }

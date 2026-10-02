@@ -1,5 +1,6 @@
 package com.store.product.dto;
 
+import com.store.inventory.enums.PublicAvailability;
 import com.store.product.enums.ProductStatus;
 import lombok.Builder;
 import lombok.Data;
@@ -18,6 +19,7 @@ public class ProductResponse {
     private String currency;
     private String sku;
     private ProductStatus status;
+    private PublicAvailability availability;
     private Long categoryId;
     private String categoryName;
     private Long brandId;

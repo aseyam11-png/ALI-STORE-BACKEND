@@ -3,6 +3,7 @@ package com.store.product.controller;
 import com.store.common.response.ApiResponse;
 import com.store.common.response.PageResponse;
 import com.store.inventory.enums.PublicAvailability;
+import com.store.product.dto.ProductAdminResponse;
 import com.store.product.dto.ProductRequest;
 import com.store.product.dto.ProductResponse;
 import com.store.product.dto.ProductUpdateRequest;
@@ -50,13 +51,14 @@ public class ProductController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<ProductResponse>> create(@Valid @RequestBody ProductRequest request) {
+    public ResponseEntity<ApiResponse<ProductAdminResponse>> create(@Valid @RequestBody ProductRequest request) {
         return ResponseEntity.ok(ApiResponse.success(productService.createProduct(request), "Product created successfully"));
     }
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<ProductResponse>> update(@PathVariable Long id, @Valid @RequestBody ProductUpdateRequest request) {
+    public ResponseEntity<ApiResponse<ProductAdminResponse>> update(@PathVariable Long id,
+                                                                      @Valid @RequestBody ProductUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(productService.updateProduct(id, request), "Product updated successfully"));
     }
 

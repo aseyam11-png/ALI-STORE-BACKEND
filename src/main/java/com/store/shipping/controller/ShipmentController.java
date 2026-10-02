@@ -1,5 +1,6 @@
 package com.store.shipping.controller;
 
+import com.store.common.response.ApiResponse;
 import com.store.shipping.dto.ShipmentRequest;
 import com.store.shipping.dto.ShipmentResponse;
 import com.store.shipping.entity.ShipmentStatus;
@@ -13,6 +14,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/shipments")
 @RequiredArgsConstructor
@@ -20,24 +23,27 @@ public class ShipmentController {
 
     private final ShipmentService shipmentService;
 
-    // Creating a shipment and advancing its status are fulfillment operations, not
-    // something a customer ever does - lock them to ADMIN (matching AdminOrderController).
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ShipmentResponse> createShipment(@Valid @RequestBody ShipmentRequest request) {
-        return new ResponseEntity<>(shipmentService.createShipment(request), HttpStatus.CREATED);
+    public ResponseEntity<ApiResponse<ShipmentResponse>> createShipment(@Valid @RequestBody ShipmentRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(shipmentService.createShipment(request), "Shipment created successfully"));
     }
 
     @GetMapping("/order/{orderId}")
-    public ResponseEntity<ShipmentResponse> getByOrderId(
+    public ResponseEntity<ApiResponse<List<ShipmentResponse>>> getByOrderId(
             @AuthenticationPrincipal UserDetails userDetails,
             @PathVariable Long orderId) {
-        return ResponseEntity.ok(shipmentService.getShipmentByOrderId(userDetails.getUsername(), orderId));
+        return ResponseEntity.ok(ApiResponse.success(
+                shipmentService.getShipmentsByOrderId(userDetails.getUsername(), orderId),
+                "Shipments retrieved successfully"));
     }
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ShipmentResponse> updateStatus(@PathVariable Long id, @RequestParam ShipmentStatus status) {
-        return ResponseEntity.ok(shipmentService.updateStatus(id, status));
+    public ResponseEntity<ApiResponse<ShipmentResponse>> updateStatus(
+            @PathVariable Long id,
+            @RequestParam ShipmentStatus status) {
+        return ResponseEntity.ok(ApiResponse.success(shipmentService.updateStatus(id, status), "Shipment status updated successfully"));
     }
 }

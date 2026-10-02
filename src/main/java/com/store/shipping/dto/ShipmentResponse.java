@@ -9,13 +9,13 @@ import java.time.LocalDateTime;
 @Data
 @Builder
 public class ShipmentResponse {
-
     private Long id;
     private Long orderId;
     private String trackingNumber;
     private String carrier;
     private ShipmentStatus status;
-    private Long shippingAddressId; // تم الاعتماد على ID العنوان بدلاً من الكائن ليتوافق مع التحويل
+    private Long shippingAddressId;
+    private LocalDateTime estimatedDeliveryDate;
     private LocalDateTime shippedAt;
     private LocalDateTime deliveredAt;
 }

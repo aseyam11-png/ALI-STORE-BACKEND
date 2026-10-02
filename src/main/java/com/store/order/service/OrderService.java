@@ -10,16 +10,24 @@ import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.PageResponse;
 import com.store.coupon.entity.Coupon;
 import com.store.coupon.service.CouponService;
+import com.store.fulfillment.service.FulfillmentService;
 import com.store.inventory.service.InventoryService;
 import com.store.order.dto.OrderItemResponse;
-import com.store.order.dto.OrderRequest;
 import com.store.order.dto.OrderResponse;
+import com.store.order.dto.OrderStatusUpdateRequest;
+import com.store.order.dto.ShipmentSummaryResponse;
 import com.store.order.entity.Order;
 import com.store.order.entity.OrderItem;
 import com.store.order.entity.OrderStatus;
 import com.store.order.repository.OrderRepository;
+import com.store.payment.entity.Payment;
+import com.store.payment.entity.PaymentMethod;
+import com.store.payment.entity.PaymentStatus;
+import com.store.payment.repository.PaymentRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
+import com.store.shipping.entity.Shipment;
+import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -39,8 +47,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrderService {
 
-    // Legal order lifecycle transitions. Anything not listed here (e.g. DELIVERED -> PENDING,
-    // or any transition out of a terminal state) is rejected by updateOrderStatus.
     private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED_TRANSITIONS = new EnumMap<>(OrderStatus.class);
 
     static {
@@ -57,6 +63,9 @@ public class OrderService {
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
     private final CouponService couponService;
+    private final PaymentRepository paymentRepository;
+    private final ShipmentRepository shipmentRepository;
+    private final FulfillmentService fulfillmentService;
 
     @Transactional
     public OrderResponse createOrder(String email, OrderRequest request) {
@@ -78,9 +87,6 @@ public class OrderService {
         String couponCode = null;
         BigDecimal discountAmount = BigDecimal.ZERO;
         if (request.getCouponCode() != null && !request.getCouponCode().isBlank()) {
-            // Re-validated here (active + not expired) rather than trusting the client's
-            // claim that the coupon it's referencing is still usable, and the discount
-            // percentage is always read from the stored Coupon, never from the request.
             Coupon coupon = couponService.validateAndGetCoupon(request.getCouponCode());
             couponService.checkMinimumOrder(coupon, subtotal);
             couponCode = coupon.getCode();
@@ -89,9 +95,6 @@ public class OrderService {
             if (discountAmount.compareTo(subtotal) > 0) {
                 discountAmount = subtotal;
             }
-            // Atomic UPDATE ... WHERE - safe under concurrent redemption of the same coupon
-            // (see CouponRepository.tryRedeem's javadoc). Participates in this same
-            // transaction, so it rolls back if order creation fails for any other reason.
             couponService.redeem(coupon);
         }
 
@@ -107,14 +110,24 @@ public class OrderService {
                 .build();
 
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
-            inventoryService.deductStock(cartItem.getProduct().getId(), cartItem.getQuantity());
+            var product = cartItem.getProduct();
 
-            BigDecimal unitPrice = cartItem.getProduct().getPrice();
+            if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
+                    || product.getSupplierCost() == null) {
+                throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
+            }
+
+            inventoryService.reserveStock(product.getId(), cartItem.getQuantity());
+
+            BigDecimal unitPrice = product.getPrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
 
             return OrderItem.builder()
                     .order(order)
-                    .product(cartItem.getProduct())
+                    .product(product)
+                    .supplier(product.getSupplier())
+                    .supplierSku(product.getSupplierSku())
+                    .supplierUnitCost(product.getSupplierCost())
                     .quantity(cartItem.getQuantity())
                     .unitPrice(unitPrice)
                     .subtotal(itemSubtotal)
@@ -122,18 +135,14 @@ public class OrderService {
         }).collect(Collectors.toList());
 
         order.setItems(orderItems);
-
         Order savedOrder = orderRepository.save(order);
-
         cartItemRepository.deleteAll(cartItems);
-
         return mapToResponse(savedOrder);
     }
 
     public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
         Page<OrderResponse> page = orderRepository.findByUserId(user.getId(), pageable).map(this::mapToResponse);
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
@@ -165,14 +174,54 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
 
         OrderStatus currentStatus = order.getStatus();
-        Set<OrderStatus> allowedNextStatuses = ALLOWED_TRANSITIONS.getOrDefault(currentStatus, EnumSet.noneOf(OrderStatus.class));
+        Set<OrderStatus> allowedNextStatuses = ALLOWED_TRANSITIONS.getOrDefault(
+                currentStatus, EnumSet.noneOf(OrderStatus.class));
+
         if (!allowedNextStatuses.contains(newStatus)) {
             throw new BusinessException("Cannot transition order from " + currentStatus + " to " + newStatus);
         }
 
+        if (newStatus == OrderStatus.PROCESSING) {
+            Payment payment = paymentRepository.findByOrderId(orderId)
+                    .orElseThrow(() -> new BusinessException("Order cannot start fulfillment before a payment method is recorded"));
+
+            boolean cod = payment.getMethod() == PaymentMethod.CASH_ON_DELIVERY;
+            boolean confirmed = payment.getStatus() == PaymentStatus.COMPLETED;
+            if (!cod && !confirmed) {
+                throw new BusinessException("Order cannot start fulfillment before payment is confirmed");
+            }
+        }
+
+        if (newStatus == OrderStatus.CANCELLED) {
+            releaseOrderReservations(order);
+        }
+
         order.setStatus(newStatus);
         Order saved = orderRepository.save(order);
+
+        if (newStatus == OrderStatus.PROCESSING) {
+            fulfillmentService.enqueueForOrder(orderId);
+        }
+
         return mapToResponse(saved);
+    }
+
+    @Transactional
+    public void commitOrderReservations(Order order) {
+        order.getItems().forEach(item ->
+                inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity()));
+    }
+
+    @Transactional
+    public void releaseOrderReservations(Order order) {
+        order.getItems().forEach(item -> {
+            try {
+                inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
+            } catch (BusinessException ignored) {
+                // Reservation may already have been committed after supplier acceptance.
+                // Cancellation must not corrupt inventory a second time.
+            }
+        });
     }
 
     private OrderResponse mapToResponse(Order order) {
@@ -187,6 +236,10 @@ public class OrderService {
                         .build()
         ).collect(Collectors.toList());
 
+        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
+                .stream().map(this::mapShipment)
+                .collect(Collectors.toList());
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .status(order.getStatus())
@@ -196,6 +249,17 @@ public class OrderService {
                 .shippingAddress(order.getShippingAddress())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
+                .shipments(shipmentResponses)
+                .build();
+    }
+
+    private ShipmentSummaryResponse mapShipment(Shipment shipment) {
+        return ShipmentSummaryResponse.builder()
+                .id(shipment.getId())
+                .status(shipment.getStatus())
+                .carrier(shipment.getCarrier())
+                .trackingNumber(shipment.getTrackingNumber())
+                .estimatedDeliveryDate(shipment.getEstimatedDeliveryDate())
                 .build();
     }
 }

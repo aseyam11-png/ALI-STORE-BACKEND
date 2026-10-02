@@ -19,4 +19,5 @@ public class OrderResponse {
     private String shippingAddress;
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;
+    private List<ShipmentSummaryResponse> shipments;
 }

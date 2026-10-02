@@ -9,9 +9,10 @@ import com.store.shipping.dto.ShipmentRequest;
 import com.store.shipping.dto.ShipmentResponse;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.entity.ShipmentStatus;
-import com.store.shipping.entity.ShippingAddress;
 import com.store.shipping.repository.ShipmentRepository;
 import com.store.shipping.repository.ShippingAddressRepository;
+import com.store.supplier.entity.Supplier;
+import com.store.supplier.repository.SupplierRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,21 +22,21 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ShipmentService {
 
-    // Legal shipment lifecycle transitions - mirrors OrderService's ALLOWED_TRANSITIONS
-    // pattern. Anything not listed (DELIVERED -> SHIPPED, CANCELLED -> DELIVERED, or any
-    // transition out of a terminal state) is rejected by updateStatus.
     private static final Map<ShipmentStatus, Set<ShipmentStatus>> ALLOWED_TRANSITIONS = new EnumMap<>(ShipmentStatus.class);
 
     static {
-        ALLOWED_TRANSITIONS.put(ShipmentStatus.PENDING, EnumSet.of(ShipmentStatus.SHIPPED, ShipmentStatus.CANCELLED));
+        ALLOWED_TRANSITIONS.put(ShipmentStatus.PENDING, EnumSet.of(ShipmentStatus.PROCESSING, ShipmentStatus.CANCELLED));
+        ALLOWED_TRANSITIONS.put(ShipmentStatus.PROCESSING, EnumSet.of(ShipmentStatus.SHIPPED, ShipmentStatus.IN_TRANSIT, ShipmentStatus.CANCELLED));
         ALLOWED_TRANSITIONS.put(ShipmentStatus.SHIPPED, EnumSet.of(ShipmentStatus.IN_TRANSIT, ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED));
         ALLOWED_TRANSITIONS.put(ShipmentStatus.IN_TRANSIT, EnumSet.of(ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED));
         ALLOWED_TRANSITIONS.put(ShipmentStatus.DELIVERED, EnumSet.noneOf(ShipmentStatus.class));
@@ -46,25 +47,43 @@ public class ShipmentService {
     private final ShippingAddressRepository shippingAddressRepository;
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
+    private final SupplierRepository supplierRepository;
 
     @Transactional
     public ShipmentResponse createShipment(ShipmentRequest request) {
-        ShippingAddress address = shippingAddressRepository.findById(request.getShippingAddressId())
-                .orElseThrow(() -> new ResourceNotFoundException("Shipping address not found with id: " + request.getShippingAddressId()));
+        Order order = orderRepository.findById(request.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + request.getOrderId()));
 
-        Shipment shipment = Shipment.builder()
-                .orderId(request.getOrderId())
-                .shippingAddress(address)
+        Supplier supplier = supplierRepository.findById(request.getSupplierId())
+                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + request.getSupplierId()));
+
+        if (!order.getItems().stream().anyMatch(item -> item.getSupplier().getId().equals(supplier.getId()))) {
+            throw new BusinessException("Supplier is not assigned to any item in this order");
+        }
+
+        if (shipmentRepository.existsByOrderIdAndSupplierId(order.getId(), supplier.getId())) {
+            throw new BusinessException("A shipment already exists for this supplier and order");
+        }
+
+        Shipment.ShipmentBuilder builder = Shipment.builder()
+                .orderId(order.getId())
+                .supplier(supplier)
+                .trackingNumber(request.getTrackingNumber() != null
+                        ? request.getTrackingNumber()
+                        : "TRK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
                 .carrier(request.getCarrier())
-                .trackingNumber(request.getTrackingNumber() != null ? request.getTrackingNumber() : "TRK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
-                .status(request.getStatus() != null ? request.getStatus() : ShipmentStatus.PENDING)
-                .build();
+                .status(ShipmentStatus.PENDING)
+                .shippingAddressSnapshot(request.getShippingAddressSnapshot());
 
-        Shipment saved = shipmentRepository.save(shipment);
-        return mapToResponse(saved);
+        if (request.getShippingAddressId() != null) {
+            builder.shippingAddress(shippingAddressRepository.findById(request.getShippingAddressId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Shipping address not found with id: " + request.getShippingAddressId())));
+        }
+
+        return mapToResponse(shipmentRepository.save(builder.build()));
     }
 
-    public ShipmentResponse getShipmentByOrderId(String email, Long orderId) {
+    public List<ShipmentResponse> getShipmentsByOrderId(String email, Long orderId) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -75,26 +94,27 @@ public class ShipmentService {
             throw new ForbiddenException("This order does not belong to you");
         }
 
-        Shipment shipment = shipmentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Shipment not found for order id: " + orderId));
-        return mapToResponse(shipment);
+        return shipmentRepository.findByOrderIdOrderByIdAsc(orderId)
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     @Transactional
     public ShipmentResponse updateStatus(Long shipmentId, ShipmentStatus newStatus) {
-        Shipment shipment = shipmentRepository.findById(shipmentId)
+        Shipment shipment = shipmentRepository.findByIdForUpdate(shipmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shipment not found with id: " + shipmentId));
 
-        ShipmentStatus currentStatus = shipment.getStatus();
-        Set<ShipmentStatus> allowedNextStatuses = ALLOWED_TRANSITIONS.getOrDefault(currentStatus, EnumSet.noneOf(ShipmentStatus.class));
-        if (!allowedNextStatuses.contains(newStatus)) {
-            throw new BusinessException("Cannot transition shipment from " + currentStatus + " to " + newStatus);
+        Set<ShipmentStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(shipment.getStatus(), EnumSet.noneOf(ShipmentStatus.class));
+        if (!allowed.contains(newStatus)) {
+            throw new BusinessException("Cannot transition shipment from " + shipment.getStatus() + " to " + newStatus);
         }
 
         shipment.setStatus(newStatus);
-        if (newStatus == ShipmentStatus.SHIPPED) {
+        if (newStatus == ShipmentStatus.SHIPPED && shipment.getShippedAt() == null) {
             shipment.setShippedAt(LocalDateTime.now());
-        } else if (newStatus == ShipmentStatus.DELIVERED) {
+        }
+        if (newStatus == ShipmentStatus.DELIVERED && shipment.getDeliveredAt() == null) {
             shipment.setDeliveredAt(LocalDateTime.now());
         }
 
@@ -108,7 +128,8 @@ public class ShipmentService {
                 .trackingNumber(shipment.getTrackingNumber())
                 .carrier(shipment.getCarrier())
                 .status(shipment.getStatus())
-                .shippingAddressId(shipment.getShippingAddress().getId())
+                .shippingAddressId(shipment.getShippingAddress() != null ? shipment.getShippingAddress().getId() : null)
+                .estimatedDeliveryDate(shipment.getEstimatedDeliveryDate())
                 .shippedAt(shipment.getShippedAt())
                 .deliveredAt(shipment.getDeliveredAt())
                 .build();

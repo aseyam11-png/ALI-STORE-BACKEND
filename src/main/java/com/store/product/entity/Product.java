@@ -4,6 +4,7 @@ import com.store.brand.entity.Brand;
 import com.store.category.entity.Category;
 import com.store.common.entity.BaseEntity;
 import com.store.product.enums.ProductStatus;
+import com.store.supplier.entity.Supplier;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -50,6 +51,16 @@ public class Product extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "brand_id")
     private Brand brand;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "supplier_id")
+    private Supplier supplier;
+
+    @Column(name = "supplier_sku", length = 100)
+    private String supplierSku;
+
+    @Column(name = "supplier_cost", precision = 10, scale = 2)
+    private BigDecimal supplierCost;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
