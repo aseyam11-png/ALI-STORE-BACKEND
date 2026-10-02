@@ -98,3 +98,25 @@ INSERT INTO pricing_rules (name, category_id, type, value, active, priority)
 SELECT 'Beauty & Care supplier markup', id, 'PERCENTAGE', 35, TRUE, 10
 FROM categories WHERE slug = 'beauty-care'
   AND NOT EXISTS (SELECT 1 FROM pricing_rules r WHERE r.category_id = categories.id);
+
+INSERT INTO product_images (product_id, url, alt_text, sort_order, is_primary)
+SELECT p.id, v.url, p.name, 0, TRUE
+FROM (
+    VALUES
+      ('ALI-FASHION-001', 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-FASHION-002', 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-FASHION-003', 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-FASHION-004', 'https://images.unsplash.com/photo-1521369909029-2afed882baee?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-ACCESS-001', 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-ACCESS-002', 'https://images.unsplash.com/photo-1524805444758-089113d48a6d?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-ACCESS-003', 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-ACCESS-004', 'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-ACCESS-005', 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-BEAUTY-001', 'https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-BEAUTY-002', 'https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=1200&q=75'),
+      ('ALI-BEAUTY-003', 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=1200&q=75')
+) AS v(sku, url)
+JOIN products p ON p.sku = v.sku
+WHERE NOT EXISTS (
+    SELECT 1 FROM product_images pi WHERE pi.product_id = p.id
+);
