@@ -4,6 +4,7 @@ import com.store.inventory.entity.Inventory;
 import com.store.inventory.enums.PublicAvailability;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
+import com.store.product.enums.ProductModerationStatus;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -49,6 +50,10 @@ public final class ProductSpecifications {
 
     public static Specification<Product> priceLessThanOrEqual(BigDecimal max) {
         return (root, query, cb) -> cb.lessThanOrEqualTo(root.get("price"), max);
+    }
+
+    public static Specification<Product> hasModerationStatus(ProductModerationStatus status) {
+        return (root, query, cb) -> cb.equal(root.get("moderationStatus"), status);
     }
 
     public static Specification<Product> hasDiscount() {
