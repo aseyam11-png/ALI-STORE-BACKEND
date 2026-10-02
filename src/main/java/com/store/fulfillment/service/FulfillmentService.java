@@ -27,6 +27,10 @@ public class FulfillmentService {
     private final FulfillmentTaskRepository taskRepository;
     private final FulfillmentTaskProcessor taskProcessor;
 
+    public FulfillmentTask findTaskByShipmentId(Long shipmentId) {
+        return taskRepository.findByShipmentId(shipmentId).orElse(null);
+    }
+
     /**
      * Creates durable per-supplier fulfillment work. The actual supplier HTTP
      * request is intentionally performed by FulfillmentTaskProcessor outside
