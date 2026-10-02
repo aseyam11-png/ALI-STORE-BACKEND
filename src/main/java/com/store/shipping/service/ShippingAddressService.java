@@ -34,6 +34,13 @@ public class ShippingAddressService {
                 .state(request.getState())
                 .country(request.getCountry())
                 .postalCode(request.getPostalCode())
+                .label(request.getLabel())
+                .recipientName(request.getRecipientName())
+                .phone(request.getPhone())
+                .area(request.getArea())
+                .building(request.getBuilding())
+                .apartment(request.getApartment())
+                .notes(request.getNotes())
                 .isDefault(Boolean.TRUE.equals(request.getIsDefault()))
                 .build();
 
@@ -62,6 +69,13 @@ public class ShippingAddressService {
         address.setState(request.getState());
         address.setCountry(request.getCountry());
         address.setPostalCode(request.getPostalCode());
+        address.setLabel(request.getLabel());
+        address.setRecipientName(request.getRecipientName());
+        address.setPhone(request.getPhone());
+        address.setArea(request.getArea());
+        address.setBuilding(request.getBuilding());
+        address.setApartment(request.getApartment());
+        address.setNotes(request.getNotes());
 
         if (Boolean.TRUE.equals(request.getIsDefault())) {
             shippingAddressRepository.findByUserId(user.getId()).forEach(existing -> {
@@ -132,6 +146,13 @@ public class ShippingAddressService {
                 .state(address.getState())
                 .country(address.getCountry())
                 .postalCode(address.getPostalCode())
+                .label(address.getLabel())
+                .recipientName(address.getRecipientName())
+                .phone(address.getPhone())
+                .area(address.getArea())
+                .building(address.getBuilding())
+                .apartment(address.getApartment())
+                .notes(address.getNotes())
                 .isDefault(address.getIsDefault())
                 .build();
     }
