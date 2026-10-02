@@ -33,11 +33,12 @@ public class ProductController {
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(required = false) PublicAvailability availability,
+            @RequestParam(defaultValue = "false") boolean discountOnly,
             @RequestParam(defaultValue = "relevance") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(ApiResponse.success(
-                productService.searchProducts(q, category, categorySlug, brand, brandSlug, minPrice, maxPrice, availability, sort, page, pageSize),
+                productService.searchProducts(q, category, categorySlug, brand, brandSlug, minPrice, maxPrice, availability, discountOnly, sort, page, pageSize),
                 "Products retrieved successfully"));
     }
 
