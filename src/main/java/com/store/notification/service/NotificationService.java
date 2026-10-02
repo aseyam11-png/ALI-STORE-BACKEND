@@ -49,6 +49,25 @@ public class NotificationService {
     }
 
     @Transactional
+    public void deleteNotification(String email, Long notificationId) {
+        Long userId = resolveUserId(email);
+
+        Notification notification =
+                notificationRepository.findById(notificationId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Notification not found with id: " +
+                                                notificationId));
+
+        if (!notification.getUserId().equals(userId)) {
+            throw new ForbiddenException(
+                    "This notification does not belong to you");
+        }
+
+        notificationRepository.delete(notification);
+    }
+
+    @Transactional
     public NotificationResponse markAsRead(String email, Long notificationId) {
         Long userId = resolveUserId(email);
 
