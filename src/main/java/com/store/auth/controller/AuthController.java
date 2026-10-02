@@ -85,11 +85,13 @@ public class AuthController {
                 environment.getProperty("AUTH_COOKIE_SECURE", "false")));
         String name = environment.getProperty("app.auth.cookie-name",
                 environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
+        String sameSite = environment.getProperty("app.auth.cookie-same-site",
+                environment.getProperty("AUTH_COOKIE_SAME_SITE", "Lax"));
 
         return ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(secure)
-                .sameSite("Strict")
+                .sameSite(sameSite)
                 .path("/")
                 .maxAge(maxAgeSeconds)
                 .build();
