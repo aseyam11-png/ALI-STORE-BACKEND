@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @Data
 public class SupplierInventoryUpdateRequest {
@@ -18,6 +19,9 @@ public class SupplierInventoryUpdateRequest {
     @NotNull(message = "Quantity is required")
     @Min(value = 0, message = "Quantity cannot be negative")
     private Integer quantity;
+
+    @DecimalMin(value = "0.00", message = "Supplier price cannot be negative")
+    private BigDecimal supplierPrice;
 
     private LocalDateTime syncedAt;
 }
