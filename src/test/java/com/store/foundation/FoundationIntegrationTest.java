@@ -8,6 +8,8 @@ import com.store.inventory.entity.Inventory;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.repository.ProductRepository;
+import com.store.supplier.entity.Supplier;
+import com.store.supplier.repository.SupplierRepository;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -65,6 +67,8 @@ class FoundationIntegrationTest {
     private CategoryRepository categoryRepository;
     @Autowired
     private ProductRepository productRepository;
+    @Autowired
+    private SupplierRepository supplierRepository;
     @Autowired
     private InventoryRepository inventoryRepository;
 
@@ -212,27 +216,43 @@ class FoundationIntegrationTest {
         User admin = createUser("catalog-admin@example.com", adminRole);
         Category category = categoryRepository.save(Category.builder()
                 .name("Phones").slug("phones").active(true).build());
+        Supplier supplier = supplierRepository.save(Supplier.builder()
+                .externalCode("TEST-SUPPLIER").name("Test Supplier").build());
 
         Map<String, Object> body = Map.of(
                 "name", "Test Phone", "price", 199.99, "sku", "PHN-001",
-                "categoryId", category.getId());
+                "categoryId", category.getId(),
+                "supplierId", supplier.getId(),
+                "supplierSku", "SUP-PHN-001",
+                "supplierCost", 100.00);
 
-        mockMvc.perform(post("/api/v1/products")
+        String response = mockMvc.perform(post("/api/v1/products")
                         .header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.slug").value("test-phone"))
                 .andExpect(jsonPath("$.data.currency").value("USD"))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andReturn().getResponse().getContentAsString();
+
+        long productId = objectMapper.readTree(response).path("data").path("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/products/" + productId)
+                        .header("Authorization", "Bearer " + tokenFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("status", "ACTIVE"))))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
 
         Product saved = productRepository.findBySku("PHN-001").orElseThrow();
         Inventory inventory = inventoryRepository.findByProductId(saved.getId()).orElseThrow();
         Assertions.assertEquals(0, inventory.getQuantity());
 
-        mockMvc.perform(get("/api/v1/inventory/product/" + saved.getId()))
+        mockMvc.perform(get("/api/v1/inventory/product/" + saved.getId())
+                        .header("Authorization", "Bearer " + tokenFor(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.availability").value("OUT_OF_STOCK"));
+                .andExpect(jsonPath("$.data.availability").value("UNKNOWN"));
     }
 
     @Test
@@ -281,22 +301,15 @@ class FoundationIntegrationTest {
     }
 
     @Test
-    void quotationCreation_isAdminOnly() throws Exception {
-        // ALI STORE is B2C single-merchant - this legacy B2B endpoint has no seller-authentication
-        // concept, so it must not be reachable by an ordinary authenticated customer (it would
-        // otherwise let any customer submit a quotation against any RFQ while impersonating any seller).
-        Map<String, Object> body = Map.of("rfqId", 1, "sellerId", 1, "totalPrice", 10.00);
-
-        mockMvc.perform(post("/api/v1/quotations")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().is4xxClientError());
-
+    void legacyB2BQuotationEndpoint_isRemoved() throws Exception {
         User regular = createUser("quotationcustomer@example.com", userRole);
+
         mockMvc.perform(post("/api/v1/quotations")
                         .header("Authorization", "Bearer " + tokenFor(regular))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isForbidden());
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "rfqId", 1, "sellerId", 1, "totalPrice", 10.00))))
+                .andExpect(status().isNotFound());
     }
+
 }
