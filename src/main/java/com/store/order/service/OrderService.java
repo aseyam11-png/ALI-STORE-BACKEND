@@ -6,6 +6,7 @@ import com.store.cart.repository.CartItemRepository;
 import com.store.cart.repository.CartRepository;
 import com.store.common.exception.BusinessException;
 import com.store.common.exception.ForbiddenException;
+import com.store.common.exception.OrderExpiredException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.PageResponse;
 import com.store.coupon.entity.Coupon;
@@ -117,7 +118,6 @@ public class OrderService {
 
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
             Product product = cartItem.getProduct();
-
             if (product.getStatus() != ProductStatus.ACTIVE
                     || product.getCategory() == null
                     || !Boolean.TRUE.equals(product.getCategory().getActive())) {
@@ -139,15 +139,9 @@ public class OrderService {
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
 
             return OrderItem.builder()
-                    .order(order)
-                    .product(product)
-                    .supplier(product.getSupplier())
-                    .supplierSku(product.getSupplierSku().trim())
-                    .supplierUnitCost(product.getSupplierCost())
-                    .quantity(cartItem.getQuantity())
-                    .unitPrice(unitPrice)
-                    .subtotal(itemSubtotal)
-                    .build();
+                    .order(order).product(product).supplier(product.getSupplier())
+                    .supplierSku(product.getSupplierSku().trim()).supplierUnitCost(product.getSupplierCost())
+                    .quantity(cartItem.getQuantity()).unitPrice(unitPrice).subtotal(itemSubtotal).build();
         }).collect(Collectors.toList());
 
         order.setItems(orderItems);
@@ -159,6 +153,7 @@ public class OrderService {
             orderRepository.save(savedOrder);
             fulfillmentService.enqueueForOrder(savedOrder.getId());
         }
+
         return mapToResponse(savedOrder);
     }
 
@@ -213,7 +208,7 @@ public class OrderService {
                 pageable.getSort());
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = OrderExpiredException.class)
     public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
@@ -222,11 +217,15 @@ public class OrderService {
                 && !order.getReservationExpiresAt().isAfter(LocalDateTime.now())) {
             expireOrderReservation(order);
             if (newStatus == OrderStatus.CANCELLED) return mapToResponse(order);
-            throw new BusinessException("Order reservation has expired");
+            throw new OrderExpiredException("Order reservation has expired");
         }
 
-        Set<OrderStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(order.getStatus(), EnumSet.noneOf(OrderStatus.class));
-        if (!allowed.contains(newStatus)) throw new BusinessException("Cannot transition order from " + order.getStatus() + " to " + newStatus);
+        Set<OrderStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(
+                order.getStatus(), EnumSet.noneOf(OrderStatus.class));
+        if (!allowed.contains(newStatus)) {
+            throw new BusinessException(
+                    "Cannot transition order from " + order.getStatus() + " to " + newStatus);
+        }
 
         if (newStatus == OrderStatus.PROCESSING) {
             if (order.getItems().stream().anyMatch(item ->
@@ -266,17 +265,20 @@ public class OrderService {
 
     private void validateCancellationAllowed(Order order) {
         var shipments = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId());
+
         if (shipments.stream().anyMatch(shipment ->
                 shipment.getSupplierOrderId() != null
-                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.PROCESSING
-                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.SHIPPED
-                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.IN_TRANSIT
-                        || shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.DELIVERED)) {
+                        || shipment.getStatus() == ShipmentStatus.PROCESSING
+                        || shipment.getStatus() == ShipmentStatus.SHIPPED
+                        || shipment.getStatus() == ShipmentStatus.IN_TRANSIT
+                        || shipment.getStatus() == ShipmentStatus.DELIVERED)) {
             throw new BusinessException("Order cannot be cancelled after supplier fulfillment has started");
         }
+
         for (var shipment : shipments) {
             FulfillmentTask task = fulfillmentService.findTaskByShipmentId(shipment.getId());
-            if (task != null && task.getStatus() == FulfillmentTaskStatus.PROCESSING) {
+            if (task != null && (task.getStatus() == FulfillmentTaskStatus.PROCESSING
+                    || task.getStatus() == FulfillmentTaskStatus.SUCCEEDED)) {
                 throw new BusinessException("Order cannot be cancelled while supplier fulfillment is in progress");
             }
         }
@@ -284,28 +286,31 @@ public class OrderService {
 
     private void releaseRemainingOrderReservations(Order order) {
         order.getItems().forEach(item ->
-                inventoryService.releaseReservedStockUpTo(item.getProduct().getId(), item.getQuantity()));
+                inventoryService.releaseReservedStockUpTo(
+                        item.getProduct().getId(), item.getQuantity()));
     }
 
     private OrderResponse mapToResponse(Order order) {
-        List<OrderItemResponse> itemResponses = order.getItems().stream().map(item ->
-                OrderItemResponse.builder()
+        List<OrderItemResponse> itemResponses = order.getItems().stream()
+                .map(item -> OrderItemResponse.builder()
                         .id(item.getId()).productId(item.getProduct().getId())
                         .productName(item.getProduct().getName()).quantity(item.getQuantity())
                         .price(item.getUnitPrice()).subTotal(item.getSubtotal()).build())
                 .collect(Collectors.toList());
 
-        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
-                .stream().map(shipment -> ShipmentSummaryResponse.builder()
-                        .id(shipment.getId()).status(shipment.getStatus()).carrier(shipment.getCarrier())
-                        .trackingNumber(shipment.getTrackingNumber())
-                        .estimatedDeliveryDate(shipment.getEstimatedDeliveryDate()).build())
-                .collect(Collectors.toList());
+        List<ShipmentSummaryResponse> shipmentResponses =
+                shipmentRepository.findByOrderIdOrderByIdAsc(order.getId()).stream()
+                        .map(shipment -> ShipmentSummaryResponse.builder()
+                                .id(shipment.getId()).status(shipment.getStatus())
+                                .carrier(shipment.getCarrier()).trackingNumber(shipment.getTrackingNumber())
+                                .estimatedDeliveryDate(shipment.getEstimatedDeliveryDate()).build())
+                        .collect(Collectors.toList());
 
         return OrderResponse.builder()
-                .id(order.getId()).status(order.getStatus()).totalAmount(order.getTotalAmount())
-                .currency(order.getCurrency()).couponCode(order.getCouponCode())
-                .discountAmount(order.getDiscountAmount()).shippingAddress(order.getShippingAddress())
-                .createdAt(order.getCreatedAt()).items(itemResponses).shipments(shipmentResponses).build();
+                .id(order.getId()).status(order.getStatus())
+                .totalAmount(order.getTotalAmount()).currency(order.getCurrency())
+                .couponCode(order.getCouponCode()).discountAmount(order.getDiscountAmount())
+                .shippingAddress(order.getShippingAddress()).createdAt(order.getCreatedAt())
+                .items(itemResponses).shipments(shipmentResponses).build();
     }
 }
