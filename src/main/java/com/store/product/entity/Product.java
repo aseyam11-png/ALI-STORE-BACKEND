@@ -34,7 +34,12 @@ public class Product extends BaseEntity {
     private BigDecimal price;
 
     @Column(nullable = false, length = 3)
-    private String currency;
+    @Builder.Default
+    private String currency = "SAR";
+
+    @Column(nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal discountPercentage = BigDecimal.ZERO;
 
     @Column(name = "sku", unique = true)
     private String sku;
