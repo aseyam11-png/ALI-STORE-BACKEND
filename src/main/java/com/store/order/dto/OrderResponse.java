@@ -14,6 +14,7 @@ public class OrderResponse {
     private Long id;
     private OrderStatus status;
     private BigDecimal totalAmount;
+    private String currency;
     private BigDecimal shippingAmount;
     private String shippingMethod;
     private String couponCode;
