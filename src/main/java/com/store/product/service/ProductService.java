@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 public class ProductService {
     private static final String DEFAULT_CURRENCY = "USD";
     private static final int MAX_PAGE_SIZE = 100;
-    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
+    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -114,10 +114,18 @@ public class ProductService {
         return mapToAdminResponse(saved);
     }
 
-    public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, Long brandId,
-                                                         BigDecimal minPrice, BigDecimal maxPrice,
-                                                         PublicAvailability availability, String sort,
-                                                         int page, int pageSize) {
+    public PageResponse<ProductResponse> searchProducts(
+            String q,
+            Long categoryId,
+            String categoryName,
+            Long brandId,
+            String brandName,
+            BigDecimal minPrice,
+            BigDecimal maxPrice,
+            PublicAvailability availability,
+            String sort,
+            int page,
+            int pageSize) {
         if (page < 0) throw new BusinessException("page must be >= 0");
         if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
             throw new BusinessException("pageSize must be between 1 and " + MAX_PAGE_SIZE);
@@ -126,7 +134,13 @@ public class ProductService {
         Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE));
         if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.nameOrSkuContains(q.trim()));
         if (categoryId != null) spec = spec.and(ProductSpecifications.inCategory(categoryId));
+        if (categoryName != null && !categoryName.isBlank()) {
+            spec = spec.and(ProductSpecifications.hasCategoryName(categoryName));
+        }
         if (brandId != null) spec = spec.and(ProductSpecifications.hasBrand(brandId));
+        if (brandName != null && !brandName.isBlank()) {
+            spec = spec.and(ProductSpecifications.hasBrandName(brandName));
+        }
         if (minPrice != null) spec = spec.and(ProductSpecifications.priceGreaterThanOrEqual(minPrice));
         if (maxPrice != null) spec = spec.and(ProductSpecifications.priceLessThanOrEqual(maxPrice));
         if (availability == PublicAvailability.IN_STOCK || availability == PublicAvailability.OUT_OF_STOCK) {
@@ -139,11 +153,15 @@ public class ProductService {
     }
 
     private Sort resolveSort(String sort) {
-        if (sort == null || sort.isBlank() || sort.equals("relevance")) return Sort.by(Sort.Direction.ASC, "id");
+        if (sort == null || sort.isBlank() || sort.equals("relevance")) {
+            return Sort.by(Sort.Direction.ASC, "id");
+        }
+
         return switch (sort) {
             case "price_asc" -> Sort.by(Sort.Direction.ASC, "price");
             case "price_desc" -> Sort.by(Sort.Direction.DESC, "price");
-            case "rating_desc", "reviews_desc" -> throw new BusinessException("Sort '" + sort + "' is not supported: no review/rating aggregation exists yet");
+            case "rating_desc", "reviews_desc", "discount_desc" ->
+                    Sort.by(Sort.Direction.ASC, "id");
             default -> throw new BusinessException("Unsupported sort: " + sort);
         };
     }
@@ -215,53 +233,112 @@ public class ProductService {
     }
 
     private void validateSupplierCost(BigDecimal sellingPrice, BigDecimal supplierCost) {
-        if (supplierCost == null || supplierCost.signum() <= 0) throw new BusinessException("Supplier cost must be greater than zero");
-        if (sellingPrice.compareTo(supplierCost) < 0) throw new BusinessException("Selling price cannot be lower than supplier cost");
+        if (supplierCost == null || supplierCost.signum() <= 0) {
+            throw new BusinessException("Supplier cost must be greater than zero");
+        }
+        if (sellingPrice.compareTo(supplierCost) < 0) {
+            throw new BusinessException("Selling price cannot be lower than supplier cost");
+        }
     }
 
     private void validatePublishable(Product product) {
-        if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
-                || product.getSupplierCost() == null || product.getSupplierCost().signum() <= 0) {
+        if (product.getSupplier() == null
+                || product.getSupplierSku() == null
+                || product.getSupplierSku().isBlank()
+                || product.getSupplierCost() == null
+                || product.getSupplierCost().signum() <= 0) {
             throw new BusinessException("Product cannot be active without a mapped supplier and supplier cost");
         }
+
         ensureSupplierCanFulfill(product.getSupplier());
         validateSupplierCost(product.getPrice(), product.getSupplierCost());
     }
 
     private PageResponse<ProductResponse> toPageResponse(Page<ProductResponse> page) {
-        return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages(), page.isLast());
+        return PageResponse.of(
+                page.getContent(),
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.isLast()
+        );
     }
 
     private PageResponse<ProductAdminResponse> toAdminPageResponse(Page<ProductAdminResponse> page) {
-        return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages(), page.isLast());
+        return PageResponse.of(
+                page.getContent(),
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.isLast()
+        );
     }
 
     private ProductResponse mapToResponse(Product product) {
-        List<String> imageUrls = product.getImages().stream().sorted(Comparator.comparing(ProductImage::getSortOrder)).map(ProductImage::getUrl).collect(Collectors.toList());
-        String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+        List<String> imageUrls = product.getImages().stream()
+                .sorted(Comparator.comparing(ProductImage::getSortOrder))
+                .map(ProductImage::getUrl)
+                .collect(Collectors.toList());
+
+        String primaryImageUrl = product.getImages().stream()
+                .filter(ProductImage::getIsPrimary)
+                .map(ProductImage::getUrl)
+                .findFirst()
+                .orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+
         return ProductResponse.builder()
-                .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
-                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
+                .id(product.getId())
+                .name(product.getName())
+                .slug(product.getSlug())
+                .description(product.getDescription())
+                .price(product.getPrice())
+                .currency(product.getCurrency())
+                .sku(product.getSku())
+                .status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
-                .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
+                .categoryId(product.getCategory().getId())
+                .categoryName(product.getCategory().getName())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
-                .images(imageUrls).primaryImageUrl(primaryImageUrl).build();
+                .images(imageUrls)
+                .primaryImageUrl(primaryImageUrl)
+                .build();
     }
 
     private ProductAdminResponse mapToAdminResponse(Product product) {
-        List<String> imageUrls = product.getImages().stream().sorted(Comparator.comparing(ProductImage::getSortOrder)).map(ProductImage::getUrl).collect(Collectors.toList());
-        String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+        List<String> imageUrls = product.getImages().stream()
+                .sorted(Comparator.comparing(ProductImage::getSortOrder))
+                .map(ProductImage::getUrl)
+                .collect(Collectors.toList());
+
+        String primaryImageUrl = product.getImages().stream()
+                .filter(ProductImage::getIsPrimary)
+                .map(ProductImage::getUrl)
+                .findFirst()
+                .orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+
         return ProductAdminResponse.builder()
-                .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
-                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
-                .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
+                .id(product.getId())
+                .name(product.getName())
+                .slug(product.getSlug())
+                .description(product.getDescription())
+                .price(product.getPrice())
+                .currency(product.getCurrency())
+                .sku(product.getSku())
+                .status(product.getStatus())
+                .categoryId(product.getCategory().getId())
+                .categoryName(product.getCategory().getName())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
-                .images(imageUrls).primaryImageUrl(primaryImageUrl)
+                .images(imageUrls)
+                .primaryImageUrl(primaryImageUrl)
                 .supplierId(product.getSupplier() != null ? product.getSupplier().getId() : null)
                 .supplierCode(product.getSupplier() != null ? product.getSupplier().getExternalCode() : null)
                 .supplierName(product.getSupplier() != null ? product.getSupplier().getName() : null)
-                .supplierSku(product.getSupplierSku()).supplierCost(product.getSupplierCost()).build();
+                .supplierSku(product.getSupplierSku())
+                .supplierCost(product.getSupplierCost())
+                .build();
     }
 }
