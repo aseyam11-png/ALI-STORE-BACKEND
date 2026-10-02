@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
 public class ProductService {
     private static final String DEFAULT_CURRENCY = "SAR";
     private static final int MAX_PAGE_SIZE = 100;
-    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE);
+    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -231,9 +231,6 @@ public class ProductService {
     private void ensureSupplierCanFulfill(Supplier supplier) {
         if (supplier.getStatus() != SupplierStatus.ACTIVE || !Boolean.TRUE.equals(supplier.getFulfillmentEnabled())) {
             throw new BusinessException("Supplier is not active for fulfillment");
-        }
-        if (supplier.getApiBaseUrl() == null || supplier.getApiBaseUrl().isBlank()) {
-            throw new BusinessException("Supplier fulfillment API is not configured");
         }
     }
 
