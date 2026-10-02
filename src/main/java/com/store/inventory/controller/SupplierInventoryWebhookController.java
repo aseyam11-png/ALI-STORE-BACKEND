@@ -8,6 +8,7 @@ import com.store.inventory.dto.SupplierInventoryUpdateRequest;
 import com.store.inventory.entity.Inventory;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.inventory.service.InventoryService;
+import com.store.pricing.service.PricingRuleService;
 import com.store.product.entity.Product;
 import com.store.product.repository.ProductRepository;
 import jakarta.validation.Valid;
@@ -27,6 +28,7 @@ import java.time.LocalDateTime;
 public class SupplierInventoryWebhookController {
 
     private final InventoryService inventoryService;
+    private final PricingRuleService pricingRuleService;
     private final InventoryRepository inventoryRepository;
     private final ProductRepository productRepository;
 
@@ -60,6 +62,12 @@ public class SupplierInventoryWebhookController {
 
         if (!Boolean.TRUE.equals(product.getSupplier().getInventorySyncEnabled())) {
             throw new ForbiddenException("Supplier inventory synchronization is disabled");
+        }
+
+        if (request.getSupplierPrice() != null && request.getSupplierPrice().compareTo(java.math.BigDecimal.ZERO) > 0) {
+            product.setSupplierCost(request.getSupplierPrice());
+            productRepository.save(product);
+            pricingRuleService.recalculateProduct(product.getId());
         }
 
         InventoryResponse response = inventoryService.syncSupplierStock(
