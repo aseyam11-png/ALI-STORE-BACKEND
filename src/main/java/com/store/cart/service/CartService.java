@@ -138,6 +138,7 @@ public class CartService {
                             .productId(item.getProduct().getId())
                             .productName(item.getProduct().getName())
                             .productPrice(item.getProduct().getPrice())
+                            .currency(item.getProduct().getCurrency())
                             .quantity(item.getQuantity())
                             .subTotal(subTotal)
                             .build();
