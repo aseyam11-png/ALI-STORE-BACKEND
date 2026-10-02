@@ -25,7 +25,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -57,7 +56,13 @@ public class ShipmentService {
         Supplier supplier = supplierRepository.findById(request.getSupplierId())
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + request.getSupplierId()));
 
-        if (!order.getItems().stream().anyMatch(item -> item.getSupplier().getId().equals(supplier.getId()))) {
+        if (supplier.getStatus() != com.store.supplier.entity.SupplierStatus.ACTIVE
+                || !Boolean.TRUE.equals(supplier.getFulfillmentEnabled())) {
+            throw new BusinessException("Supplier is not active for fulfillment");
+        }
+
+        if (!order.getItems().stream().anyMatch(item ->
+                item.getSupplier() != null && item.getSupplier().getId().equals(supplier.getId()))) {
             throw new BusinessException("Supplier is not assigned to any item in this order");
         }
 
@@ -68,16 +73,18 @@ public class ShipmentService {
         Shipment.ShipmentBuilder builder = Shipment.builder()
                 .orderId(order.getId())
                 .supplier(supplier)
-                .trackingNumber(request.getTrackingNumber() != null
-                        ? request.getTrackingNumber()
-                        : "TRK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                .trackingNumber(request.getTrackingNumber())
                 .carrier(request.getCarrier())
                 .status(ShipmentStatus.PENDING)
                 .shippingAddressSnapshot(request.getShippingAddressSnapshot());
 
         if (request.getShippingAddressId() != null) {
-            builder.shippingAddress(shippingAddressRepository.findById(request.getShippingAddressId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Shipping address not found with id: " + request.getShippingAddressId())));
+            var address = shippingAddressRepository.findById(request.getShippingAddressId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Shipping address not found with id: " + request.getShippingAddressId()));
+            if (!address.getUser().getId().equals(order.getUser().getId())) {
+                throw new ForbiddenException("Shipping address does not belong to the order owner");
+            }
+            builder.shippingAddress(address);
         }
 
         return mapToResponse(shipmentRepository.save(builder.build()));
