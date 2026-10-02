@@ -12,9 +12,9 @@ public class ShippingQuoteService {
     private final BigDecimal freeShippingThreshold;
 
     public ShippingQuoteService(
-            @Value("\${app.shipping.standard-cost:15}") BigDecimal standardCost,
-            @Value("\${app.shipping.express-cost:30}") BigDecimal expressCost,
-            @Value("\${app.shipping.free-threshold:250}") BigDecimal freeShippingThreshold) {
+            @Value("${app.shipping.standard-cost:15}") BigDecimal standardCost,
+            @Value("${app.shipping.express-cost:30}") BigDecimal expressCost,
+            @Value("${app.shipping.free-threshold:250}") BigDecimal freeShippingThreshold) {
         this.standardCost = standardCost.max(BigDecimal.ZERO);
         this.expressCost = expressCost.max(BigDecimal.ZERO);
         this.freeShippingThreshold = freeShippingThreshold.max(BigDecimal.ZERO);
