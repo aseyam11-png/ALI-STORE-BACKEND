@@ -227,7 +227,7 @@ class CartOrderInventoryTest {
         // Simulate another concurrent purchase depleting stock between add-to-cart and checkout.
         Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
         inventory.setQuantity(0);
-        inventoryRepository.save(inventory);
+        inventoryRepository.saveAndFlush(inventory);
 
         mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(user))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -384,6 +384,10 @@ class CartOrderInventoryTest {
         mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(owner))
                         .param("status", "DELIVERED"))
                 .andExpect(status().isForbidden());
+
+        mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
+                        .param("status", "PROCESSING"))
+                .andExpect(status().isOk());
 
         mockMvc.perform(patch("/api/v1/shipments/" + shipmentId + "/status").header("Authorization", "Bearer " + tokenFor(admin))
                         .param("status", "SHIPPED"))
