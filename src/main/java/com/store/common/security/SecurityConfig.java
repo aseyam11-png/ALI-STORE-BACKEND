@@ -21,6 +21,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.StaticHeadersWriter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -51,17 +53,22 @@ public class SecurityConfig {
         csrfRepository.setCookiePath("/");
 
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
+        RequestMatcher bearerAuthentication = request -> {
+            String authorization = request.getHeader("Authorization");
+            return authorization != null && authorization.startsWith("Bearer ");
+        };
 
         http
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfRepository)
                         .csrfTokenRequestHandler(csrfHandler)
                         .ignoringRequestMatchers(
-                                "/api/v1/auth/login",
-                                "/api/v1/auth/register",
-                                "/api/v1/auth/logout",
-                                "/api/v1/auth/csrf",
-                                "/api/v1/integrations/suppliers/shipments/update"
+                                new AntPathRequestMatcher("/api/v1/auth/login"),
+                                new AntPathRequestMatcher("/api/v1/auth/register"),
+                                new AntPathRequestMatcher("/api/v1/auth/logout"),
+                                new AntPathRequestMatcher("/api/v1/auth/csrf"),
+                                new AntPathRequestMatcher("/api/v1/integrations/suppliers/shipments/update"),
+                                bearerAuthentication
                         ))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
