@@ -32,13 +32,11 @@ public class ProductRequest {
 
     private Long brandId;
 
-    @NotNull(message = "Supplier ID is required")
+    // Supplier mapping is optional while a product is DRAFT.
+    // Product activation still requires an active/fulfillable external supplier.
     private Long supplierId;
-
-    @NotBlank(message = "Supplier SKU is required")
     private String supplierSku;
 
-    @NotNull(message = "Supplier cost is required")
     @DecimalMin(value = "0.01", message = "Supplier cost must be greater than zero")
     private BigDecimal supplierCost;
 }
