@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
 public class ProductService {
     private static final String DEFAULT_CURRENCY = "SAR";
     private static final int MAX_PAGE_SIZE = 100;
-    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
+    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -118,7 +118,7 @@ public class ProductService {
 
     public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, String categorySlug, Long brandId, String brandSlug,
                                                          BigDecimal minPrice, BigDecimal maxPrice,
-                                                         PublicAvailability availability, String sort,
+                                                         PublicAvailability availability, boolean discountOnly, String sort,
                                                          int page, int pageSize) {
         if (page < 0) throw new BusinessException("page must be >= 0");
         if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
@@ -149,6 +149,7 @@ public class ProductService {
         if (availability == PublicAvailability.IN_STOCK || availability == PublicAvailability.OUT_OF_STOCK) {
             spec = spec.and(ProductSpecifications.hasAvailability(availability));
         }
+        if (discountOnly) spec = spec.and(ProductSpecifications.hasDiscount());
 
         Pageable pageable = PageRequest.of(page, pageSize, resolveSort(sort));
         Page<ProductResponse> results = productRepository.findAll(spec, pageable).map(this::mapToResponse);
