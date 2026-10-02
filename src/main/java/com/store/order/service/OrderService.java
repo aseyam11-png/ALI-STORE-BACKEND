@@ -255,6 +255,8 @@ public class OrderService {
                 .stream().map(this::mapShipment)
                 .collect(Collectors.toList());
 
+        Payment payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .status(order.getStatus())
@@ -263,7 +265,8 @@ public class OrderService {
                 .discountAmount(order.getDiscountAmount())
                 .shippingAmount(order.getShippingAmount())
                 .shippingMethod(order.getShippingMethod())
-                .paymentStatus(paymentRepository.findByOrderId(order.getId()).map(p -> p.getStatus().name()).orElse("PENDING"))
+                .paymentStatus(payment == null ? "PENDING" : payment.getStatus().name())
+                .paymentMethod(payment == null ? null : payment.getMethod().name())
                 .shippingAddress(order.getShippingAddress())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
