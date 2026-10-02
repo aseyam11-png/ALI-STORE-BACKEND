@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 public class ProductService {
     private static final String DEFAULT_CURRENCY = "USD";
     private static final int MAX_PAGE_SIZE = 100;
-    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE);
+    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -161,7 +161,7 @@ public class ProductService {
             case "price_asc" -> Sort.by(Sort.Direction.ASC, "price");
             case "price_desc" -> Sort.by(Sort.Direction.DESC, "price");
             case "rating_desc", "reviews_desc", "discount_desc" ->
-                    Sort.by(Sort.Direction.ASC, "id");
+                    throw new BusinessException("Sort '" + sort + "' is not supported yet");
             default -> throw new BusinessException("Unsupported sort: " + sort);
         };
     }
