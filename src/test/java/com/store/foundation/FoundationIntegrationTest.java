@@ -115,7 +115,8 @@ class FoundationIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(registerBody)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.token").isNotEmpty());
+                .andExpect(jsonPath("$.data.token").doesNotExist())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().exists("ali_store_session"));
 
         Map<String, String> loginBody = Map.of("email", "ali@example.com", "password", "Password123");
 
@@ -123,7 +124,8 @@ class FoundationIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginBody)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.token").isNotEmpty());
+                .andExpect(jsonPath("$.data.token").doesNotExist())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().exists("ali_store_session"));
     }
 
     @Test
