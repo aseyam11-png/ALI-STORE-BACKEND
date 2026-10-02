@@ -6,6 +6,7 @@ import com.store.common.exception.ResourceNotFoundException;
 import com.store.product.dto.ProductResponse;
 import com.store.product.entity.Product;
 import com.store.product.repository.ProductRepository;
+import com.store.inventory.service.InventoryService;
 import com.store.supplier.dto.SupplierProductPriceUpdateRequest;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.repository.SupplierRepository;
@@ -22,6 +23,7 @@ import java.math.RoundingMode;
 public class SupplierProductPriceSyncService {
     private final ProductRepository productRepository;
     private final SupplierRepository supplierRepository;
+    private final InventoryService inventoryService;
 
     @Value("${app.pricing.default-markup-percentage:30}")
     private BigDecimal defaultMarkupPercentage;
@@ -86,8 +88,8 @@ public class SupplierProductPriceSyncService {
                 .currency(product.getCurrency())
                 .sku(product.getSku())
                 .status(product.getStatus())
-                .availability(null)
-                .availableQuantity(null)
+                .availability(inventoryService.getPublicAvailability(product.getId()))
+                .availableQuantity(inventoryService.getAvailableQuantity(product.getId()))
                 .categoryId(product.getCategory().getId())
                 .categoryName(product.getCategory().getName())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
