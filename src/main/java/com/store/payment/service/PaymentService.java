@@ -3,6 +3,7 @@ package com.store.payment.service;
 import com.store.common.exception.BusinessException;
 import com.store.common.exception.ConflictException;
 import com.store.common.exception.ForbiddenException;
+import com.store.common.exception.OrderExpiredException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.order.entity.Order;
 import com.store.order.entity.OrderStatus;
@@ -32,7 +33,7 @@ public class PaymentService {
     private final PaymentReservationService paymentReservationService;
     private final OrderService orderService;
 
-    @Transactional
+    @Transactional(noRollbackFor = OrderExpiredException.class)
     public PaymentResponse processPayment(String email, PaymentRequest request) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -46,7 +47,7 @@ public class PaymentService {
         }
 
         if (orderService.expireIfReservationElapsed(order)) {
-            throw new ConflictException("Order reservation has expired");
+            throw new OrderExpiredException("Order reservation has expired");
         }
 
         if (order.getStatus() != OrderStatus.PENDING) {
@@ -89,12 +90,10 @@ public class PaymentService {
         Payment reserved = paymentReservationService.reserve(
                 request.getOrderId(), request.getAmount(), request.getMethod());
 
-        String idempotencyKey = "order-" + order.getId();
-
         PaymentProvider.PaymentResult result =
                 paymentProvider.charge(
                         order.getId(), request.getAmount(),
-                        request.getMethod(), idempotencyKey);
+                        request.getMethod(), "order-" + order.getId());
 
         reserved.setStatus(result.success()
                 ? PaymentStatus.COMPLETED : PaymentStatus.FAILED);
@@ -115,14 +114,12 @@ public class PaymentService {
     public PaymentResponse getPaymentByOrderId(String email, Long orderId) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
-
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found with id: " + orderId));
         if (!order.getUser().getId().equals(user.getId())) {
             throw new ForbiddenException("This order does not belong to you");
         }
-
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Payment not found for order id: " + orderId));
@@ -131,13 +128,8 @@ public class PaymentService {
 
     private PaymentResponse mapToResponse(Payment payment) {
         return PaymentResponse.builder()
-                .id(payment.getId())
-                .orderId(payment.getOrderId())
-                .amount(payment.getAmount())
-                .method(payment.getMethod())
-                .status(payment.getStatus())
-                .transactionId(payment.getTransactionId())
-                .createdAt(payment.getCreatedAt())
-                .build();
+                .id(payment.getId()).orderId(payment.getOrderId()).amount(payment.getAmount())
+                .method(payment.getMethod()).status(payment.getStatus())
+                .transactionId(payment.getTransactionId()).createdAt(payment.getCreatedAt()).build();
     }
 }
