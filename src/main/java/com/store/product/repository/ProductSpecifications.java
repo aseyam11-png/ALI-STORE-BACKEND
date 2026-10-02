@@ -62,6 +62,16 @@ public final class ProductSpecifications {
         return (root, query, cb) -> cb.lessThanOrEqualTo(root.get("price"), max);
     }
 
+    public static Specification<Product> hasDiscount() {
+        return (root, query, cb) -> cb.and(
+                root.get("compareAtPrice").isNotNull(),
+                cb.greaterThan(
+                        root.get("compareAtPrice"),
+                        root.get("price")
+                )
+        );
+    }
+
     public static Specification<Product> hasAvailability(PublicAvailability availability) {
         return (root, query, cb) -> {
             Subquery<Long> subquery = query.subquery(Long.class);
