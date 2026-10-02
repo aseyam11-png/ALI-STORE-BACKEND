@@ -253,6 +253,24 @@ public class OrderService {
             }
         }
 
+        if (newStatus == OrderStatus.SHIPPED) {
+            var shipments = shipmentRepository.findByOrderIdOrderByIdAsc(orderId);
+            if (shipments.isEmpty() || shipments.stream().noneMatch(shipment ->
+                    shipment.getStatus() == ShipmentStatus.SHIPPED
+                            || shipment.getStatus() == ShipmentStatus.IN_TRANSIT
+                            || shipment.getStatus() == ShipmentStatus.DELIVERED)) {
+                throw new BusinessException("Order cannot be marked SHIPPED before supplier shipment has started");
+            }
+        }
+
+        if (newStatus == OrderStatus.DELIVERED) {
+            var shipments = shipmentRepository.findByOrderIdOrderByIdAsc(orderId);
+            if (shipments.isEmpty() || shipments.stream().anyMatch(
+                    shipment -> shipment.getStatus() != ShipmentStatus.DELIVERED)) {
+                throw new BusinessException("Order cannot be marked DELIVERED until every shipment is delivered");
+            }
+        }
+
         if (newStatus == OrderStatus.CANCELLED) {
             validateCancellationAllowed(order);
             fulfillmentService.cancelPendingWorkForOrder(orderId);
