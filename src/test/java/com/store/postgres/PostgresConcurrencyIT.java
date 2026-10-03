@@ -14,6 +14,7 @@ import com.store.product.repository.ProductRepository;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.repository.SupplierRepository;
 import com.store.inventory.enums.InventorySource;
+import com.store.order.repository.OrderRepository;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -103,6 +104,7 @@ class PostgresConcurrencyIT {
     @Autowired private SupplierRepository supplierRepository;
     @Autowired private InventoryRepository inventoryRepository;
     @Autowired private CouponRepository couponRepository;
+    @Autowired private OrderRepository orderRepository;
 
     private Role userRole() {
         return roleRepository.findByName("ROLE_USER")
@@ -177,6 +179,60 @@ class PostgresConcurrencyIT {
 
         Assertions.assertEquals(1, successCount,
                 "exactly one of two truly concurrent checkout requests against real PostgreSQL must succeed - proves CartRepository.findWithLockByUserId's pessimistic lock");
+    }
+
+    @Test
+    void checkout_concurrentRetryWithSameIdempotencyKey_returnsOneOriginalOrder() throws Exception {
+        User user = createUser("idempotency-race-pg@example.com");
+        Product product = productWithStock("IDEMP-PG-1", 10);
+
+        String token = tokenFor(user);
+        mockMvc.perform(post("/api/v1/cart/items").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("productId", product.getId(), "quantity", 2))))
+                .andExpect(status().isOk());
+
+        String body = objectMapper.writeValueAsString(Map.of("shippingAddress", "1 Main St"));
+        String idempotencyKey = "idempotency-race-pg-001";
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        Callable<String> checkoutCall = () ->
+                mockMvc.perform(post("/api/v1/orders")
+                                .header("Authorization", "Bearer " + token)
+                                .header("Idempotency-Key", idempotencyKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                        .andReturn().getResponse().getContentAsString();
+
+        List<Future<String>> futures = executor.invokeAll(List.of(checkoutCall, checkoutCall));
+        executor.shutdown();
+
+        List<String> responses = futures.stream().map(f -> {
+            try {
+                return f.get();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).toList();
+
+        long successCount = responses.stream()
+                .filter(response -> response.contains(""status":"PENDING""))
+                .count();
+
+        Assertions.assertEquals(2, successCount,
+                "two concurrent retries with the same idempotency key must both return the original successful order");
+
+        long firstOrderId = objectMapper.readTree(responses.get(0)).path("data").path("id").asLong();
+        long secondOrderId = objectMapper.readTree(responses.get(1)).path("data").path("id").asLong();
+
+        Assertions.assertTrue(firstOrderId > 0);
+        Assertions.assertEquals(firstOrderId, secondOrderId,
+                "same customer + same idempotency key must resolve to one durable order");
+
+        Assertions.assertEquals(1,
+                orderRepository.findByUserId(user.getId(), org.springframework.data.domain.Pageable.unpaged())
+                        .getTotalElements(),
+                "concurrent idempotent checkout retries must create exactly one order");
     }
 
     @Test
