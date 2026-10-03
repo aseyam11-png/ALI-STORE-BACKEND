@@ -22,7 +22,7 @@ class SecurityCorsContractTest {
     @Test
     void configuredFrontendMaySendCheckoutIdempotencyHeader() {
         CorsConfiguration configuration = corsConfigurationSource
-                .getCorsConfiguration(new org.springframework.mock.web.MockHttpServletRequest());
+                .getCorsConfiguration(new org.springframework.mock.web.MockHttpServletRequest("GET", "/api/v1/orders"));
 
         assertTrue(configuration != null, "CORS configuration must be available");
         assertTrue(configuration.getAllowedHeaders().contains(HttpHeaders.AUTHORIZATION));
