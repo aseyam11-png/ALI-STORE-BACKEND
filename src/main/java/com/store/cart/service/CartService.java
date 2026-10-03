@@ -60,6 +60,32 @@ public class CartService {
     }
 
     @Transactional
+    public CartResponse replaceCart(String email, List<CartItemRequest> requests) {
+        Cart cart = getOrCreateCart(email);
+
+        cartItemRepository.deleteAll(cartItemRepository.findByCartId(cart.getId()));
+
+        requests.stream()
+                .collect(Collectors.toMap(CartItemRequest::getProductId, CartItemRequest::getQuantity, Integer::sum))
+                .forEach((productId, quantity) -> {
+                    Product product = productRepository.findById(productId)
+                            .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + productId));
+
+                    int available = inventoryService.getAvailableQuantity(productId);
+                    if (available < quantity) {
+                        throw new BusinessException("Insufficient stock for product: " + product.getName());
+                    }
+
+                    cartItemRepository.save(CartItem.builder()
+                            .cart(cart)
+                            .product(product)
+                            .quantity(quantity)
+                            .build());
+                });
+
+        return mapToResponse(cart.getId());
+    }
+    @Transactional
     public CartResponse removeItemFromCart(String email, Long itemId) {
         Cart cart = getOrCreateCart(email);
         CartItem item = cartItemRepository.findById(itemId)
