@@ -90,7 +90,9 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
-        configuration.setAllowCredentials(true);\n        configuration.setExposedHeaders(List.of("Retry-After"));\n        configuration.setMaxAge(3600L);
+        configuration.setAllowCredentials(true);
+        configuration.setExposedHeaders(List.of("Retry-After"));
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
