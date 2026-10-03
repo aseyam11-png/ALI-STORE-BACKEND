@@ -42,6 +42,19 @@ public class InventoryService {
                 .orElse(0);
     }
 
+    public Boolean isLowStock(Long productId) {
+        return inventoryRepository.findByProductId(productId)
+                .filter(this::isKnown)
+                .map(inv -> Math.max(0, inv.getQuantity() - inv.getReservedQuantity()) <= inv.getLowStockThreshold())
+                .orElse(false);
+    }
+
+    public LocalDateTime getLastSyncedAt(Long productId) {
+        return inventoryRepository.findByProductId(productId)
+                .map(Inventory::getLastSyncedAt)
+                .orElse(null);
+    }
+
     @Transactional
     public boolean isAvailableForQuantity(Long productId, int quantity) {
         if (quantity < 1) return false;
