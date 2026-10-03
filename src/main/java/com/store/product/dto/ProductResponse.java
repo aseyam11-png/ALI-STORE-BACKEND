@@ -7,6 +7,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.time.LocalDateTime;
 
 @Data
 @Builder
@@ -20,6 +21,9 @@ public class ProductResponse {
     private String sku;
     private ProductStatus status;
     private PublicAvailability availability;
+    private Integer availableQuantity;
+    private Boolean lowStock;
+    private LocalDateTime inventoryLastSyncedAt;
     private Long categoryId;
     private String categoryName;
     private Long brandId;
