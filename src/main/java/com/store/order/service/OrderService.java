@@ -74,15 +74,21 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
+
+        // Serialize checkout attempts for this customer before checking idempotency.
+        // Without this ordering, two simultaneous requests with the same key can both
+        // miss the initial lookup; the second request may then wait on the cart lock,
+        // find the cart already emptied by the first request, and incorrectly return
+        // "Cart is empty" instead of the original order.
+        Cart cart = cartRepository.findWithLockByUserId(user.getId())
+                .orElseThrow(() -> new BusinessException("Cart is empty"));
+
         if (normalizedKey != null) {
             Order existing = orderRepository.findByUserIdAndIdempotencyKey(user.getId(), normalizedKey).orElse(null);
             if (existing != null) {
                 return mapToResponse(existing);
             }
         }
-
-        Cart cart = cartRepository.findWithLockByUserId(user.getId())
-                .orElseThrow(() -> new BusinessException("Cart is empty"));
 
         List<CartItem> cartItems = cartItemRepository.findByCartId(cart.getId());
         if (cartItems.isEmpty()) {
