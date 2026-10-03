@@ -10,11 +10,15 @@ import org.springframework.data.jpa.repository.Query;
 import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByUserId(Long userId, Pageable pageable);
 
+    Optional<Order> findByUserIdAndIdempotencyKey(Long userId, String idempotencyKey);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")
-    java.util.Optional<Order> findByIdForUpdate(Long id);
+    Optional<Order> findByIdForUpdate(Long id);
 }

@@ -69,9 +69,17 @@ public class OrderService {
     private final FulfillmentService fulfillmentService;
 
     @Transactional
-    public OrderResponse createOrder(String email, OrderRequest request) {
+    public OrderResponse createOrder(String email, OrderRequest request, String idempotencyKey) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedKey != null) {
+            Order existing = orderRepository.findByUserIdAndIdempotencyKey(user.getId(), normalizedKey).orElse(null);
+            if (existing != null) {
+                return mapToResponse(existing);
+            }
+        }
 
         Cart cart = cartRepository.findWithLockByUserId(user.getId())
                 .orElseThrow(() -> new BusinessException("Cart is empty"));
@@ -104,7 +112,8 @@ public class OrderService {
         Order order = Order.builder()
                 .user(user)
                 .status(OrderStatus.PENDING)
-                .shippingAddress(request.getShippingAddress())
+                .shippingAddress(request.getShippingAddress().trim())
+                .idempotencyKey(normalizedKey)
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
@@ -112,6 +121,10 @@ public class OrderService {
 
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
             var product = cartItem.getProduct();
+
+            if (product.getStatus() != com.store.product.enums.ProductStatus.ACTIVE) {
+                throw new BusinessException("Product is no longer available for purchase: " + product.getId());
+            }
 
             if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
                     || product.getSupplierCost() == null) {
@@ -139,6 +152,15 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         cartItemRepository.deleteAll(cartItems);
         return mapToResponse(savedOrder);
+    }
+
+    private String normalizeIdempotencyKey(String key) {
+        if (key == null || key.isBlank()) return null;
+        String normalized = key.trim();
+        if (normalized.length() > 100) {
+            throw new BusinessException("Idempotency-Key must not exceed 100 characters");
+        }
+        return normalized;
     }
 
     public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
