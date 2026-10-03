@@ -216,7 +216,7 @@ class PostgresConcurrencyIT {
         }).toList();
 
         long successCount = responses.stream()
-                .filter(response -> response.contains(""status":"PENDING""))
+                .filter(response -> response.contains("\"status\":\"PENDING\""))
                 .count();
 
         Assertions.assertEquals(2, successCount,
