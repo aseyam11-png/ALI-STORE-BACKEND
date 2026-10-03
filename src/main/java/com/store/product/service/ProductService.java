@@ -42,13 +42,13 @@ import java.util.stream.Collectors;
 public class ProductService {
     private static final String DEFAULT_CURRENCY = "USD";
     private static final int MAX_PAGE_SIZE = 100;
-    private static final List<ProductStatus> CUSTOMER_VISIBLE_DETAIL_STATUSES = List.of(ProductStatus.ACTIVE, ProductStatus.ARCHIVED);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
     private final SupplierRepository supplierRepository;
     private final InventoryService inventoryService;
+    private final com.store.pricing.service.PricingService pricingService;
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
@@ -110,6 +110,10 @@ public class ProductService {
         }
 
         Product saved = productRepository.save(product);
+        if (saved.getSupplierCost() != null) {
+            pricingService.repriceProduct(saved);
+            saved = productRepository.save(saved);
+        }
         inventoryService.initializeForProduct(saved);
         return mapToAdminResponse(saved);
     }
@@ -149,16 +153,16 @@ public class ProductService {
     }
 
     public ProductResponse getProductById(Long id) {
-        Product product = productRepository.findById(id)
-                .filter(p -> CUSTOMER_VISIBLE_DETAIL_STATUSES.contains(p.getStatus()))
+        return productRepository.findById(id)
+                .filter(p -> p.getStatus() == ProductStatus.ACTIVE)
+                .map(this::mapToResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
-        return mapToResponse(product);
     }
 
     public ProductResponse getProductBySlug(String slug) {
-        Product product = productRepository.findBySlugAndStatusIn(slug, CUSTOMER_VISIBLE_DETAIL_STATUSES)
+        return productRepository.findBySlugAndStatusIn(slug, List.of(ProductStatus.ACTIVE))
+                .map(this::mapToResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with slug: " + slug));
-        return mapToResponse(product);
     }
 
     public PageResponse<ProductAdminResponse> getAllForAdmin(Pageable pageable) {
@@ -195,6 +199,10 @@ public class ProductService {
             if (request.getStatus() == ProductStatus.ACTIVE) validatePublishable(product);
             product.setStatus(request.getStatus());
         }
+        if (request.getSupplierCost() != null && product.getSupplierCost() != null) {
+            pricingService.repriceProduct(product);
+        }
+
         if (product.getStatus() == ProductStatus.ACTIVE) validatePublishable(product);
 
         return mapToAdminResponse(productRepository.save(product));

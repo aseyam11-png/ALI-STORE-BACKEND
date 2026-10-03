@@ -10,7 +10,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_orders_user_idempotency_key", columnNames = {"user_id", "idempotency_key"})
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -37,6 +39,14 @@ public class Order extends BaseEntity {
 
     @Column(nullable = false)
     private String shippingAddress;
+
+    /**
+     * Client-generated idempotency key for checkout retries. It is scoped to the
+     * authenticated customer so a gateway/frontend retry cannot create duplicate
+     * orders for the same logical checkout attempt.
+     */
+    @Column(name = "idempotency_key", length = 100)
+    private String idempotencyKey;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

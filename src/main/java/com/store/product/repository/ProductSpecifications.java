@@ -58,7 +58,8 @@ public final class ProductSpecifications {
             subquery.select(inventoryRoot.get("id"))
                     .where(
                             cb.equal(inventoryRoot.get("product"), root),
-                            availability == PublicAvailability.IN_STOCK
+                            cb.isNotNull(inventoryRoot.get("lastSyncedAt")),
+                    availability == PublicAvailability.IN_STOCK
                                     ? cb.greaterThan(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
                                     : cb.lessThanOrEqualTo(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
                     );

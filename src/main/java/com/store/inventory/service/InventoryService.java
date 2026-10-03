@@ -37,7 +37,7 @@ public class InventoryService {
 
     public int getAvailableQuantity(Long productId) {
         return inventoryRepository.findByProductId(productId)
-                .filter(inv -> isKnown(inv))
+                .filter(this::isKnown)
                 .map(inv -> Math.max(0, inv.getQuantity() - inv.getReservedQuantity()))
                 .orElse(0);
     }
@@ -113,13 +113,22 @@ public class InventoryService {
         Inventory inventory = inventoryRepository.findByProductIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product id: " + productId));
 
+        LocalDateTime effectiveSyncTime = syncedAt != null ? syncedAt : LocalDateTime.now();
+
+        // Supplier responses can arrive out of order. Never let an older snapshot
+        // overwrite a newer one.
+        if (inventory.getLastSyncedAt() != null
+                && !effectiveSyncTime.isAfter(inventory.getLastSyncedAt())) {
+            return mapToResponse(inventory);
+        }
+
         if (quantity < inventory.getReservedQuantity()) {
             throw new BusinessException("Supplier quantity cannot be lower than currently reserved stock");
         }
 
         inventory.setQuantity(quantity);
         inventory.setSource(InventorySource.SUPPLIER_SYNC);
-        inventory.setLastSyncedAt(syncedAt != null ? syncedAt : LocalDateTime.now());
+        inventory.setLastSyncedAt(effectiveSyncTime);
         return mapToResponse(inventoryRepository.save(inventory));
     }
 

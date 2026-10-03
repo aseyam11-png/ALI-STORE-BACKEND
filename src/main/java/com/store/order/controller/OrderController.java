@@ -23,8 +23,11 @@ public class OrderController {
     @PostMapping
     public ResponseEntity<ApiResponse<OrderResponse>> createOrder(
             @AuthenticationPrincipal UserDetails userDetails,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody OrderRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(orderService.createOrder(userDetails.getUsername(), request), "Order placed successfully"));
+        return ResponseEntity.ok(ApiResponse.success(
+                orderService.createOrder(userDetails.getUsername(), request, idempotencyKey),
+                "Order placed successfully"));
     }
 
     @GetMapping

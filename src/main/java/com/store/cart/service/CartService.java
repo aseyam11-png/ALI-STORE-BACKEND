@@ -43,7 +43,8 @@ public class CartService {
     public CartResponse addItemToCart(String email, CartItemRequest request) {
         Cart cart = getOrCreateCart(email);
         Product product = productRepository.findById(request.getProductId())
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + request.getProductId()));
+                .filter(p -> p.getStatus() == com.store.product.enums.ProductStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Product is not available for purchase: " + request.getProductId()));
 
         int available = inventoryService.getAvailableQuantity(product.getId());
         if (available < request.getQuantity()) {

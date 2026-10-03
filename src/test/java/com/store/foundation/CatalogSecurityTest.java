@@ -131,7 +131,7 @@ class CatalogSecurityTest {
     }
 
     @Test
-    void archivedProduct_hiddenFromListing_butStillResolvableById() throws Exception {
+    void archivedProduct_hiddenFromListing_and_notResolvableById() throws Exception {
         Product active = productRepository.save(Product.builder()
                 .name("Active One").slug("active-one").price(BigDecimal.TEN).currency("USD").sku("ACT-1")
                 .status(ProductStatus.ACTIVE).category(category).build());
@@ -148,9 +148,10 @@ class CatalogSecurityTest {
                 .andExpect(jsonPath("$.data.content[?(@.sku=='ARC-1')]").isEmpty())
                 .andExpect(jsonPath("$.data.content[?(@.sku=='DRF-1')]").isEmpty());
 
-        // Archived is still individually resolvable (old order history / bookmarks keep working).
+        // Archived products are intentionally not customer-resolvable; order history
+        // keeps its own historical snapshot and does not depend on catalog visibility.
         mockMvc.perform(get("/api/v1/products/" + archived.getId()))
-                .andExpect(status().isOk());
+                .andExpect(status().isNotFound());
 
         // Draft is never visible to a customer, even by direct id.
         mockMvc.perform(get("/api/v1/products/" + draft.getId()))
