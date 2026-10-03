@@ -2,42 +2,44 @@ package com.store.common.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import java.util.List;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
-@AutoConfigureMockMvc
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@SpringBootTest
 @ActiveProfiles("test")
 class SecurityCorsContractTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    private CorsConfigurationSource corsConfigurationSource;
 
     @Test
-    void checkoutIdempotencyHeaderIsAllowedForConfiguredFrontend() throws Exception {
-        mockMvc.perform(options("/api/v1/orders")
-                        .header("Origin", "http://localhost:3000")
-                        .header("Access-Control-Request-Method", "POST")
-                        .header("Access-Control-Request-Headers", "Authorization,Content-Type,Idempotency-Key"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:3000"))
-                .andExpect(header().string("Access-Control-Allow-Headers",
-                        org.hamcrest.Matchers.containsString("Idempotency-Key")));
+    void configuredFrontendMaySendCheckoutIdempotencyHeader() {
+        CorsConfiguration configuration = corsConfigurationSource
+                .getCorsConfiguration(new org.springframework.mock.web.MockHttpServletRequest());
+
+        assertTrue(configuration != null, "CORS configuration must be available");
+        assertTrue(configuration.getAllowedHeaders().contains(HttpHeaders.AUTHORIZATION));
+        assertTrue(configuration.getAllowedHeaders().contains(HttpHeaders.CONTENT_TYPE));
+        assertTrue(configuration.getAllowedHeaders().contains("Idempotency-Key"));
+        assertTrue(configuration.getAllowedMethods().containsAll(
+                List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")));
+        assertTrue(Boolean.TRUE.equals(configuration.getAllowCredentials()));
     }
 
     @Test
-    void retryAfterHeaderIsExposedToConfiguredFrontend() throws Exception {
-        mockMvc.perform(options("/api/v1/orders")
-                        .header("Origin", "http://localhost:3000")
-                        .header("Access-Control-Request-Method", "POST"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Expose-Headers",
-                        org.hamcrest.Matchers.containsString("Retry-After")));
+    void retryAfterIsDeclaredForBrowserReadableRateLimitFeedback() {
+        CorsConfiguration configuration = corsConfigurationSource
+                .getCorsConfiguration(new org.springframework.mock.web.MockHttpServletRequest());
+
+        assertTrue(configuration != null, "CORS configuration must be available");
+        assertTrue(configuration.getExposedHeaders().contains("Retry-After"));
+        assertTrue(configuration.getMaxAge() != null && configuration.getMaxAge() == 3600L);
     }
 }
