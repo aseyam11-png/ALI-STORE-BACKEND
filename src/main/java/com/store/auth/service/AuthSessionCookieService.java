@@ -45,7 +45,7 @@ public class AuthSessionCookieService {
         String configuredSameSite = environment.getProperty(
                 "app.auth.cookie-same-site", "");
         cookieSameSite = configuredSameSite == null || configuredSameSite.isBlank()
-                ? (secureCookie ? "None" : "Lax")
+                ? "Strict"
                 : configuredSameSite;
         cookieDomain = environment.getProperty(
                 "app.auth.cookie-domain", "");
