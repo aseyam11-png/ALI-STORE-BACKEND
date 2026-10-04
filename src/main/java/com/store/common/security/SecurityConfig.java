@@ -2,6 +2,8 @@ package com.store.common.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.auth.service.CustomUserDetailsService;
+import com.store.auth.service.GoogleOAuth2FailureHandler;
+import com.store.auth.service.GoogleOAuth2SuccessHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -42,6 +44,8 @@ public class SecurityConfig {
     private final RateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
     private final ClientIpResolver clientIpResolver;
+    private final GoogleOAuth2SuccessHandler googleOAuth2SuccessHandler;
+    private final GoogleOAuth2FailureHandler googleOAuth2FailureHandler;
 
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
@@ -62,6 +66,9 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/email/verify",
                                 "/api/v1/auth/email/resend",
+                                "/api/v1/auth/google",
+                                "/oauth2/authorization/**",
+                                "/login/oauth2/code/**",
                                 "/api/v1/integrations/suppliers/shipments/update",
                                 "/api/v1/health/**",
                                 "/actuator/health",
@@ -74,7 +81,10 @@ public class SecurityConfig {
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .oauth2Login(oauth2 -> oauth2
+                        .successHandler(googleOAuth2SuccessHandler)
+                        .failureHandler(googleOAuth2FailureHandler))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new AuthRateLimitFilter(rateLimiter, objectMapper, clientIpResolver), JwtAuthenticationFilter.class)
