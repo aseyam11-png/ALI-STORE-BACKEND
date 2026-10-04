@@ -41,6 +41,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductService {
     private static final String DEFAULT_CURRENCY = "USD";
+    private static final long INVENTORY_STALE_AFTER_MS = 1_800_000L;
     private static final int MAX_PAGE_SIZE = 100;
 
     private final ProductRepository productRepository;
@@ -127,14 +128,20 @@ public class ProductService {
             throw new BusinessException("pageSize must be between 1 and " + MAX_PAGE_SIZE);
         }
 
-        Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE));
+        Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE))
+                .and(ProductSpecifications.hasActiveCategory())
+                .and(ProductSpecifications.hasActiveSupplier());
         if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.nameOrSkuContains(q.trim()));
         if (categoryId != null) spec = spec.and(ProductSpecifications.inCategory(categoryId));
         if (brandId != null) spec = spec.and(ProductSpecifications.hasBrand(brandId));
         if (minPrice != null) spec = spec.and(ProductSpecifications.priceGreaterThanOrEqual(minPrice));
         if (maxPrice != null) spec = spec.and(ProductSpecifications.priceLessThanOrEqual(maxPrice));
         if (availability == PublicAvailability.IN_STOCK || availability == PublicAvailability.OUT_OF_STOCK) {
-            spec = spec.and(ProductSpecifications.hasAvailability(availability));
+            spec = spec.and(ProductSpecifications.hasAvailability(
+                    availability,
+                    java.time.LocalDateTime.now().minusNanos(
+                            java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(
+                                    INVENTORY_STALE_AFTER_MS))));
         }
 
         Pageable pageable = PageRequest.of(page, pageSize, resolveSort(sort));
@@ -153,10 +160,16 @@ public class ProductService {
     }
 
     public ProductResponse getProductById(Long id) {
-        return productRepository.findById(id)
+        Product product = productRepository.findById(id)
                 .filter(p -> p.getStatus() == ProductStatus.ACTIVE)
-                .map(this::mapToResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+        if (!Boolean.TRUE.equals(product.getCategory().getActive())
+                || product.getSupplier() == null
+                || product.getSupplier().getStatus() != SupplierStatus.ACTIVE
+                || !Boolean.TRUE.equals(product.getSupplier().getFulfillmentEnabled())) {
+            throw new ResourceNotFoundException("Product not found with id: " + id);
+        }
+        return mapToResponse(product);
     }
 
     public ProductResponse getProductBySlug(String slug) {
