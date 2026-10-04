@@ -20,6 +20,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByUserIdAndIdempotencyKey(Long userId, String idempotencyKey);
 
+    @Query("""
+            select case when count(o) > 0 then true else false end
+            from Order o
+            join o.items i
+            where o.user.id = :userId
+              and i.product.id = :productId
+              and o.status = com.store.order.entity.OrderStatus.DELIVERED
+            """)
+    boolean existsDeliveredOrderForProduct(Long userId, Long productId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select o from Order o
