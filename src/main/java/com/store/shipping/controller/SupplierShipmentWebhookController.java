@@ -80,6 +80,14 @@ public class SupplierShipmentWebhookController {
         }
 
         String supplierCode = request.getSupplierCode().trim();
+        String normalizedEventId = eventId.trim();
+
+        if (supplierCode.length() > 80 || normalizedEventId.length() > 150) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(
+                            "Supplier webhook identifiers exceed the supported length"));
+        }
+
         String secret = credentialResolver.resolveWebhookSecret(supplierCode);
         if (secret.isBlank()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -91,7 +99,7 @@ public class SupplierShipmentWebhookController {
         try {
             expected = sign(
                     secret,
-                    eventId.trim() + "." + timestamp + "." + rawBody);
+                    normalizedEventId + "." + timestamp + "." + rawBody);
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error(
@@ -110,7 +118,7 @@ public class SupplierShipmentWebhookController {
 
         ShipmentResponse response = processorService.process(
                 supplierCode,
-                eventId.trim(),
+                normalizedEventId,
                 request);
 
         return ResponseEntity.ok(
