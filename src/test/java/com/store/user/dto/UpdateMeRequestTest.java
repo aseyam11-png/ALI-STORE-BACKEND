@@ -2,7 +2,6 @@ package com.store.user.dto;
 
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -15,11 +14,6 @@ class UpdateMeRequestTest {
     @BeforeAll
     static void setUp() {
         validator = Validation.buildDefaultValidatorFactory().getValidator();
-    }
-
-    @AfterAll
-    static void tearDown() {
-        validator.close();
     }
 
     @Test
