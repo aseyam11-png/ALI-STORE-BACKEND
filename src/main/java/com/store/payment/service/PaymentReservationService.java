@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 /**
  * Commits the PENDING payment reservation in its OWN transaction (REQUIRES_NEW),
@@ -24,15 +25,10 @@ import java.math.BigDecimal;
  * double-charging a real gateway even though the DB stayed "clean" after the crash.
  *
  * With the reservation committed separately and immediately, a crash after that
- * point leaves a durable PENDING row behind. A retry then hits the existing
- * findByOrderId pre-check / the unique constraint on payments.order_id and is
- * rejected with 409 - our system will never attempt a second provider charge for
- * that order again. The tradeoff (documented, not solved here): if the original
- * charge actually succeeded at the provider before the crash, the order is left
- * stuck showing PENDING until someone reconciles it against the provider's
- * records (e.g. a webhook handler or an admin reconciliation job) - neither of
- * which exists in this codebase. That is real, undone technical debt, not
- * something this change claims to fix.
+ * point leaves a durable PENDING row behind. A retry never blindly recharges a
+ * PENDING or unknown-outcome payment. A definitively FAILED payment may be reopened
+ * in its existing row with the same idempotency key; REQUIRES_RECONCILIATION remains
+ * blocked until an authoritative provider result exists.
  */
 @Service
 @RequiredArgsConstructor
@@ -73,4 +69,52 @@ public class PaymentReservationService {
                 : message.substring(0, Math.min(message.length(), 1000)));
         paymentRepository.save(payment);
     }
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Payment reopenFailed(Long paymentId, BigDecimal amount, PaymentMethod method) {
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+
+        if (payment.getStatus() != PaymentStatus.FAILED) {
+            throw new com.store.common.exception.ConflictException(
+                    "Only failed payments can be retried");
+        }
+        if (payment.getAmount().compareTo(amount) != 0 || payment.getMethod() != method) {
+            throw new com.store.common.exception.ConflictException(
+                    "Payment retry does not match the original payment attempt");
+        }
+
+        payment.setStatus(PaymentStatus.PENDING);
+        payment.setTransactionId(null);
+        payment.setProviderError(null);
+        payment.setCollectionStatus(
+                com.store.payment.entity.PaymentCollectionStatus.NOT_REQUIRED);
+        payment.setIdempotencyKey(
+                "order-" + payment.getOrderId() + ":retry-" + UUID.randomUUID());
+        return paymentRepository.saveAndFlush(payment);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Payment markCompleted(Long paymentId, String transactionId) {
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new com.store.common.exception.ConflictException(
+                    "Only pending payments can be completed");
+        }
+        if (transactionId == null || transactionId.isBlank()) {
+            throw new com.store.common.exception.ConflictException(
+                    "Provider did not return a transaction identifier");
+        }
+
+        payment.setStatus(PaymentStatus.COMPLETED);
+        payment.setTransactionId(transactionId.trim());
+        payment.setProviderError(null);
+        payment.setCollectionStatus(
+                com.store.payment.entity.PaymentCollectionStatus.NOT_REQUIRED);
+        return paymentRepository.saveAndFlush(payment);
+    }
+
+
+
 }

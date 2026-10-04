@@ -19,6 +19,7 @@ import com.store.payment.provider.PaymentProvider;
 import com.store.payment.repository.PaymentRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,7 @@ public class PaymentService {
     private final PaymentProvider paymentProvider;
     private final PaymentReservationService paymentReservationService;
     private final OrderService orderService;
+    private final EntityManager entityManager;
 
     @Transactional(noRollbackFor = OrderExpiredException.class)
     public PaymentResponse processPayment(String email, PaymentRequest request) {
@@ -72,11 +74,16 @@ public class PaymentService {
             throw new BusinessException("Order contains an item without a valid external supplier mapping");
         }
 
-        if (paymentRepository.findByOrderId(request.getOrderId()).isPresent()) {
-            throw new ConflictException("A payment attempt already exists for this order");
-        }
-
         String idempotencyKey = "order-" + order.getId();
+
+        Payment existingPayment = paymentRepository.findByOrderId(request.getOrderId())
+                .orElse(null);
+
+        if (existingPayment != null
+                && existingPayment.getStatus() != PaymentStatus.FAILED) {
+            throw new ConflictException(
+                    "This order already has a payment attempt that cannot be retried");
+        }
 
         if (request.getMethod() == PaymentMethod.CASH_ON_DELIVERY) {
             Payment codPayment = paymentRepository.save(Payment.builder()
@@ -92,14 +99,24 @@ public class PaymentService {
             return mapToResponse(codPayment);
         }
 
-        Payment reserved = paymentReservationService.reserve(
-                request.getOrderId(), request.getAmount(), request.getMethod(), idempotencyKey);
+        Payment reserved = existingPayment == null
+                ? paymentReservationService.reserve(
+                        request.getOrderId(),
+                        request.getAmount(),
+                        request.getMethod(),
+                        idempotencyKey)
+                : paymentReservationService.reopenFailed(
+                        existingPayment.getId(),
+                        request.getAmount(),
+                        request.getMethod());
+
+        String paymentAttemptKey = reserved.getIdempotencyKey();
 
         PaymentProvider.PaymentResult result;
         try {
             result = paymentProvider.charge(
                     order.getId(), request.getAmount(),
-                    request.getMethod(), idempotencyKey);
+                    request.getMethod(), paymentAttemptKey);
         } catch (RuntimeException ex) {
             paymentReservationService.markRequiresReconciliation(
                     reserved.getId(), ex.getMessage());
@@ -107,29 +124,34 @@ public class PaymentService {
                     "Payment outcome could not be confirmed; reconciliation is required");
         }
 
-        try {
-            reserved.setStatus(result.success()
-                    ? PaymentStatus.COMPLETED : PaymentStatus.FAILED);
-            reserved.setTransactionId(result.transactionId());
-            reserved.setCollectionStatus(PaymentCollectionStatus.NOT_REQUIRED);
+        if (result.success()) {
+            try {
+                Payment completed = paymentReservationService.markCompleted(
+                        reserved.getId(), result.transactionId());
 
-            Payment saved = paymentRepository.save(reserved);
+                // markCompleted commits in REQUIRES_NEW. Clear the outer persistence
+                // context so OrderService cannot observe the stale PENDING Payment
+                // entity that was reserved before the independent commit.
+                entityManager.clear();
 
-            if (result.success()) {
                 orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
-            } else {
-                orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
-            }
 
-            return mapToResponse(saved);
-        } catch (RuntimeException ex) {
-            if (result.success()) {
+                return mapToResponse(completed);
+            } catch (RuntimeException ex) {
                 paymentReservationService.markRequiresReconciliation(
                         reserved.getId(), ex.getMessage());
                 throw new ConflictException(
                         "Payment was accepted by the provider but local settlement failed; reconciliation is required");
             }
+        }
 
+        try {
+            reserved.setStatus(PaymentStatus.FAILED);
+            reserved.setTransactionId(result.transactionId());
+            reserved.setCollectionStatus(PaymentCollectionStatus.NOT_REQUIRED);
+
+            return mapToResponse(paymentRepository.save(reserved));
+        } catch (RuntimeException ex) {
             paymentReservationService.markFailed(
                     reserved.getId(), ex.getMessage());
             throw new ConflictException(

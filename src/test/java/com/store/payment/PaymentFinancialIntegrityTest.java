@@ -38,13 +38,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import org.mockito.ArgumentCaptor;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -66,6 +71,61 @@ class PaymentFinancialIntegrityTest {
     @Autowired private RoleRepository roleRepository;
 
     @MockBean private PaymentProvider paymentProvider;
+
+    @Test
+    void failedCardPayment_canRetrySameOrderWithoutCreatingAnotherPayment() {
+        User user = user();
+        Product product = product("FIN-RETRY", "FIN-RETRY-SUP");
+        Order order = order(user, product, new BigDecimal("25.00"));
+
+        PaymentRequest request = new PaymentRequest();
+        request.setOrderId(order.getId());
+        request.setAmount(new BigDecimal("25.00"));
+        request.setMethod(PaymentMethod.CREDIT_CARD);
+
+        when(paymentProvider.charge(
+                eq(order.getId()),
+                eq(new BigDecimal("25.00")),
+                eq(PaymentMethod.CREDIT_CARD),
+                any()))
+                .thenReturn(new PaymentProvider.PaymentResult(false, null, "card declined"))
+                .thenReturn(new PaymentProvider.PaymentResult(true, "TXN-RETRY-1", "approved"));
+
+        var first = paymentService.processPayment(user.getEmail(), request);
+        Assertions.assertEquals(PaymentStatus.FAILED, first.getStatus());
+        Assertions.assertEquals(OrderStatus.PENDING,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        var second = paymentService.processPayment(user.getEmail(), request);
+        Assertions.assertEquals(PaymentStatus.COMPLETED, second.getStatus());
+        Assertions.assertEquals("TXN-RETRY-1", second.getTransactionId());
+        Assertions.assertEquals(1L,
+                paymentRepository.findAll().stream()
+                        .filter(payment -> payment.getOrderId().equals(order.getId()))
+                        .count());
+        Assertions.assertEquals(OrderStatus.PROCESSING,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+
+        TestTransaction.flagForRollback();
+        TestTransaction.end();
+
+        ArgumentCaptor<String> attemptKeyCaptor =
+                ArgumentCaptor.forClass(String.class);
+        verify(paymentProvider, times(2)).charge(
+                eq(order.getId()),
+                eq(new BigDecimal("25.00")),
+                eq(PaymentMethod.CREDIT_CARD),
+                attemptKeyCaptor.capture());
+
+        Assertions.assertEquals("order-" + order.getId(), attemptKeyCaptor.getAllValues().get(0));
+        Assertions.assertNotEquals(
+                attemptKeyCaptor.getAllValues().get(0),
+                attemptKeyCaptor.getAllValues().get(1));
+    }
 
     @Test
     void providerException_persistsReconciliationState() {
