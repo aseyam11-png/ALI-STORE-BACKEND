@@ -56,7 +56,7 @@ class SupplierShipmentWebhookControllerTest {
     void rejectsMissingWebhookAuthenticationHeaders() {
         ResponseEntity<?> response = controller.updateShipment(
                 null, null, null,
-                "{"supplierCode":"alpha","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}");
+                """{"supplierCode":"alpha","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}""");
 
         assertEquals(401, response.getStatusCode().value());
         verifyNoInteractions(credentialResolver, processorService);
