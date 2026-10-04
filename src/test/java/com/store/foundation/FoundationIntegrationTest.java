@@ -26,6 +26,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
@@ -34,6 +35,7 @@ import java.util.Map;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -183,6 +185,15 @@ class FoundationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.email").value("me@example.com"))
                 .andExpect(jsonPath("$.data.password").doesNotExist());
+    }
+
+    @Test
+    void visualSearch_requiresAuthentication() throws Exception {
+        MockMultipartFile image = new MockMultipartFile(
+                "image", "query.png", "image/png", new byte[]{1, 2, 3});
+
+        mockMvc.perform(multipart("/api/v1/visual-search").file(image))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
