@@ -2,6 +2,7 @@ package com.store.foundation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.auth.entity.EmailOtpPurpose;
+import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.EmailOtpSender;
 import com.store.auth.service.JwtService;
 import com.store.category.entity.Category;
@@ -37,6 +38,7 @@ import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -80,6 +82,8 @@ class FoundationIntegrationTest {
     private SupplierRepository supplierRepository;
     @Autowired
     private InventoryRepository inventoryRepository;
+    @Autowired
+    private AuthSessionCookieService authSessionCookieService;
 
     @MockBean
     private EmailOtpSender emailOtpSender;
@@ -248,6 +252,48 @@ class FoundationIntegrationTest {
     void googleLogin_withoutConfiguration_returnsServiceUnavailable() throws Exception {
         mockMvc.perform(get("/api/v1/auth/google"))
                 .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void csrfEndpoint_issuesReadableTokenCookie() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isNotEmpty())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().exists("XSRF-TOKEN"));
+    }
+
+    @Test
+    void cookieAuthenticatedWrite_requiresCsrfHeader() throws Exception {
+        User user = createUser("csrf@example.com", userRole);
+        String sessionCookie = authSessionCookieService
+                .buildCookie(tokenFor(user), 3600)
+                .getValue();
+
+        Map<String, String> update = Map.of(
+                "firstName", "CSRF",
+                "lastName", "Protected");
+
+        mockMvc.perform(put("/api/v1/me")
+                        .cookie(new Cookie("ali_store_session", sessionCookie))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isForbidden());
+
+        var csrf = mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getCookie("XSRF-TOKEN");
+
+        Assertions.assertNotNull(csrf);
+
+        mockMvc.perform(put("/api/v1/me")
+                        .cookie(new Cookie("ali_store_session", sessionCookie), csrf)
+                        .header("X-XSRF-TOKEN", csrf.getValue())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.firstName").value("CSRF"));
     }
 
     @Test
