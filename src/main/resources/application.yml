@@ -72,6 +72,8 @@ app:
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
     cookie-same-site: ${AUTH_COOKIE_SAME_SITE:}
     cookie-domain: ${AUTH_COOKIE_DOMAIN:}
+    frontend-success-redirect: ${FRONTEND_AUTH_SUCCESS_REDIRECT:http://localhost:3000/buyer/profile}
+    frontend-failure-redirect: ${FRONTEND_AUTH_FAILURE_REDIRECT:http://localhost:3000/login?error=google}
     email-verification-enabled: ${AUTH_EMAIL_VERIFICATION_ENABLED:true}
     login-email-otp-enabled: ${AUTH_LOGIN_EMAIL_OTP_ENABLED:true}
     email-code-expiration-seconds: ${AUTH_EMAIL_CODE_EXPIRATION_SECONDS:600}
