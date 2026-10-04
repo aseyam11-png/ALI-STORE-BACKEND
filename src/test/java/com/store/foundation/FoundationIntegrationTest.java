@@ -267,6 +267,13 @@ class FoundationIntegrationTest {
     }
 
     @Test
+    void supplierWebhookEvent_isIdempotentAtDatabaseLevel() {
+        assertTrue(supplierWebhookEventService.recordIfNew("alpha", "evt-db-1"));
+        assertFalse(supplierWebhookEventService.recordIfNew("alpha", "evt-db-1"));
+        assertTrue(supplierWebhookEventService.recordIfNew("beta", "evt-db-1"));
+    }
+
+    @Test
     void visualSearch_requiresAuthentication() throws Exception {
         MockMultipartFile image = new MockMultipartFile(
                 "image", "query.png", "image/png", new byte[]{1, 2, 3});
