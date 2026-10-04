@@ -28,3 +28,9 @@ jwt:
 app:
   cors:
     allowed-origins: http://localhost:3000
+  auth:
+    email-verification-enabled: true
+    login-email-otp-enabled: true
+    email-code-expiration-seconds: 600
+    email-code-max-attempts: 5
+    email-code-resend-cooldown-seconds: 60
