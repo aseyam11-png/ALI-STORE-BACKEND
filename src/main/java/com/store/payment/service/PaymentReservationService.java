@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 /**
  * Commits the PENDING payment reservation in its OWN transaction (REQUIRES_NEW),
@@ -87,6 +88,8 @@ public class PaymentReservationService {
         payment.setProviderError(null);
         payment.setCollectionStatus(
                 com.store.payment.entity.PaymentCollectionStatus.NOT_REQUIRED);
+        payment.setIdempotencyKey(
+                "order-" + payment.getOrderId() + ":retry-" + UUID.randomUUID());
         return paymentRepository.saveAndFlush(payment);
     }
 
