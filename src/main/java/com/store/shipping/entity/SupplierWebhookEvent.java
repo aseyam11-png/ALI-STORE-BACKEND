@@ -7,16 +7,13 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "supplier_webhook_events",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_supplier_webhook_event",
-                columnNames = {"supplier_code", "event_id"}))
+        uniqueConstraints = @UniqueConstraint(name = "uk_supplier_webhook_event", columnNames = {"supplier_code", "event_id"}))
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class SupplierWebhookEvent {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

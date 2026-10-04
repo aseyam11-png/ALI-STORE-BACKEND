@@ -171,7 +171,7 @@ public class ShipmentService {
 
     @Transactional(readOnly = true)
     public ShipmentResponse getBySupplierOrderId(String supplierOrderId) {
-        Shipment shipment = shipmentRepository.findBySupplierOrderId(supplierOrderId)
+        Shipment shipment = shipmentRepository.findBySupplierOrderIdForUpdate(supplierOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Shipment not found for supplier order id: " + supplierOrderId));
         return mapToResponse(shipment);
