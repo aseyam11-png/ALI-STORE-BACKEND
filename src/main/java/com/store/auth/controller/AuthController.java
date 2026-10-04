@@ -4,6 +4,7 @@ import com.store.auth.dto.AuthResponse;
 import com.store.auth.dto.LoginRequest;
 import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
+import com.store.auth.service.AuthSessionCookieService;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
 import com.store.user.dto.MeResponse;
@@ -28,7 +29,6 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserRepository userRepository;
-    private final Environment environment;
     private final AuthSessionCookieService cookieService;
 
     @PostMapping("/register")
@@ -79,7 +79,7 @@ public class AuthController {
     }
 
     private void writeSessionCookie(HttpServletResponse servletResponse, String token) {
-        servletResponse.addHeader("Set-Cookie", buildCookie(token, 24 * 60 * 60).toString());
+        servletResponse.addHeader("Set-Cookie", cookieService.buildCookie(token, 24 * 60 * 60).toString());
     }
 
 }
