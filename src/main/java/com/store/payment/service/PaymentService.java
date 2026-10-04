@@ -72,11 +72,16 @@ public class PaymentService {
             throw new BusinessException("Order contains an item without a valid external supplier mapping");
         }
 
-        if (paymentRepository.findByOrderId(request.getOrderId()).isPresent()) {
-            throw new ConflictException("A payment attempt already exists for this order");
-        }
-
         String idempotencyKey = "order-" + order.getId();
+
+        Payment existingPayment = paymentRepository.findByOrderId(request.getOrderId())
+                .orElse(null);
+
+        if (existingPayment != null
+                && existingPayment.getStatus() != PaymentStatus.FAILED) {
+            throw new ConflictException(
+                    "This order already has a payment attempt that cannot be retried");
+        }
 
         if (request.getMethod() == PaymentMethod.CASH_ON_DELIVERY) {
             Payment codPayment = paymentRepository.save(Payment.builder()
@@ -92,8 +97,16 @@ public class PaymentService {
             return mapToResponse(codPayment);
         }
 
-        Payment reserved = paymentReservationService.reserve(
-                request.getOrderId(), request.getAmount(), request.getMethod(), idempotencyKey);
+        Payment reserved = existingPayment == null
+                ? paymentReservationService.reserve(
+                        request.getOrderId(),
+                        request.getAmount(),
+                        request.getMethod(),
+                        idempotencyKey)
+                : paymentReservationService.reopenFailed(
+                        existingPayment.getId(),
+                        request.getAmount(),
+                        request.getMethod());
 
         PaymentProvider.PaymentResult result;
         try {
@@ -117,8 +130,6 @@ public class PaymentService {
 
             if (result.success()) {
                 orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
-            } else {
-                orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
             }
 
             return mapToResponse(saved);
