@@ -90,3 +90,4 @@ app:
     api-path: ${SUPPLIER_INVENTORY_API_PATH:/v1/inventory}
     api-token: ${SUPPLIER_API_TOKEN:}
     poll-ms: ${INVENTORY_SYNC_POLL_MS:300000}
+    stale-after-ms: ${INVENTORY_STALE_AFTER_MS:1800000}
