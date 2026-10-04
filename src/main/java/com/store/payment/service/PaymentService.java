@@ -120,27 +120,30 @@ public class PaymentService {
                     "Payment outcome could not be confirmed; reconciliation is required");
         }
 
-        try {
-            reserved.setStatus(result.success()
-                    ? PaymentStatus.COMPLETED : PaymentStatus.FAILED);
-            reserved.setTransactionId(result.transactionId());
-            reserved.setCollectionStatus(PaymentCollectionStatus.NOT_REQUIRED);
-
-            Payment saved = paymentRepository.save(reserved);
-
-            if (result.success()) {
+        if (result.success()) {
+            try {
                 orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
-            }
 
-            return mapToResponse(saved);
-        } catch (RuntimeException ex) {
-            if (result.success()) {
+                reserved.setStatus(PaymentStatus.COMPLETED);
+                reserved.setTransactionId(result.transactionId());
+                reserved.setCollectionStatus(PaymentCollectionStatus.NOT_REQUIRED);
+
+                return mapToResponse(paymentRepository.save(reserved));
+            } catch (RuntimeException ex) {
                 paymentReservationService.markRequiresReconciliation(
                         reserved.getId(), ex.getMessage());
                 throw new ConflictException(
                         "Payment was accepted by the provider but local settlement failed; reconciliation is required");
             }
+        }
 
+        try {
+            reserved.setStatus(PaymentStatus.FAILED);
+            reserved.setTransactionId(result.transactionId());
+            reserved.setCollectionStatus(PaymentCollectionStatus.NOT_REQUIRED);
+
+            return mapToResponse(paymentRepository.save(reserved));
+        } catch (RuntimeException ex) {
             paymentReservationService.markFailed(
                     reserved.getId(), ex.getMessage());
             throw new ConflictException(
