@@ -20,6 +20,8 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 
     Optional<Shipment> findByOrderIdAndSupplierId(Long orderId, Long supplierId);
 
+    Optional<Shipment> findBySupplierOrderId(String supplierOrderId);
+
     Optional<Shipment> findByTrackingNumber(String trackingNumber);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

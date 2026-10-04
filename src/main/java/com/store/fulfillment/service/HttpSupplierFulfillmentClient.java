@@ -3,6 +3,7 @@ package com.store.fulfillment.service;
 import com.store.fulfillment.dto.SupplierFulfillmentRequest;
 import com.store.fulfillment.dto.SupplierFulfillmentResponse;
 import com.store.supplier.entity.Supplier;
+import com.store.supplier.service.SupplierCredentialResolver;
 import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -14,9 +15,13 @@ import org.springframework.web.client.RestClientException;
 public class HttpSupplierFulfillmentClient implements SupplierFulfillmentClient {
 
     private final Environment environment;
+    private final SupplierCredentialResolver credentialResolver;
 
-    public HttpSupplierFulfillmentClient(Environment environment) {
+    public HttpSupplierFulfillmentClient(
+            Environment environment,
+            SupplierCredentialResolver credentialResolver) {
         this.environment = environment;
+        this.credentialResolver = credentialResolver;
     }
 
     @Override
@@ -29,9 +34,11 @@ public class HttpSupplierFulfillmentClient implements SupplierFulfillmentClient 
         }
 
         String apiPath = environment.getProperty("app.fulfillment.api-path", "/v1/orders");
-        String apiToken = environment.getProperty("app.fulfillment.api-token", "");
+        String apiToken = credentialResolver.resolveFulfillmentToken(supplier);
         if (apiToken.isBlank()) {
-            throw new IllegalStateException("SUPPLIER_API_TOKEN is not configured");
+            throw new IllegalStateException(
+                    "No fulfillment API token is configured for supplier "
+                            + supplier.getExternalCode());
         }
 
         String endpoint = supplier.getApiBaseUrl().replaceAll("/+$", "") + apiPath;

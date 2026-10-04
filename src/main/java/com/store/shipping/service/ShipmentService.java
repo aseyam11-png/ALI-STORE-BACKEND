@@ -169,6 +169,14 @@ public class ShipmentService {
         orderRepository.save(order);
     }
 
+    @Transactional(readOnly = true)
+    public ShipmentResponse getBySupplierOrderId(String supplierOrderId) {
+        Shipment shipment = shipmentRepository.findBySupplierOrderId(supplierOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Shipment not found for supplier order id: " + supplierOrderId));
+        return mapToResponse(shipment);
+    }
+
     /**
      * Applies an idempotent status/tracking update received from an external supplier.
      * The supplier may repeat the same webhook safely, while backward state transitions
