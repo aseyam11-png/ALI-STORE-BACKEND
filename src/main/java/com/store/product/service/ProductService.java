@@ -251,10 +251,13 @@ public class ProductService {
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
                 .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
+                .availableQuantity(inventoryService.getAvailableQuantity(product.getId()))
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
+                .categorySlug(product.getCategory().getSlug())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
-                .images(imageUrls).primaryImageUrl(primaryImageUrl).build();
+                .images(imageUrls).primaryImageUrl(primaryImageUrl)
+                .createdAt(product.getCreatedAt()).updatedAt(product.getUpdatedAt()).build();
     }
 
     private ProductAdminResponse mapToAdminResponse(Product product) {
