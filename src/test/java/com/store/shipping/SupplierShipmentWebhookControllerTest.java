@@ -43,6 +43,38 @@ class SupplierShipmentWebhookControllerTest {
     }
 
     @Test
+    void rejectsOversizedSupplierCodeBeforeCredentialLookup() {
+        String body = """
+                {"supplierCode":"%s","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}
+                """.formatted("x".repeat(81));
+
+        var result = controller.updateShipment(
+                "evt-oversized-supplier",
+                Long.toString(Instant.now().getEpochSecond()),
+                "sha256=invalid",
+                body);
+
+        assertEquals(400, result.getStatusCode().value());
+        verifyNoInteractions(processorService);
+    }
+
+    @Test
+    void rejectsOversizedEventIdBeforeCredentialLookup() {
+        String body = """
+                {"supplierCode":"alpha","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}
+                """;
+
+        var result = controller.updateShipment(
+                "x".repeat(151),
+                Long.toString(Instant.now().getEpochSecond()),
+                "sha256=invalid",
+                body);
+
+        assertEquals(400, result.getStatusCode().value());
+        verifyNoInteractions(processorService);
+    }
+
+    @Test
     void acceptsValidHmacSignature() {
         String body = """
                 {"supplierCode":"alpha","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}
