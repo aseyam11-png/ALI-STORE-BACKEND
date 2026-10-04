@@ -110,11 +110,13 @@ public class PaymentService {
                         request.getAmount(),
                         request.getMethod());
 
+        String paymentAttemptKey = reserved.getIdempotencyKey();
+
         PaymentProvider.PaymentResult result;
         try {
             result = paymentProvider.charge(
                     order.getId(), request.getAmount(),
-                    request.getMethod(), idempotencyKey);
+                    request.getMethod(), paymentAttemptKey);
         } catch (RuntimeException ex) {
             paymentReservationService.markRequiresReconciliation(
                     reserved.getId(), ex.getMessage());
