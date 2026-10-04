@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
+import com.store.auth.service.AuthSessionCookieService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -28,6 +29,7 @@ public class AuthController {
     private final AuthService authService;
     private final UserRepository userRepository;
     private final Environment environment;
+    private final AuthSessionCookieService cookieService;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
@@ -72,7 +74,7 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(HttpServletResponse servletResponse) {
-        servletResponse.addHeader("Set-Cookie", buildCookie("", 0).toString());
+        servletResponse.addHeader("Set-Cookie", cookieService.clearCookie().toString());
         return ResponseEntity.ok(ApiResponse.success(null, "Logged out successfully"));
     }
 
@@ -80,18 +82,4 @@ public class AuthController {
         servletResponse.addHeader("Set-Cookie", buildCookie(token, 24 * 60 * 60).toString());
     }
 
-    private ResponseCookie buildCookie(String value, long maxAgeSeconds) {
-        boolean secure = Boolean.parseBoolean(environment.getProperty("app.auth.cookie-secure",
-                environment.getProperty("AUTH_COOKIE_SECURE", "false")));
-        String name = environment.getProperty("app.auth.cookie-name",
-                environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
-
-        return ResponseCookie.from(name, value)
-                .httpOnly(true)
-                .secure(secure)
-                .sameSite("Strict")
-                .path("/")
-                .maxAge(maxAgeSeconds)
-                .build();
-    }
 }
