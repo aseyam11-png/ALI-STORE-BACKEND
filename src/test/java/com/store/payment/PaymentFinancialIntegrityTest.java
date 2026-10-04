@@ -49,6 +49,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
+import org.mockito.ArgumentCaptor;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -83,7 +84,10 @@ class PaymentFinancialIntegrityTest {
         request.setMethod(PaymentMethod.CREDIT_CARD);
 
         when(paymentProvider.charge(
-                eq(order.getId()), eq(new BigDecimal("25.00")), eq(PaymentMethod.CREDIT_CARD), eq("order-" + order.getId())))
+                eq(order.getId()),
+                eq(new BigDecimal("25.00")),
+                eq(PaymentMethod.CREDIT_CARD),
+                any()))
                 .thenReturn(new PaymentProvider.PaymentResult(false, null, "card declined"))
                 .thenReturn(new PaymentProvider.PaymentResult(true, "TXN-RETRY-1", "approved"));
 
@@ -109,11 +113,18 @@ class PaymentFinancialIntegrityTest {
         TestTransaction.flagForRollback();
         TestTransaction.end();
 
+        ArgumentCaptor<String> attemptKeyCaptor =
+                ArgumentCaptor.forClass(String.class);
         verify(paymentProvider, times(2)).charge(
                 eq(order.getId()),
                 eq(new BigDecimal("25.00")),
                 eq(PaymentMethod.CREDIT_CARD),
-                eq("order-" + order.getId()));
+                attemptKeyCaptor.capture());
+
+        Assertions.assertEquals("order-" + order.getId(), attemptKeyCaptor.getAllValues().get(0));
+        Assertions.assertNotEquals(
+                attemptKeyCaptor.getAllValues().get(0),
+                attemptKeyCaptor.getAllValues().get(1));
     }
 
     @Test
