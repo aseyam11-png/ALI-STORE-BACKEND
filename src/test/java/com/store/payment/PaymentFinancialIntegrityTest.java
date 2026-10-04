@@ -45,6 +45,8 @@ import java.time.LocalDateTime;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -66,6 +68,44 @@ class PaymentFinancialIntegrityTest {
     @Autowired private RoleRepository roleRepository;
 
     @MockBean private PaymentProvider paymentProvider;
+
+    @Test
+    void failedCardPayment_canRetrySameOrderWithoutCreatingAnotherPayment() {
+        User user = user();
+        Product product = product("FIN-RETRY", "FIN-RETRY-SUP");
+        Order order = order(user, product, new BigDecimal("25.00"));
+
+        PaymentRequest request = new PaymentRequest();
+        request.setOrderId(order.getId());
+        request.setAmount(new BigDecimal("25.00"));
+        request.setMethod(PaymentMethod.CREDIT_CARD);
+
+        when(paymentProvider.charge(
+                eq(order.getId()), eq(new BigDecimal("25.00")), eq(PaymentMethod.CREDIT_CARD), eq("order-" + order.getId())))
+                .thenReturn(new PaymentProvider.PaymentResult(false, null, "card declined"))
+                .thenReturn(new PaymentProvider.PaymentResult(true, "TXN-RETRY-1", "approved"));
+
+        var first = paymentService.processPayment(user.getEmail(), request);
+        Assertions.assertEquals(PaymentStatus.FAILED, first.getStatus());
+        Assertions.assertEquals(OrderStatus.PENDING,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+
+        var second = paymentService.processPayment(user.getEmail(), request);
+        Assertions.assertEquals(PaymentStatus.COMPLETED, second.getStatus());
+        Assertions.assertEquals("TXN-RETRY-1", second.getTransactionId());
+        Assertions.assertEquals(1L,
+                paymentRepository.findAll().stream()
+                        .filter(payment -> payment.getOrderId().equals(order.getId()))
+                        .count());
+        Assertions.assertEquals(OrderStatus.PROCESSING,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+
+        verify(paymentProvider, times(2)).charge(
+                eq(order.getId()),
+                eq(new BigDecimal("25.00")),
+                eq(PaymentMethod.CREDIT_CARD),
+                eq("order-" + order.getId()));
+    }
 
     @Test
     void providerException_persistsReconciliationState() {
