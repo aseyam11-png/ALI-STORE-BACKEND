@@ -161,13 +161,13 @@ class FoundationIntegrationTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.token").doesNotExist())
                 .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
+                .andExpect(jsonPath("$.data.purpose").value("LOGIN"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().doesNotExist("ali_store_session"))
                 .andReturn().getResponse().getContentAsString();
 
         String loginChallengeId = objectMapper.readTree(loginJson)
                 .path("data").path("challengeId").asText();
 
-        clearInvocations(emailOtpSender);
         ArgumentCaptor<String> loginCodeCaptor = ArgumentCaptor.forClass(String.class);
 
         verify(emailOtpSender).send(
