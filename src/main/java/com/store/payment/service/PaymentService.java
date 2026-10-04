@@ -19,6 +19,7 @@ import com.store.payment.provider.PaymentProvider;
 import com.store.payment.repository.PaymentRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,7 @@ public class PaymentService {
     private final PaymentProvider paymentProvider;
     private final PaymentReservationService paymentReservationService;
     private final OrderService orderService;
+    private final EntityManager entityManager;
 
     @Transactional(noRollbackFor = OrderExpiredException.class)
     public PaymentResponse processPayment(String email, PaymentRequest request) {
@@ -124,6 +126,11 @@ public class PaymentService {
             try {
                 Payment completed = paymentReservationService.markCompleted(
                         reserved.getId(), result.transactionId());
+
+                // markCompleted commits in REQUIRES_NEW. Clear the outer persistence
+                // context so OrderService cannot observe the stale PENDING Payment
+                // entity that was reserved before the independent commit.
+                entityManager.clear();
 
                 orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
 
