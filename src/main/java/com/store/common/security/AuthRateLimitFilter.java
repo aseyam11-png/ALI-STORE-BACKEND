@@ -12,7 +12,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Brute-force defense on the unauthenticated auth endpoints. Bounded to a small, fixed
@@ -25,8 +25,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class AuthRateLimitFilter extends OncePerRequestFilter {
 
-    private static final Set<String> LIMITED_PATHS = Set.of("/api/v1/auth/login", "/api/v1/auth/register");
-    private static final int MAX_REQUESTS_PER_WINDOW = 10;
+    private static final Map<String, Integer> LIMITED_PATHS = Map.of(
+            "/api/v1/auth/login", 10,
+            "/api/v1/auth/register", 10,
+            "/api/v1/visual-search", 5
+    );
     private static final long WINDOW_MILLIS = 60_000L;
 
     private final RateLimiter rateLimiter;
@@ -37,9 +40,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String path = request.getRequestURI();
-        if (LIMITED_PATHS.contains(path)) {
+        Integer maxRequests = LIMITED_PATHS.get(path);
+        if (maxRequests != null) {
             String key = clientIpResolver.resolve(request) + ":" + path;
-            if (!rateLimiter.tryConsume(key, MAX_REQUESTS_PER_WINDOW, WINDOW_MILLIS)) {
+            if (!rateLimiter.tryConsume(key, maxRequests, WINDOW_MILLIS)) {
                 writeTooManyRequests(response);
                 return;
             }
