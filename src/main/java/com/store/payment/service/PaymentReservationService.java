@@ -90,5 +90,28 @@ public class PaymentReservationService {
         return paymentRepository.saveAndFlush(payment);
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Payment markCompleted(Long paymentId, String transactionId) {
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new com.store.common.exception.ConflictException(
+                    "Only pending payments can be completed");
+        }
+        if (transactionId == null || transactionId.isBlank()) {
+            throw new com.store.common.exception.ConflictException(
+                    "Provider did not return a transaction identifier");
+        }
+
+        payment.setStatus(PaymentStatus.COMPLETED);
+        payment.setTransactionId(transactionId.trim());
+        payment.setProviderError(null);
+        payment.setCollectionStatus(
+                com.store.payment.entity.PaymentCollectionStatus.NOT_REQUIRED);
+        return paymentRepository.saveAndFlush(payment);
+    }
+
+
 
 }
