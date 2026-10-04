@@ -23,6 +23,27 @@ public final class ProductSpecifications {
         return (root, query, cb) -> cb.equal(root.get("status"), status);
     }
 
+    public static Specification<Product> hasActiveCategory() {
+        return (root, query, cb) -> cb.isTrue(root.get("category").get("active"));
+    }
+
+    public static Specification<Product> hasActiveSupplier() {
+        return (root, query, cb) -> cb.and(
+                cb.equal(root.get("supplier").get("status"), com.store.supplier.entity.SupplierStatus.ACTIVE),
+                cb.isTrue(root.get("supplier").get("fulfillmentEnabled"))
+        );
+    }
+
+    public static Specification<Product> inCategorySlug(String slug) {
+        return (root, query, cb) -> cb.equal(root.get("category").get("slug"), slug);
+    }
+
+    public static Specification<Product> hasBrandName(String brandName) {
+        return (root, query, cb) -> cb.equal(
+                cb.lower(root.get("brand").get("name")),
+                brandName.toLowerCase());
+    }
+
     public static Specification<Product> statusIn(ProductStatus... statuses) {
         return (root, query, cb) -> root.get("status").in((Object[]) statuses);
     }
