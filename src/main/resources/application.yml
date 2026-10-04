@@ -45,6 +45,8 @@ app:
   auth:
     cookie-name: ${AUTH_COOKIE_NAME:ali_store_session}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
+    cookie-same-site: ${AUTH_COOKIE_SAME_SITE:}
+    cookie-domain: ${AUTH_COOKIE_DOMAIN:}
   fulfillment:
     enabled: ${FULFILLMENT_ENABLED:false}
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}

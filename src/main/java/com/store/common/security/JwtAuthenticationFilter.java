@@ -1,5 +1,6 @@
 package com.store.common.security;
 
+import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.CustomUserDetailsService;
 import com.store.auth.service.JwtService;
 import io.jsonwebtoken.JwtException;
@@ -28,6 +29,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
     private final Environment environment;
+    private final AuthSessionCookieService cookieService;
 
     @Override
     protected void doFilterInternal(
@@ -58,7 +60,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         SecurityContextHolder.getContext().setAuthentication(authToken);
                     }
                 }
-            } catch (JwtException | UsernameNotFoundException ex) {
+            } catch (JwtException | UsernameNotFoundException | SecurityException ex) {
                 SecurityContextHolder.clearContext();
             }
         }
@@ -79,12 +81,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return null;
         }
 
-        String cookieName = environment.getProperty("app.auth.cookie-name",
+        String cookieName = environment.getProperty(
+                "app.auth.cookie-name",
                 environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
 
         for (Cookie cookie : cookies) {
             if (cookieName.equals(cookie.getName())) {
-                return cookie.getValue();
+                try {
+                    return cookieService.decrypt(cookie.getValue());
+                } catch (SecurityException ignored) {
+                    return null;
+                }
             }
         }
 

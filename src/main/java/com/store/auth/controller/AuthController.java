@@ -4,6 +4,7 @@ import com.store.auth.dto.AuthResponse;
 import com.store.auth.dto.LoginRequest;
 import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
+import com.store.auth.service.AuthSessionCookieService;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
 import com.store.user.dto.MeResponse;
@@ -12,9 +13,7 @@ import com.store.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -27,7 +26,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserRepository userRepository;
-    private final Environment environment;
+    private final AuthSessionCookieService cookieService;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
@@ -72,26 +71,12 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(HttpServletResponse servletResponse) {
-        servletResponse.addHeader("Set-Cookie", buildCookie("", 0).toString());
+        servletResponse.addHeader("Set-Cookie", cookieService.clearCookie().toString());
         return ResponseEntity.ok(ApiResponse.success(null, "Logged out successfully"));
     }
 
     private void writeSessionCookie(HttpServletResponse servletResponse, String token) {
-        servletResponse.addHeader("Set-Cookie", buildCookie(token, 24 * 60 * 60).toString());
+        servletResponse.addHeader("Set-Cookie", cookieService.buildCookie(token, 24 * 60 * 60).toString());
     }
 
-    private ResponseCookie buildCookie(String value, long maxAgeSeconds) {
-        boolean secure = Boolean.parseBoolean(environment.getProperty("app.auth.cookie-secure",
-                environment.getProperty("AUTH_COOKIE_SECURE", "false")));
-        String name = environment.getProperty("app.auth.cookie-name",
-                environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
-
-        return ResponseCookie.from(name, value)
-                .httpOnly(true)
-                .secure(secure)
-                .sameSite("Strict")
-                .path("/")
-                .maxAge(maxAgeSeconds)
-                .build();
-    }
 }
