@@ -48,6 +48,9 @@ public class Order extends BaseEntity {
     @Column(name = "idempotency_key", length = 100)
     private String idempotencyKey;
 
+    @Column(name = "reservation_expires_at")
+    private java.time.LocalDateTime reservationExpiresAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
