@@ -38,6 +38,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -91,6 +92,10 @@ class PaymentFinancialIntegrityTest {
         Assertions.assertEquals(OrderStatus.PENDING,
                 orderRepository.findById(order.getId()).orElseThrow().getStatus());
 
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
         var second = paymentService.processPayment(user.getEmail(), request);
         Assertions.assertEquals(PaymentStatus.COMPLETED, second.getStatus());
         Assertions.assertEquals("TXN-RETRY-1", second.getTransactionId());
@@ -100,6 +105,9 @@ class PaymentFinancialIntegrityTest {
                         .count());
         Assertions.assertEquals(OrderStatus.PROCESSING,
                 orderRepository.findById(order.getId()).orElseThrow().getStatus());
+
+        TestTransaction.flagForRollback();
+        TestTransaction.end();
 
         verify(paymentProvider, times(2)).charge(
                 eq(order.getId()),
