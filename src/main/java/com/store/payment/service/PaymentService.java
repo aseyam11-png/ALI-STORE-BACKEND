@@ -122,13 +122,12 @@ public class PaymentService {
 
         if (result.success()) {
             try {
+                Payment completed = paymentReservationService.markCompleted(
+                        reserved.getId(), result.transactionId());
+
                 orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
 
-                reserved.setStatus(PaymentStatus.COMPLETED);
-                reserved.setTransactionId(result.transactionId());
-                reserved.setCollectionStatus(PaymentCollectionStatus.NOT_REQUIRED);
-
-                return mapToResponse(paymentRepository.save(reserved));
+                return mapToResponse(completed);
             } catch (RuntimeException ex) {
                 paymentReservationService.markRequiresReconciliation(
                         reserved.getId(), ex.getMessage());
