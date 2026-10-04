@@ -2,7 +2,9 @@ package com.store.inventory.service;
 
 import com.store.inventory.dto.SupplierInventoryResponse;
 import com.store.supplier.entity.Supplier;
-import org.springframework.beans.factory.annotation.Value;
+import com.store.supplier.service.SupplierCredentialResolver;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -10,17 +12,11 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Component
+@RequiredArgsConstructor
 public class HttpSupplierInventoryClient implements SupplierInventoryClient {
 
-    private final String apiPath;
-    private final String apiToken;
-
-    public HttpSupplierInventoryClient(
-            @Value("${app.inventory-sync.api-path:/v1/inventory}") String apiPath,
-            @Value("${app.inventory-sync.api-token:}") String apiToken) {
-        this.apiPath = apiPath;
-        this.apiToken = apiToken;
-    }
+    private final Environment environment;
+    private final SupplierCredentialResolver credentialResolver;
 
     @Override
     public SupplierInventoryResponse fetchInventory(Supplier supplier) {
@@ -28,16 +24,25 @@ public class HttpSupplierInventoryClient implements SupplierInventoryClient {
             throw new IllegalStateException("Supplier inventory sync is disabled");
         }
         if (supplier.getApiBaseUrl() == null || supplier.getApiBaseUrl().isBlank()) {
-            throw new IllegalStateException("Supplier inventory API is not configured for supplier "
-                    + supplier.getExternalCode());
+            throw new IllegalStateException(
+                    "Supplier inventory API is not configured for supplier "
+                            + supplier.getExternalCode());
         }
+
+        String apiPath = environment.getProperty(
+                "app.inventory-sync.api-path", "/v1/inventory");
+        String apiToken = credentialResolver.resolveApiToken(supplier);
+
         if (apiToken.isBlank()) {
-            throw new IllegalStateException("SUPPLIER_API_TOKEN is not configured");
+            throw new IllegalStateException(
+                    "No supplier API token is configured for "
+                            + supplier.getExternalCode());
         }
 
         String endpoint = supplier.getApiBaseUrl().replaceAll("/+$", "") + apiPath;
 
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        SimpleClientHttpRequestFactory factory =
+                new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5000);
         factory.setReadTimeout(10000);
 
@@ -53,12 +58,13 @@ public class HttpSupplierInventoryClient implements SupplierInventoryClient {
                     .body(SupplierInventoryResponse.class);
 
             if (response == null || response.getItems() == null) {
-                throw new IllegalStateException("Supplier returned an empty inventory payload");
+                throw new IllegalStateException(
+                        "Supplier returned an invalid inventory response");
             }
-
             return response;
         } catch (RestClientException ex) {
-            throw new IllegalStateException("Supplier inventory request failed", ex);
+            throw new IllegalStateException(
+                    "Supplier inventory request failed", ex);
         }
     }
 }
