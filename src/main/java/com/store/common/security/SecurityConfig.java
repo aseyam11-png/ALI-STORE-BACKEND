@@ -60,6 +60,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/logout",
+                                "/api/v1/auth/email/verify",
+                                "/api/v1/auth/email/resend",
                                 "/api/v1/integrations/suppliers/shipments/update",
                                 "/api/v1/health/**",
                                 "/actuator/health",
