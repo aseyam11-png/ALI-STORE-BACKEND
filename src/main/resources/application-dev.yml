@@ -7,3 +7,10 @@ spring:
 
   jpa:
     show-sql: true
+
+# Local development: password login should be usable without external SMTP.
+# Verification and login OTP remain explicitly configurable through the environment.
+app:
+  auth:
+    email-verification-enabled: ${AUTH_EMAIL_VERIFICATION_ENABLED:false}
+    login-email-otp-enabled: ${AUTH_LOGIN_EMAIL_OTP_ENABLED:false}
