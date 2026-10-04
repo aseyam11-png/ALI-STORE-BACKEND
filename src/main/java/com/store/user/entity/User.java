@@ -32,6 +32,10 @@ public class User extends BaseEntity {
     @Builder.Default
     private Boolean isEnabled = true;
 
+    @Column(name = "email_verified", nullable = false)
+    @Builder.Default
+    private Boolean emailVerified = true;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
