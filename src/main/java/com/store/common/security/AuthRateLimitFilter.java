@@ -29,6 +29,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Map<String, Integer> LIMITED_PATHS = Map.of(
             "/api/v1/auth/login", 10,
             "/api/v1/auth/register", 10,
+            "/api/v1/auth/email/verify", 5,
+            "/api/v1/auth/email/resend", 3,
             "/api/v1/visual-search", 5
     );
     private static final long WINDOW_MILLIS = 60_000L;
