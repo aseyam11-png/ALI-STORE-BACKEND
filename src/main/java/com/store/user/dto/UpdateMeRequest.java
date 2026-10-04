@@ -14,13 +14,13 @@ import lombok.NoArgsConstructor;
 public class UpdateMeRequest {
 
     @NotBlank(message = "First name is required")
-    @Size(max = 100, message = "First name must not exceed 100 characters")
+    @Size(max = 100, message = "First name is too long")
     private String firstName;
 
     @NotBlank(message = "Last name is required")
-    @Size(max = 100, message = "Last name must not exceed 100 characters")
+    @Size(max = 100, message = "Last name is too long")
     private String lastName;
 
-    @Size(max = 32, message = "Phone number must not exceed 32 characters")
+    @Size(max = 32, message = "Phone number is too long")
     private String phoneNumber;
 }
