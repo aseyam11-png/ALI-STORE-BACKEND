@@ -25,4 +25,5 @@ public class AuthResponse {
     private String challengeId;
     private String maskedEmail;
     private Long expiresInSeconds;
+    private com.store.auth.entity.EmailOtpPurpose purpose;
 }
