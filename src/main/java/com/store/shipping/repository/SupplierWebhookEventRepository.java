@@ -7,8 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface SupplierWebhookEventRepository
-        extends JpaRepository<SupplierWebhookEvent, Long> {
+public interface SupplierWebhookEventRepository extends JpaRepository<SupplierWebhookEvent, Long> {
 
     @Modifying
     @Query(value = """
