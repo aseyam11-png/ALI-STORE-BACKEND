@@ -146,6 +146,7 @@ public class AuthService {
                 .challengeId(challenge.getChallengeId())
                 .maskedEmail(challenge.getMaskedEmail())
                 .expiresInSeconds(challenge.getExpiresInSeconds())
+                .purpose(challenge.getPurpose())
                 .build();
     }
 
