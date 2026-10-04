@@ -73,4 +73,27 @@ public class PaymentReservationService {
                 : message.substring(0, Math.min(message.length(), 1000)));
         paymentRepository.save(payment);
     }
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Payment reopenFailed(Long paymentId, BigDecimal amount, PaymentMethod method) {
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+
+        if (payment.getStatus() != PaymentStatus.FAILED) {
+            throw new com.store.common.exception.ConflictException(
+                    "Only failed payments can be retried");
+        }
+        if (payment.getAmount().compareTo(amount) != 0 || payment.getMethod() != method) {
+            throw new com.store.common.exception.ConflictException(
+                    "Payment retry does not match the original payment attempt");
+        }
+
+        payment.setStatus(PaymentStatus.PENDING);
+        payment.setTransactionId(null);
+        payment.setProviderError(null);
+        payment.setCollectionStatus(
+                com.store.payment.entity.PaymentCollectionStatus.NOT_REQUIRED);
+        return paymentRepository.saveAndFlush(payment);
+    }
+
+
 }
