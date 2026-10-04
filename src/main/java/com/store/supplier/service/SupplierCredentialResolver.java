@@ -1,0 +1,40 @@
+package com.store.supplier.service;
+
+import com.store.supplier.entity.Supplier;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.env.Environment;
+import org.springframework.stereotype.Service;
+
+import java.util.Locale;
+
+@Service
+@RequiredArgsConstructor
+public class SupplierCredentialResolver {
+
+    private final Environment environment;
+
+    public String resolveApiToken(Supplier supplier) {
+        String code = normalize(supplier.getExternalCode());
+        String token = environment.getProperty(
+                "SUPPLIER_API_TOKEN_" + code, "");
+        if (token.isBlank() && !isProd()) {
+            token = environment.getProperty(
+                    "app.inventory-sync.api-token", "");
+        }
+        return token == null ? "" : token.trim();
+    }
+
+    private String normalize(String value) {
+        return value == null
+                ? ""
+                : value.trim().toUpperCase(Locale.ROOT)
+                        .replaceAll("[^A-Z0-9]", "_");
+    }
+
+    private boolean isProd() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile)) return true;
+        }
+        return false;
+    }
+}
