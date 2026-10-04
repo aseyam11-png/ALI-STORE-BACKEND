@@ -84,6 +84,7 @@ app:
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}
     api-token: ${SUPPLIER_API_TOKEN:}
     webhook-token: ${SUPPLIER_WEBHOOK_TOKEN:}
+    webhook-max-skew-seconds: ${SUPPLIER_WEBHOOK_MAX_SKEW_SECONDS:300}
     poll-ms: ${FULFILLMENT_POLL_MS:10000}
   inventory-sync:
     enabled: ${INVENTORY_SYNC_ENABLED:false}
