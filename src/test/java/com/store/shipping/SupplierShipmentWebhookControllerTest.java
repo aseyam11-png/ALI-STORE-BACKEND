@@ -2,7 +2,7 @@ package com.store.shipping.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.shipping.dto.ShipmentResponse;
-import com.store.shipping.service.SupplierCredentialResolver;
+import com.store.supplier.service.SupplierCredentialResolver;
 import com.store.shipping.service.SupplierWebhookProcessorService;
 import com.store.shipping.dto.SupplierShipmentUpdateRequest;
 import com.store.shipping.entity.ShipmentStatus;
@@ -30,8 +30,8 @@ class SupplierShipmentWebhookControllerTest {
         processorService = mock(SupplierWebhookProcessorService.class);
 
         MockEnvironment environment = new MockEnvironment()
-                .withActiveProfiles("test")
                 .withProperty("SUPPLIER_WEBHOOK_TOKEN_ALPHA", "test-secret");
+        environment.setActiveProfiles("test");
 
         SupplierCredentialResolver resolver = new SupplierCredentialResolver(environment);
         Validator validator = mock(Validator.class);
