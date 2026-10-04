@@ -40,6 +40,13 @@ public class Inventory extends BaseEntity {
     @Column(name = "last_synced_at")
     private LocalDateTime lastSyncedAt;
 
+    @Column(name = "supplier_reported_quantity")
+    private Integer supplierReportedQuantity;
+
+    @Column(name = "inventory_discrepancy", nullable = false)
+    @Builder.Default
+    private Boolean inventoryDiscrepancy = false;
+
     @Version
     private Long version;
 }
