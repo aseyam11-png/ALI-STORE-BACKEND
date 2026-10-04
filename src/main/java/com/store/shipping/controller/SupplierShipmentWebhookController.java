@@ -53,11 +53,22 @@ public class SupplierShipmentWebhookController {
         }
 
         String supplierCode = request.getSupplierCode().trim();
+        String normalizedEventId =
+                eventId == null ? null : eventId.trim();
+
         if (eventId == null || eventId.isBlank()
                 || timestampHeader == null || timestampHeader.isBlank()
                 || signature == null || signature.isBlank()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error("Missing supplier webhook authentication headers"));
+        }
+
+        if (supplierCode.length() > 80
+                || normalizedEventId == null
+                || normalizedEventId.length() > 150) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(
+                            "Supplier webhook identifiers exceed the supported length"));
         }
 
         long timestamp;
@@ -82,7 +93,7 @@ public class SupplierShipmentWebhookController {
 
         String expected;
         try {
-            expected = sign(secret, eventId.trim() + "." + timestamp + "." + rawBody);
+            expected = sign(secret, normalizedEventId + "." + timestamp + "." + rawBody);
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Supplier webhook verification failed"));
@@ -97,7 +108,7 @@ public class SupplierShipmentWebhookController {
         }
 
         ShipmentResponse response = processorService.process(
-                supplierCode, eventId.trim(), request);
+                supplierCode, normalizedEventId, request);
 
         return ResponseEntity.ok(ApiResponse.success(response, "Supplier shipment update applied"));
     }
