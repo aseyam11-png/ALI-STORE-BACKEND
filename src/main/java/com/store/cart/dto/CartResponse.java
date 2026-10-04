@@ -12,4 +12,5 @@ public class CartResponse {
     private Long id;
     private List<CartItemResponse> items;
     private BigDecimal totalPrice;
+    private String currency;
 }
