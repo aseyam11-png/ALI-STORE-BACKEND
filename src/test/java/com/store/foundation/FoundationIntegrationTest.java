@@ -245,6 +245,12 @@ class FoundationIntegrationTest {
     }
 
     @Test
+    void googleLogin_withoutConfiguration_returnsServiceUnavailable() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/google"))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
     void me_withoutToken_isRejected() throws Exception {
         mockMvc.perform(get("/api/v1/me"))
                 .andExpect(status().is4xxClientError());
