@@ -24,15 +24,10 @@ import java.math.BigDecimal;
  * double-charging a real gateway even though the DB stayed "clean" after the crash.
  *
  * With the reservation committed separately and immediately, a crash after that
- * point leaves a durable PENDING row behind. A retry then hits the existing
- * findByOrderId pre-check / the unique constraint on payments.order_id and is
- * rejected with 409 - our system will never attempt a second provider charge for
- * that order again. The tradeoff (documented, not solved here): if the original
- * charge actually succeeded at the provider before the crash, the order is left
- * stuck showing PENDING until someone reconciles it against the provider's
- * records (e.g. a webhook handler or an admin reconciliation job) - neither of
- * which exists in this codebase. That is real, undone technical debt, not
- * something this change claims to fix.
+ * point leaves a durable PENDING row behind. A retry never blindly recharges a
+ * PENDING or unknown-outcome payment. A definitively FAILED payment may be reopened
+ * in its existing row with the same idempotency key; REQUIRES_RECONCILIATION remains
+ * blocked until an authoritative provider result exists.
  */
 @Service
 @RequiredArgsConstructor
