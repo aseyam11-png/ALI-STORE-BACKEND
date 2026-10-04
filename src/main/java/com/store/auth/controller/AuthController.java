@@ -4,14 +4,10 @@ import com.store.auth.dto.AuthResponse;
 import com.store.auth.dto.EmailOtpChallengeResponse;
 import com.store.auth.dto.EmailOtpResendRequest;
 import com.store.auth.dto.EmailOtpVerificationRequest;
-import com.store.auth.dto.EmailOtpChallengeResponse;
-import com.store.auth.dto.EmailOtpResendRequest;
-import com.store.auth.dto.EmailOtpVerificationRequest;
 import com.store.auth.dto.LoginRequest;
 import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.AuthSessionCookieService;
-import com.store.auth.service.TokenRevocationService;
 import com.store.auth.service.TokenRevocationService;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
@@ -20,23 +16,18 @@ import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
-import java.net.URI;
-
-import java.net.URI;
+import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -48,11 +39,8 @@ public class AuthController {
     private final Environment environment;
     private final TokenRevocationService tokenRevocationService;
     private final AuthSessionCookieService cookieService;
-    private final TokenRevocationService tokenRevocationService;
-    private final org.springframework.core.env.Environment environment;
-    private final ClientRegistrationRepository clientRegistrationRepository;
 
-    @org.springframework.beans.factory.annotation.Value("${jwt.expiration:86400000}")
+    @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
 
     @PostMapping("/register")
@@ -61,13 +49,16 @@ public class AuthController {
             HttpServletResponse servletResponse) {
         AuthResponse response = authService.register(request);
         writeSessionCookieIfAuthenticated(servletResponse, response);
+
         HttpStatus status = response.isRequiresEmailVerification()
                 ? HttpStatus.ACCEPTED
                 : HttpStatus.OK;
         String message = response.isRequiresEmailVerification()
                 ? "Verification code sent to your email"
                 : "User registered successfully";
-        return ResponseEntity.status(status).body(ApiResponse.success(response, message));
+
+        return ResponseEntity.status(status)
+                .body(ApiResponse.success(response, message));
     }
 
     @PostMapping("/login")
@@ -76,13 +67,16 @@ public class AuthController {
             HttpServletResponse servletResponse) {
         AuthResponse response = authService.login(request);
         writeSessionCookieIfAuthenticated(servletResponse, response);
+
         HttpStatus status = response.isRequiresEmailVerification()
                 ? HttpStatus.ACCEPTED
                 : HttpStatus.OK;
         String message = response.isRequiresEmailVerification()
                 ? "Verification code sent to your email"
                 : "Login successful";
-        return ResponseEntity.status(status).body(ApiResponse.success(response, message));
+
+        return ResponseEntity.status(status)
+                .body(ApiResponse.success(response, message));
     }
 
     @PostMapping("/email/verify")
@@ -92,6 +86,7 @@ public class AuthController {
         AuthResponse response = authService.verifyEmailCode(
                 request.getChallengeId(), request.getCode());
         writeSessionCookieIfAuthenticated(servletResponse, response);
+
         return ResponseEntity.ok(ApiResponse.success(
                 response, "Email verification completed successfully"));
     }
@@ -101,6 +96,7 @@ public class AuthController {
             @Valid @RequestBody EmailOtpResendRequest request) {
         EmailOtpChallengeResponse response =
                 authService.resendEmailCode(request.getChallengeId());
+
         return ResponseEntity.ok(ApiResponse.success(
                 response, "A new verification code was sent to your email"));
     }
@@ -113,7 +109,8 @@ public class AuthController {
                     .body(ApiResponse.error("Authentication is required"));
         }
 
-        User user = userRepository.findByEmail(userDetails.getUsername())
+        User user = userRepository.findByEmailIgnoreCase(
+                        userDetails.getUsername().trim().toLowerCase(Locale.ROOT))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         MeResponse response = MeResponse.builder()
@@ -125,7 +122,8 @@ public class AuthController {
                 .role(user.getRole().getName())
                 .build();
 
-        return ResponseEntity.ok(ApiResponse.success(response, "Session retrieved successfully"));
+        return ResponseEntity.ok(
+                ApiResponse.success(response, "Session retrieved successfully"));
     }
 
     @PostMapping("/logout")
@@ -133,87 +131,50 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse servletResponse) {
         String token = extractDecryptedCookieToken(request);
-        if (token == null) token = extractBearerToken(request);
-        tokenRevocationService.revoke(token);
-
-        String token = extractDecryptedCookieToken(request);
-        if (token == null) token = extractBearerToken(request);
-        tokenRevocationService.revoke(token);
-
-        servletResponse.addHeader("Set-Cookie", cookieService.clearCookie().toString());
-        return ResponseEntity.ok(ApiResponse.success(null, "Logged out successfully"));
-    }
-
-    @PostMapping("/email/verify")
-    public ResponseEntity<ApiResponse<AuthResponse>> verifyEmail(
-            @Valid @RequestBody EmailOtpVerificationRequest request,
-            HttpServletResponse servletResponse) {
-        AuthResponse response = authService.verifyEmailCode(
-                request.getChallengeId(), request.getCode());
-        writeSessionCookieIfAuthenticated(servletResponse, response);
-        return ResponseEntity.ok(ApiResponse.success(
-                response, "Email verification completed successfully"));
-    }
-
-    @PostMapping("/email/resend")
-    public ResponseEntity<ApiResponse<EmailOtpChallengeResponse>> resendEmailCode(
-            @Valid @RequestBody EmailOtpResendRequest request) {
-        EmailOtpChallengeResponse response =
-                authService.resendEmailCode(request.getChallengeId());
-        return ResponseEntity.ok(ApiResponse.success(
-                response, "A new verification code was sent to your email"));
-    }
-
-    private String extractBearerToken(HttpServletRequest request) {
-        String value = request.getHeader("Authorization");
-        return value != null && value.startsWith("Bearer ")
-                ? value.substring(7) : null;
-    }
-
-    private String extractDecryptedCookieToken(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) return null;
-
-        String cookieName = environment.getProperty(
-                "app.auth.cookie-name",
-                environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
-        for (Cookie cookie : cookies) {
-            if (cookieName.equals(cookie.getName())) {
-                try {
-                    return cookieService.decrypt(cookie.getValue());
-                } catch (SecurityException ignored) {
-                    return null;
-                }
-            }
+        if (token == null) {
+            token = extractBearerToken(request);
         }
-        return null;
+
+        tokenRevocationService.revoke(token);
+        servletResponse.addHeader(
+                "Set-Cookie", cookieService.clearCookie().toString());
+
+        return ResponseEntity.ok(
+                ApiResponse.success(null, "Logged out successfully"));
     }
 
     private void writeSessionCookieIfAuthenticated(
             HttpServletResponse servletResponse,
             AuthResponse response) {
-        if (response.getToken() == null || response.getToken().isBlank()) {
+        String token = response.getToken();
+        if (token == null || token.isBlank()) {
             return;
         }
 
         long maxAgeSeconds = Math.max(0, jwtExpirationMs / 1000);
         servletResponse.addHeader(
                 "Set-Cookie",
-                cookieService.buildCookie(response.getToken(), maxAgeSeconds).toString());
+                cookieService.buildCookie(token, maxAgeSeconds).toString());
     }
 
     private String extractBearerToken(HttpServletRequest request) {
         String value = request.getHeader("Authorization");
-        return value != null && value.startsWith("Bearer ") ? value.substring(7) : null;
+        return value != null && value.startsWith("Bearer ")
+                ? value.substring(7)
+                : null;
     }
 
     private String extractDecryptedCookieToken(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
-        if (cookies == null) return null;
+        if (cookies == null) {
+            return null;
+        }
 
         String cookieName = environment.getProperty(
                 "app.auth.cookie-name",
-                environment.getProperty("AUTH_COOKIE_NAME", "ali_store_session"));
+                environment.getProperty(
+                        "AUTH_COOKIE_NAME", "ali_store_session"));
+
         for (Cookie cookie : cookies) {
             if (cookieName.equals(cookie.getName())) {
                 try {
@@ -223,6 +184,7 @@ public class AuthController {
                 }
             }
         }
+
         return null;
     }
 }
