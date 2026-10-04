@@ -9,6 +9,7 @@ import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.TokenRevocationService;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
 import com.store.user.dto.MeResponse;
@@ -39,6 +40,7 @@ public class AuthController {
     private final Environment environment;
     private final TokenRevocationService tokenRevocationService;
     private final AuthSessionCookieService cookieService;
+    private final ClientRegistrationRepository clientRegistrationRepository;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
@@ -99,6 +101,17 @@ public class AuthController {
 
         return ResponseEntity.ok(ApiResponse.success(
                 response, "A new verification code was sent to your email"));
+    }
+
+    @GetMapping("/google")
+    public ResponseEntity<?> googleLogin() {
+        if (clientRegistrationRepository.findByRegistrationId("google") == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("Google login is not configured"));
+        }
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(java.net.URI.create("/oauth2/authorization/google"))
+                .build();
     }
 
     @GetMapping("/session")
