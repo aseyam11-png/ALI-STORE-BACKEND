@@ -92,3 +92,5 @@ app:
     api-token: ${SUPPLIER_API_TOKEN:}
     poll-ms: ${INVENTORY_SYNC_POLL_MS:300000}
     stale-after-ms: ${INVENTORY_STALE_AFTER_MS:1800000}
+
+# Production supplier webhook secrets are resolved per supplier code via SUPPLIER_WEBHOOK_TOKEN_<NORMALIZED_CODE>.
