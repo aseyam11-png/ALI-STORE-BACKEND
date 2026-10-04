@@ -125,6 +125,7 @@ class PaymentFinancialIntegrityTest {
                 .user(user)
                 .status(OrderStatus.PROCESSING)
                 .totalAmount(new BigDecimal("40.00"))
+                .currency("USD")
                 .shippingAddress("1 Main St")
                 .reservationExpiresAt(LocalDateTime.now().plusMinutes(30))
                 .build());
@@ -247,6 +248,7 @@ class PaymentFinancialIntegrityTest {
                 .user(user)
                 .status(OrderStatus.PENDING)
                 .totalAmount(amount)
+                .currency("USD")
                 .shippingAddress("1 Main St")
                 .reservationExpiresAt(LocalDateTime.now().plusMinutes(30))
                 .build());

@@ -31,6 +31,9 @@ public class Order extends BaseEntity {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
 
+    @Column(nullable = false, length = 3)
+    private String currency;
+
     @Column(name = "coupon_code")
     private String couponCode;
 
