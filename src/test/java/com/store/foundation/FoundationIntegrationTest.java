@@ -1,6 +1,8 @@
 package com.store.foundation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.store.auth.entity.EmailOtpPurpose;
+import com.store.auth.service.EmailOtpSender;
 import com.store.auth.service.JwtService;
 import com.store.category.entity.Category;
 import com.store.category.repository.CategoryRepository;
@@ -24,6 +26,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.mock.web.MockMultipartFile;
@@ -33,11 +36,15 @@ import java.util.Collections;
 import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verify;
 
 /**
  * Foundational, non-negotiable behaviors for Phase 1 stabilization:
@@ -75,6 +82,9 @@ class FoundationIntegrationTest {
     @Autowired
     private InventoryRepository inventoryRepository;
 
+    @MockBean
+    private EmailOtpSender emailOtpSender;
+
     private Role userRole;
     private Role adminRole;
 
@@ -108,26 +118,90 @@ class FoundationIntegrationTest {
     }
 
     @Test
-    void registerThenLogin_issuesRealJwt() throws Exception {
+    void registerThenLogin_requiresEmailOtpBeforeIssuingSession() throws Exception {
         Map<String, String> registerBody = Map.of(
                 "firstName", "Ali", "lastName", "Store", "email", "ali@example.com",
                 "password", "Password123", "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register")
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+
+        String registrationJson = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(registerBody)))
-                .andExpect(status().isOk())
+                .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.token").doesNotExist())
+                .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().doesNotExist("ali_store_session"))
+                .andReturn().getResponse().getContentAsString();
+
+        String challengeId = objectMapper.readTree(registrationJson)
+                .path("data").path("challengeId").asText();
+
+        verify(emailOtpSender).send(
+                org.mockito.ArgumentMatchers.eq("ali@example.com"),
+                codeCaptor.capture(),
+                org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.EMAIL_VERIFICATION),
+                org.mockito.ArgumentMatchers.any(java.time.Duration.class));
+
+        mockMvc.perform(post("/api/v1/auth/email/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", challengeId,
+                                "code", codeCaptor.getValue()))))
+                .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().exists("ali_store_session"));
 
-        Map<String, String> loginBody = Map.of("email", "ali@example.com", "password", "Password123");
+        clearInvocations(emailOtpSender);
 
-        mockMvc.perform(post("/api/v1/auth/login")
+        Map<String, String> loginBody = Map.of(
+                "email", "ali@example.com", "password", "Password123");
+
+        String loginJson = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginBody)))
-                .andExpect(status().isOk())
+                .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.token").doesNotExist())
+                .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().doesNotExist("ali_store_session"))
+                .andReturn().getResponse().getContentAsString();
+
+        String loginChallengeId = objectMapper.readTree(loginJson)
+                .path("data").path("challengeId").asText();
+
+        clearInvocations(emailOtpSender);
+        ArgumentCaptor<String> loginCodeCaptor = ArgumentCaptor.forClass(String.class);
+
+        verify(emailOtpSender).send(
+                org.mockito.ArgumentMatchers.eq("ali@example.com"),
+                loginCodeCaptor.capture(),
+                org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.LOGIN),
+                org.mockito.ArgumentMatchers.any(java.time.Duration.class));
+
+        mockMvc.perform(post("/api/v1/auth/email/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", loginChallengeId,
+                                "code", loginCodeCaptor.getValue()))))
+                .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().exists("ali_store_session"));
+    }
+
+    @Test
+    void logout_revokesBearerToken() throws Exception {
+        User user = createUser("logout@example.com", userRole);
+        String token = tokenFor(user);
+
+        mockMvc.perform(get("/api/v1/auth/session")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/auth/session")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -168,7 +242,7 @@ class FoundationIntegrationTest {
         mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isOk());
+                .andExpect(status().isAccepted());
     }
 
     @Test
