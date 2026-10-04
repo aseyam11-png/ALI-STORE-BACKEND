@@ -72,14 +72,16 @@ public final class ProductSpecifications {
         return (root, query, cb) -> cb.lessThanOrEqualTo(root.get("price"), max);
     }
 
-    public static Specification<Product> hasAvailability(PublicAvailability availability) {
+    public static Specification<Product> hasAvailability(
+            PublicAvailability availability,
+            java.time.LocalDateTime syncedAfter) {
         return (root, query, cb) -> {
             Subquery<Long> subquery = query.subquery(Long.class);
             var inventoryRoot = subquery.from(Inventory.class);
             subquery.select(inventoryRoot.get("id"))
                     .where(
                             cb.equal(inventoryRoot.get("product"), root),
-                            cb.isNotNull(inventoryRoot.get("lastSyncedAt")),
+                            cb.greaterThanOrEqualTo(inventoryRoot.get("lastSyncedAt"), syncedAfter),
                     availability == PublicAvailability.IN_STOCK
                                     ? cb.greaterThan(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
                                     : cb.lessThanOrEqualTo(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
