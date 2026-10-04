@@ -18,4 +18,11 @@ public class AuthResponse {
     private String token;
     private String email;
     private String role;
+
+    @Builder.Default
+    private boolean requiresEmailVerification = false;
+
+    private String challengeId;
+    private String maskedEmail;
+    private Long expiresInSeconds;
 }
