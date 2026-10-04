@@ -15,8 +15,9 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * Brute-force defense on the unauthenticated auth endpoints. Bounded to a small, fixed
- * set of paths rather than every request, and keyed on the raw remote address (never a
+ * Request-abuse defense on a small, fixed set of sensitive endpoints. It covers authentication
+ * and visual-search traffic without applying a global per-request limit. It is keyed on the raw
+ * remote address (never a
  * client-supplied X-Forwarded-* header, which would let an attacker spoof past the limit
  * or frame another client - see SecurityConfig for the equivalent no-trust-forwarded-headers
  * stance). Behind a reverse proxy this keys on the proxy's address unless the deployment
