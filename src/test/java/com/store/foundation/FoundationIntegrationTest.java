@@ -257,6 +257,13 @@ class FoundationIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.availability").value("UNKNOWN"));
+
+        mockMvc.perform(get("/api/v1/products/" + saved.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.availableQuantity").value(0))
+                .andExpect(jsonPath("$.data.categorySlug").value("phones"))
+                .andExpect(jsonPath("$.data.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty());
     }
 
     @Test
