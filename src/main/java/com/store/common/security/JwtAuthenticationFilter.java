@@ -1,6 +1,7 @@
 package com.store.common.security;
 
 import com.store.auth.service.AuthSessionCookieService;
+import com.store.auth.service.TokenRevocationService;
 import com.store.auth.service.CustomUserDetailsService;
 import com.store.auth.service.JwtService;
 import io.jsonwebtoken.JwtException;
@@ -30,6 +31,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final CustomUserDetailsService userDetailsService;
     private final Environment environment;
     private final AuthSessionCookieService cookieService;
+    private final TokenRevocationService tokenRevocationService;
 
     @Override
     protected void doFilterInternal(
@@ -44,6 +46,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (jwt != null) {
             try {
+                if (tokenRevocationService.isRevoked(jwt)) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
                 String userEmail = jwtService.extractUsername(jwt);
 
                 if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
