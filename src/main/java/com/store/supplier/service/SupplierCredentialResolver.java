@@ -24,6 +24,21 @@ public class SupplierCredentialResolver {
         return token == null ? "" : token.trim();
     }
 
+    public String resolveWebhookSecret(String supplierCode) {
+        String code = normalize(supplierCode);
+        String secret = environment.getProperty(
+                "app.fulfillment.webhook-tokens." + supplierCode);
+        if (secret == null || secret.isBlank()) {
+            secret = environment.getProperty(
+                    "SUPPLIER_WEBHOOK_TOKEN_" + code);
+        }
+        if ((secret == null || secret.isBlank()) && !isProd()) {
+            secret = environment.getProperty(
+                    "app.fulfillment.webhook-token", "");
+        }
+        return secret == null ? "" : secret.trim();
+    }
+
     private String normalize(String value) {
         return value == null
                 ? ""
