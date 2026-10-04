@@ -33,6 +33,7 @@ import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -173,6 +174,46 @@ class FoundationIntegrationTest {
     void me_withoutToken_isRejected() throws Exception {
         mockMvc.perform(get("/api/v1/me"))
                 .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void me_withToken_updatesEditableFieldsAndKeepsProtectedFields() throws Exception {
+        User user = createUser("update-me@example.com", userRole);
+        String originalRole = user.getRole().getName();
+
+        mockMvc.perform(put("/api/v1/me")
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "firstName", "Updated",
+                                "lastName", "Customer",
+                                "phoneNumber", "0599112233"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.firstName").value("Updated"))
+                .andExpect(jsonPath("$.data.lastName").value("Customer"))
+                .andExpect(jsonPath("$.data.email").value("update-me@example.com"))
+                .andExpect(jsonPath("$.data.role").value(originalRole))
+                .andExpect(jsonPath("$.data.password").doesNotExist());
+
+        User persisted = userRepository.findById(user.getId()).orElseThrow();
+        Assertions.assertEquals("Updated", persisted.getFirstName());
+        Assertions.assertEquals("Customer", persisted.getLastName());
+        Assertions.assertEquals("0599112233", persisted.getPhoneNumber());
+        Assertions.assertEquals("update-me@example.com", persisted.getEmail());
+        Assertions.assertEquals(originalRole, persisted.getRole().getName());
+    }
+
+    @Test
+    void me_update_rejectsBlankName() throws Exception {
+        User user = createUser("update-validation@example.com", userRole);
+
+        mockMvc.perform(put("/api/v1/me")
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "firstName", "   ",
+                                "lastName", "Customer"))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
