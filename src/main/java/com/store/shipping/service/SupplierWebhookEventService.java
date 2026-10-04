@@ -13,7 +13,6 @@ public class SupplierWebhookEventService {
 
     @Transactional
     public boolean recordIfNew(String supplierCode, String eventId) {
-        return repository.insertIfAbsent(
-                supplierCode.trim(), eventId.trim()) == 1;
+        return repository.insertIfAbsent(supplierCode, eventId) == 1;
     }
 }
