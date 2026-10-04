@@ -42,24 +42,22 @@ public class SupplierShipmentWebhookController {
 
         SupplierShipmentUpdateRequest request;
         try {
-            request = objectMapper.readValue(
-                    rawBody, SupplierShipmentUpdateRequest.class);
+            request = objectMapper.readValue(rawBody, SupplierShipmentUpdateRequest.class);
         } catch (JsonProcessingException ex) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error("Invalid supplier webhook payload"));
+            return ResponseEntity.badRequest().body(ApiResponse.error("Invalid supplier webhook payload"));
         }
 
-        if (!validator.validate(request).isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error("Invalid supplier webhook payload"));
+        var validationErrors = validator.validate(request);
+        if (!validationErrors.isEmpty()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Invalid supplier webhook payload"));
         }
 
+        String supplierCode = request.getSupplierCode().trim();
         if (eventId == null || eventId.isBlank()
                 || timestampHeader == null || timestampHeader.isBlank()
                 || signature == null || signature.isBlank()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error(
-                            "Missing supplier webhook authentication headers"));
+                    .body(ApiResponse.error("Missing supplier webhook authentication headers"));
         }
 
         long timestamp;
@@ -67,70 +65,53 @@ public class SupplierShipmentWebhookController {
             timestamp = Long.parseLong(timestampHeader);
         } catch (NumberFormatException ex) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error(
-                            "Invalid supplier webhook timestamp"));
+                    .body(ApiResponse.error("Invalid supplier webhook timestamp"));
         }
 
-        long skew = Math.abs(
-                Instant.now().getEpochSecond() - timestamp);
+        long skew = Math.abs(Instant.now().getEpochSecond() - timestamp);
         if (skew > maxSkewSeconds) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error(
-                            "Supplier webhook timestamp is outside the allowed window"));
+                    .body(ApiResponse.error("Supplier webhook timestamp is outside the allowed window"));
         }
 
-        String supplierCode = request.getSupplierCode().trim();
         String secret = credentialResolver.resolveWebhookSecret(supplierCode);
         if (secret.isBlank()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error(
-                            "Supplier webhook is not configured"));
+                    .body(ApiResponse.error("Supplier webhook is not configured"));
         }
 
         String expected;
         try {
-            expected = sign(
-                    secret,
-                    eventId.trim() + "." + timestamp + "." + rawBody);
+            expected = sign(secret, eventId.trim() + "." + timestamp + "." + rawBody);
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error(
-                            "Supplier webhook verification failed"));
+                    .body(ApiResponse.error("Supplier webhook verification failed"));
         }
 
         String provided = signature.startsWith("sha256=")
-                ? signature.substring("sha256=".length()).trim()
-                : signature.trim();
+                ? signature.substring("sha256=".length()) : signature;
 
         if (!constantTimeEquals(expected, provided)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error(
-                            "Invalid supplier webhook signature"));
+                    .body(ApiResponse.error("Invalid supplier webhook signature"));
         }
 
         ShipmentResponse response = processorService.process(
-                supplierCode,
-                eventId.trim(),
-                request);
+                supplierCode, eventId.trim(), request);
 
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        response, "Supplier shipment update applied"));
+        return ResponseEntity.ok(ApiResponse.success(response, "Supplier shipment update applied"));
     }
 
     private String sign(String secret, String payload) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(
-                secret.getBytes(StandardCharsets.UTF_8),
-                "HmacSHA256"));
+                secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         return HexFormat.of().formatHex(
                 mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
     }
 
     private boolean constantTimeEquals(String left, String right) {
-        if (left == null || right == null || left.length() != right.length()) {
-            return false;
-        }
+        if (left == null || right == null || left.length() != right.length()) return false;
         return java.security.MessageDigest.isEqual(
                 left.getBytes(StandardCharsets.UTF_8),
                 right.getBytes(StandardCharsets.UTF_8));
