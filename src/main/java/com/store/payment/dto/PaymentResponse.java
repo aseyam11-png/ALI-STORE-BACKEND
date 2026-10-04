@@ -1,5 +1,6 @@
 package com.store.payment.dto;
 
+import com.store.payment.entity.PaymentCollectionStatus;
 import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import lombok.Builder;
@@ -17,5 +18,6 @@ public class PaymentResponse {
     private PaymentMethod method;
     private PaymentStatus status;
     private String transactionId;
+    private PaymentCollectionStatus collectionStatus;
     private LocalDateTime createdAt;
 }

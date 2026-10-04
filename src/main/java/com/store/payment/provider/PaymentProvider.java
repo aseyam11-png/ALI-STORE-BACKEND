@@ -30,6 +30,33 @@ public interface PaymentProvider {
      */
     PaymentResult charge(Long orderId, BigDecimal amount, PaymentMethod method, String idempotencyKey);
 
+    /**
+     * A concrete production gateway must implement this operation. Returning
+     * "refunded" without provider confirmation is forbidden by contract.
+     */
+    default RefundResult refund(
+            Long orderId,
+            BigDecimal amount,
+            String transactionId,
+            String idempotencyKey) {
+        throw new UnsupportedOperationException("Payment provider refund is not configured");
+    }
+
+    /**
+     * Used only when the original charge outcome is unknown after a transport
+     * or process failure. A real provider should query its authoritative
+     * transaction state.
+     */
+    default ChargeStatusResult getChargeStatus(Long orderId, String transactionId) {
+        throw new UnsupportedOperationException("Payment provider reconciliation is not configured");
+    }
+
     record PaymentResult(boolean success, String transactionId, String message) {
+    }
+
+    record RefundResult(boolean success, String refundTransactionId, String message) {
+    }
+
+    record ChargeStatusResult(boolean completed, boolean failed, String transactionId, String message) {
     }
 }
