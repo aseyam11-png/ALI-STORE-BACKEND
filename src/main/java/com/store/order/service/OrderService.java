@@ -6,6 +6,7 @@ import com.store.cart.repository.CartItemRepository;
 import com.store.cart.repository.CartRepository;
 import com.store.common.exception.BusinessException;
 import com.store.common.exception.ForbiddenException;
+import com.store.common.exception.OrderExpiredException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.PageResponse;
 import com.store.coupon.entity.Coupon;
@@ -120,6 +121,7 @@ public class OrderService {
                 .status(OrderStatus.PENDING)
                 .shippingAddress(request.getShippingAddress().trim())
                 .idempotencyKey(normalizedKey)
+                .reservationExpiresAt(LocalDateTime.now().plusMinutes(30))
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
@@ -169,6 +171,31 @@ public class OrderService {
         return normalized;
     }
 
+    @Scheduled(fixedDelayString = "${app.orders.reservation-expiry-poll-ms:60000}")
+    @Transactional
+    public void expirePendingOrderReservations() {
+        for (Order order : orderRepository.findTop20ExpiredPendingOrdersForUpdate(LocalDateTime.now())) {
+            expireOrderReservation(order);
+        }
+    }
+
+    @Transactional
+    public boolean expireIfReservationElapsed(Order order) {
+        if (order.getStatus() != OrderStatus.PENDING
+                || order.getReservationExpiresAt() == null
+                || order.getReservationExpiresAt().isAfter(LocalDateTime.now())) {
+            return false;
+        }
+        expireOrderReservation(order);
+        return true;
+    }
+
+    private void expireOrderReservation(Order order) {
+        releaseOrderReservations(order);
+        order.setStatus(OrderStatus.CANCELLED);
+        orderRepository.save(order);
+    }
+
     public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -199,8 +226,16 @@ public class OrderService {
 
     @Transactional
     public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+
+        if (order.getStatus() == OrderStatus.PENDING
+                && expireIfReservationElapsed(order)) {
+            if (newStatus == OrderStatus.CANCELLED) {
+                return mapToResponse(order);
+            }
+            throw new OrderExpiredException("Order reservation has expired");
+        }
 
         OrderStatus currentStatus = order.getStatus();
         Set<OrderStatus> allowedNextStatuses = ALLOWED_TRANSITIONS.getOrDefault(
