@@ -3,6 +3,7 @@ package com.store.review.service;
 import com.store.common.exception.ConflictException;
 import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.ResourceNotFoundException;
+import com.store.order.repository.OrderRepository;
 import com.store.review.dto.ReviewRequest;
 import com.store.review.dto.ReviewResponse;
 import com.store.review.entity.Review;
@@ -22,6 +23,7 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final UserRepository userRepository;
+    private final OrderRepository orderRepository;
 
     public List<ReviewResponse> getReviewsByProduct(Long productId) {
         return reviewRepository.findByProductId(productId).stream()
@@ -40,6 +42,12 @@ public class ReviewService {
     public ReviewResponse addReview(String email, ReviewRequest request) {
         Long userId = resolveUserId(email);
 
+        if (!orderRepository.existsDeliveredOrderForProduct(
+                userId, request.getProductId())) {
+            throw new com.store.common.exception.BusinessException(
+                    "You can review a product only after a delivered order containing it");
+        }
+
         if (reviewRepository.existsByProductIdAndUserId(request.getProductId(), userId)) {
             throw new ConflictException("You have already reviewed this product");
         }
@@ -48,7 +56,7 @@ public class ReviewService {
                 .productId(request.getProductId())
                 .userId(userId)
                 .rating(request.getRating())
-                .comment(request.getComment())
+                .comment(request.getComment() == null ? null : request.getComment().trim())
                 .build();
 
         Review saved = reviewRepository.save(review);
