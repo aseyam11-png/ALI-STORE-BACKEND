@@ -28,8 +28,8 @@ class SupplierCredentialResolverTest {
     @Test
     void nonProductionMayUseSharedFallback() {
         MockEnvironment environment = new MockEnvironment()
-                .withActiveProfiles("test")
                 .withProperty("app.inventory-sync.api-token", "shared-token");
+        environment.setActiveProfiles("test");
 
         SupplierCredentialResolver resolver =
                 new SupplierCredentialResolver(environment);
@@ -44,8 +44,8 @@ class SupplierCredentialResolverTest {
     @Test
     void productionNeverUsesSharedFallback() {
         MockEnvironment environment = new MockEnvironment()
-                .withActiveProfiles("prod")
                 .withProperty("app.inventory-sync.api-token", "shared-token");
+        environment.setActiveProfiles("prod");
 
         SupplierCredentialResolver resolver =
                 new SupplierCredentialResolver(environment);
