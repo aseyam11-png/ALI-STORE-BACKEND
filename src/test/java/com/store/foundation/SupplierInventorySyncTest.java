@@ -5,6 +5,7 @@ import com.store.inventory.entity.Inventory;
 import com.store.inventory.enums.InventorySource;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.inventory.service.SupplierInventoryClient;
+import com.store.inventory.service.InventoryService;
 import com.store.inventory.service.SupplierInventorySyncService;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
@@ -35,6 +36,7 @@ import static org.mockito.Mockito.when;
 class SupplierInventorySyncTest {
 
     @Autowired private SupplierInventorySyncService syncService;
+    @Autowired private InventoryService inventoryService;
     @Autowired private SupplierRepository supplierRepository;
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private ProductRepository productRepository;
@@ -136,4 +138,19 @@ class SupplierInventorySyncTest {
         assertEquals(ProductStatus.DRAFT, updatedProduct.getStatus());
         assertNotEquals(ProductStatus.ACTIVE, updatedProduct.getStatus());
     }
+    @Test
+    void staleSupplierSnapshotMakesAvailabilityUnknown() {
+        Product product = createProduct("SYNC-003", new BigDecimal("25.00"));
+
+        Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        inventory.setSource(InventorySource.SUPPLIER_SYNC);
+        inventory.setLastSyncedAt(LocalDateTime.now().minusHours(2));
+        inventoryRepository.save(inventory);
+
+        assertEquals(com.store.inventory.enums.PublicAvailability.UNKNOWN,
+                inventoryService.getPublicAvailability(product.getId()));
+        assertEquals(0, inventoryService.getAvailableQuantity(product.getId()));
+    }
+
+
 }
