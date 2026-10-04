@@ -4,6 +4,7 @@ import com.store.payment.entity.Payment;
 import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.repository.PaymentRepository;
+import com.store.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -40,12 +41,36 @@ public class PaymentReservationService {
     private final PaymentRepository paymentRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Payment reserve(Long orderId, BigDecimal amount, PaymentMethod method) {
+    public Payment reserve(Long orderId, BigDecimal amount, PaymentMethod method, String idempotencyKey) {
         return paymentRepository.saveAndFlush(Payment.builder()
                 .orderId(orderId)
                 .amount(amount)
                 .method(method)
                 .status(PaymentStatus.PENDING)
+                .idempotencyKey(idempotencyKey)
+                .collectionStatus(com.store.payment.entity.PaymentCollectionStatus.NOT_REQUIRED)
                 .build());
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markFailed(Long paymentId, String message) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+        payment.setStatus(PaymentStatus.FAILED);
+        payment.setProviderError(message == null || message.isBlank()
+                ? "Payment provider reported failure"
+                : message.substring(0, Math.min(message.length(), 1000)));
+        paymentRepository.save(payment);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markRequiresReconciliation(Long paymentId, String message) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found for reconciliation"));
+        payment.setStatus(PaymentStatus.REQUIRES_RECONCILIATION);
+        payment.setProviderError(message == null || message.isBlank()
+                ? "Provider outcome could not be confirmed"
+                : message.substring(0, Math.min(message.length(), 1000)));
+        paymentRepository.save(payment);
     }
 }
