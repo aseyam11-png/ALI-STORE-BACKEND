@@ -11,12 +11,25 @@ import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
+import org.springframework.data.repository.query.Param;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByUserId(Long userId, Pageable pageable);
 
     Optional<Order> findByUserIdAndIdempotencyKey(Long userId, String idempotencyKey);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select o from Order o
+            where o.status = com.store.order.entity.OrderStatus.PENDING
+              and o.reservationExpiresAt is not null
+              and o.reservationExpiresAt <= :now
+            order by o.reservationExpiresAt asc
+            """)
+    List<Order> findTop20ExpiredPendingOrdersForUpdate(
+            @Param("now") java.time.LocalDateTime now);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")
