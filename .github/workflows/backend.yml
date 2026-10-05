@@ -21,12 +21,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
+      - name: Runtime diagnostics
+        run: |
+          java -version
+          mvn --version || true
+          ls -la
       - name: Run unit and application tests
         id: unit_test
         run: |
@@ -55,12 +54,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
       - name: Run PostgreSQL concurrency integration test
         id: postgres_test
         run: |
