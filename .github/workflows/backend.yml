@@ -10,6 +10,29 @@ permissions:
   contents: read
 
 jobs:
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner sanity
+        run: |
+          echo "runner-ok"
+          uname -a
+          java -version || true
+
+  checkout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout sanity
+        run: |
+          pwd
+          test -f pom.xml
+          test -f mvnw
+          echo "checkout-ok"
+
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 20
