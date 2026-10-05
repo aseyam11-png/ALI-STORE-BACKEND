@@ -24,54 +24,124 @@ public class ShippingAddressService {
 
     @Transactional
     public ShippingAddressResponse createAddress(String email, ShippingAddressRequest request) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = resolveUser(email);
+
+        if (Boolean.TRUE.equals(request.getIsDefault())) {
+            shippingAddressRepository.clearDefaultForUser(user.getId());
+        }
 
         ShippingAddress address = ShippingAddress.builder()
                 .user(user)
-                .street(request.getStreet())
-                .city(request.getCity())
-                .state(request.getState())
-                .country(request.getCountry())
-                .postalCode(request.getPostalCode())
+                .label(blankToNull(request.getLabel()))
+                .recipientName(blankToNull(request.getRecipientName()))
+                .phone(blankToNull(request.getPhone()))
+                .street(requiredTrim(request.getStreet()))
+                .city(requiredTrim(request.getCity()))
+                .state(blankToNull(request.getState()))
+                .country(requiredTrim(request.getCountry()))
+                .postalCode(blankToNull(request.getPostalCode()))
+                .building(blankToNull(request.getBuilding()))
+                .apartment(blankToNull(request.getApartment()))
+                .notes(blankToNull(request.getNotes()))
                 .isDefault(Boolean.TRUE.equals(request.getIsDefault()))
                 .build();
 
         return mapToResponse(shippingAddressRepository.save(address));
     }
 
+    @Transactional(readOnly = true)
     public List<ShippingAddressResponse> getMyAddresses(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = resolveUser(email);
 
-        return shippingAddressRepository.findByUserId(user.getId()).stream()
+        return shippingAddressRepository.findByUserIdOrderByIsDefaultDescIdAsc(user.getId()).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public ShippingAddressResponse getMyAddressById(String email, Long id) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Long userId = resolveUser(email).getId();
+        return mapToResponse(findOwnedAddress(id, userId));
+    }
 
-        ShippingAddress address = shippingAddressRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Shipping address not found with id: " + id));
+    @Transactional
+    public ShippingAddressResponse updateAddress(String email, Long id, ShippingAddressRequest request) {
+        Long userId = resolveUser(email).getId();
+        ShippingAddress address = findOwnedAddress(id, userId);
 
-        if (!address.getUser().getId().equals(user.getId())) {
-            throw new ForbiddenException("You do not have access to this shipping address");
+        if (Boolean.TRUE.equals(request.getIsDefault())) {
+            shippingAddressRepository.clearDefaultForUser(userId);
+            address.setIsDefault(true);
+        } else if (request.getIsDefault() != null) {
+            address.setIsDefault(false);
         }
 
-        return mapToResponse(address);
+        address.setLabel(blankToNull(request.getLabel()));
+        address.setRecipientName(blankToNull(request.getRecipientName()));
+        address.setPhone(blankToNull(request.getPhone()));
+        address.setStreet(requiredTrim(request.getStreet()));
+        address.setCity(requiredTrim(request.getCity()));
+        address.setState(blankToNull(request.getState()));
+        address.setCountry(requiredTrim(request.getCountry()));
+        address.setPostalCode(blankToNull(request.getPostalCode()));
+        address.setBuilding(blankToNull(request.getBuilding()));
+        address.setApartment(blankToNull(request.getApartment()));
+        address.setNotes(blankToNull(request.getNotes()));
+
+        return mapToResponse(shippingAddressRepository.save(address));
+    }
+
+    @Transactional
+    public void deleteAddress(String email, Long id) {
+        Long userId = resolveUser(email).getId();
+        ShippingAddress address = findOwnedAddress(id, userId);
+        shippingAddressRepository.delete(address);
+    }
+
+    @Transactional
+    public ShippingAddressResponse setDefaultAddress(String email, Long id) {
+        Long userId = resolveUser(email).getId();
+        ShippingAddress address = findOwnedAddress(id, userId);
+
+        shippingAddressRepository.clearDefaultForUser(userId);
+        address.setIsDefault(true);
+
+        return mapToResponse(shippingAddressRepository.save(address));
+    }
+
+    private User resolveUser(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    private ShippingAddress findOwnedAddress(Long id, Long userId) {
+        return shippingAddressRepository.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new ForbiddenException("You do not have access to this shipping address"));
+    }
+
+    private String requiredTrim(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private ShippingAddressResponse mapToResponse(ShippingAddress address) {
         return ShippingAddressResponse.builder()
                 .id(address.getId())
+                .label(address.getLabel())
+                .recipientName(address.getRecipientName())
+                .phone(address.getPhone())
                 .street(address.getStreet())
                 .city(address.getCity())
                 .state(address.getState())
                 .country(address.getCountry())
                 .postalCode(address.getPostalCode())
-                .isDefault(address.getIsDefault())
+                .building(address.getBuilding())
+                .apartment(address.getApartment())
+                .notes(address.getNotes())
+                .isDefault(Boolean.TRUE.equals(address.getIsDefault()))
                 .build();
     }
 }

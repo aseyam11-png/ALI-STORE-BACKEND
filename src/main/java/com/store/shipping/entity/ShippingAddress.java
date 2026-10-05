@@ -17,6 +17,15 @@ public class ShippingAddress {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(length = 80)
+    private String label;
+
+    @Column(name = "recipient_name", length = 160)
+    private String recipientName;
+
+    @Column(length = 40)
+    private String phone;
+
     @Column(nullable = false)
     private String street;
 
@@ -30,7 +39,18 @@ public class ShippingAddress {
 
     private String postalCode;
 
-    private Boolean isDefault;
+    @Column(length = 100)
+    private String building;
+
+    @Column(length = 100)
+    private String apartment;
+
+    @Column(columnDefinition = "TEXT")
+    private String notes;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean isDefault = false;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
