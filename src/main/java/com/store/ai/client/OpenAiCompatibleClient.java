@@ -9,7 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.RestClientException;
 
 import java.time.Duration;
 import java.util.List;
@@ -60,7 +60,7 @@ public class OpenAiCompatibleClient implements AiProviderClient {
                 throw new ServiceUnavailableException("AI provider returned an empty response");
             }
             return content.asText();
-        } catch (RestClientResponseException | java.io.IOException ex) {
+        } catch (RestClientException | java.io.IOException ex) {
             throw new ServiceUnavailableException("Ask Ali is temporarily unavailable");
         }
     }
