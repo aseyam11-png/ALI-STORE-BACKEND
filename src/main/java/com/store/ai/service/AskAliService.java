@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.ai.client.AiProviderClient;
 import com.store.ai.config.AiProperties;
+import com.store.ai.dto.AiProductResponse;
 import com.store.ai.dto.AskAliResponse;
 import com.store.common.exception.BusinessException;
 import com.store.common.response.PageResponse;
@@ -193,11 +194,19 @@ public class AskAliService {
             }
             List<ProductResponse> selected = context.stream().filter(product -> ids.contains(product.getId())).limit(6).toList();
             if (selected.isEmpty() && ids.isEmpty()) selected = context.stream().limit(6).toList();
-            return new AskAliResponse(answer, suggestedQuery, selected, true);
+            return new AskAliResponse(answer, suggestedQuery, selected.stream().map(this::toAiProduct).toList(), true);
         } catch (Exception ignored) {
             return new AskAliResponse("تعذر تنسيق رد المساعد. يمكنك استخدام نتائج الكتالوج المعروضة.",
-                    "", context.stream().limit(6).toList(), true);
+                    "", context.stream().limit(6).map(this::toAiProduct).toList(), true);
         }
+    }
+
+    private AiProductResponse toAiProduct(ProductResponse product) {
+        return new AiProductResponse(
+                product.getId(), product.getName(), product.getSlug(), product.getPrice(), product.getCurrency(),
+                product.getAvailability(), product.getAvailableQuantity(), product.getCategoryId(), product.getCategoryName(),
+                product.getCategorySlug(), product.getBrandId(), product.getBrandName(), product.getImages(), product.getPrimaryImageUrl()
+        );
     }
 
     private String stripCodeFence(String content) {
