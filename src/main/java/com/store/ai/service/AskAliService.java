@@ -90,9 +90,13 @@ public class AskAliService {
         for (int i = 0; i < tokens.size(); i++) {
             String raw = tokens.get(i);
             String normalized = raw.toLowerCase(Locale.ROOT).replace(",", "");
-            if (normalized.equals("متوفر") || normalized.equals("المتوفر") || normalized.equals("in")
-                    && i + 1 < tokens.size() && tokens.get(i + 1).equalsIgnoreCase("stock")) {
+            if (normalized.equals("متوفر") || normalized.equals("المتوفر")) {
                 inStock = true;
+                continue;
+            }
+            if (normalized.equals("in") && i + 1 < tokens.size() && tokens.get(i + 1).equalsIgnoreCase("stock")) {
+                inStock = true;
+                continue;
             }
 
             BigDecimal number = parseNumber(normalized);
@@ -104,7 +108,7 @@ public class AskAliService {
                 continue;
             }
 
-            if (CURRENCY_WORDS.contains(normalized) || STOP_WORDS.contains(normalized)) continue;
+            if (CURRENCY_WORDS.contains(normalized) || STOP_WORDS.contains(normalized) || normalized.equals("في")) continue;
             if (isPriceConnector(normalized) || normalized.equals("متوفر") || normalized.equals("المتوفر")
                     || normalized.equals("المخزون") || normalized.equals("stock")) continue;
             queryTokens.add(raw);
