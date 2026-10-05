@@ -168,8 +168,8 @@ public class AskAliService {
                             product.getAvailability() == null ? null : product.getAvailability().name(),
                             product.getAvailableQuantity(), product.getCategoryName(), product.getBrandName(),
                             product.getPrimaryImageUrl())).toList());
-            return "طلب العميل:\\n" + prompt + "\\n\\nاستعلام الكتالوج المستنتج:\\n" + parsedQuery
-                    + "\\n\\nسياق الكتالوج المسموح:\\n" + contextJson;
+            return "طلب العميل:\n" + prompt + "\n\nاستعلام الكتالوج المستنتج:\n" + parsedQuery
+                    + "\n\nسياق الكتالوج المسموح:\n" + contextJson;
         } catch (java.io.IOException ex) {
             throw new BusinessException("Unable to prepare catalog context");
         }
