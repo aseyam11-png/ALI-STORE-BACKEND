@@ -26,10 +26,10 @@ public class AskAliService {
     private static final List<String> STOP_WORDS = List.of(
             "اريد", "أريد", "بدي", "ابحث", "بحث", "عن", "لي", "لدي", "اعرض", "أعرض",
             "ارني", "أرني", "هل", "يوجد", "موجود", "مناسب", "افضل", "أفضل",
-            "ارغب", "حاب", "عايز", "want", "need", "show", "find", "me", "please", "for"
+            "ارغب", "حاب", "عايز", "want", "need", "show", "find", "me", "please", "for", "و", "مع"
     );
     private static final List<String> MAX_WORDS = List.of(
-            "أقل", "تحت", "حتى", "بحد", "قصى", "max", "under", "below", "less"
+            "أقل", "تحت", "حتى", "بحد", "قصى", "أقصى", "max", "under", "below", "less"
     );
     private static final List<String> MIN_WORDS = List.of(
             "أكثر", "فوق", "أعلى", "الأقل", "min", "above", "over", "more"
@@ -89,7 +89,7 @@ public class AskAliService {
 
         for (int i = 0; i < tokens.size(); i++) {
             String raw = tokens.get(i);
-            String normalized = raw.toLowerCase(Locale.ROOT).replace(",", "");
+            String normalized = raw.toLowerCase(Locale.ROOT).trim();
             if (normalized.equals("متوفر") || normalized.equals("المتوفر")) {
                 inStock = true;
                 continue;
@@ -137,7 +137,7 @@ public class AskAliService {
                 .replace("eur", "").replace("شيكل", "").replace("ils", "");
         if (cleaned.isBlank()) return null;
         try {
-            BigDecimal value = new BigDecimal(cleaned);
+            BigDecimal value = new BigDecimal(cleaned.replace(",", "."));
             return value.signum() >= 0 ? value : null;
         } catch (NumberFormatException ignored) {
             return null;
