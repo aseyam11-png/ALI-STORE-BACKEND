@@ -193,7 +193,7 @@ public class AskAliService {
                 for (JsonNode node : productIds) if (node.canConvertToLong()) ids.add(node.asLong());
             }
             List<ProductResponse> selected = context.stream().filter(product -> ids.contains(product.getId())).limit(6).toList();
-            if (selected.isEmpty() && ids.isEmpty()) selected = context.stream().limit(6).toList();
+            if (selected.isEmpty()) selected = context.stream().limit(6).toList();
             return new AskAliResponse(answer, suggestedQuery, selected.stream().map(this::toAiProduct).toList(), true);
         } catch (Exception ignored) {
             return new AskAliResponse("تعذر تنسيق رد المساعد. يمكنك استخدام نتائج الكتالوج المعروضة.",
