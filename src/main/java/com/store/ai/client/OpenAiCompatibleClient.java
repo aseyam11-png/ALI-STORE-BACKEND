@@ -29,8 +29,9 @@ public class OpenAiCompatibleClient implements AiProviderClient {
         factory.setConnectTimeout(properties.getTimeoutMs());
         factory.setReadTimeout(properties.getTimeoutMs());
 
+        String baseUrl = properties.getBaseUrl().trim().replaceAll("/+$", "");
+        String endpoint = baseUrl + "/chat/completions";
         RestClient client = RestClient.builder()
-                .baseUrl(properties.getBaseUrl().trim())
                 .requestFactory(factory)
                 .build();
 
@@ -45,7 +46,7 @@ public class OpenAiCompatibleClient implements AiProviderClient {
 
         try {
             String raw = client.post()
-                    .uri("/chat/completions")
+.uri(endpoint)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + properties.getApiKey().trim())
