@@ -52,6 +52,25 @@ public class SearchService {
                     .build());
         }
 
+        if (productPage.getContent().isEmpty() && query.length() >= 3) {
+            PageResponse<ProductResponse> fuzzyPage = productService.searchProducts(
+                    "", null, null, null, null, null, "relevance", 0, 100);
+            for (ProductResponse product : fuzzyPage.getContent()) {
+                int score = productScore(product, query);
+                if (score >= 50) {
+                    ranked.add(SearchSuggestionResponse.builder()
+                            .type("PRODUCT")
+                            .id(String.valueOf(product.getId()))
+                            .title(product.getName())
+                            .subtitle(join(product.getBrandName(), product.getCategoryName()))
+                            .image(product.getPrimaryImageUrl())
+                            .href("/shop/products/" + product.getId())
+                            .score(score)
+                            .build());
+                }
+            }
+        }
+
         for (Category category : categoryRepository.findAll()) {
             if (!Boolean.TRUE.equals(category.getActive())) continue;
             int score = scoreText(category.getName(), query);
