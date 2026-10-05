@@ -37,6 +37,11 @@ public class GlobalExceptionHandler {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), null);
     }
 
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleServiceUnavailable(ServiceUnavailableException ex) {
+        return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), null);
+    }
+
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ErrorResponse> handleConflict(ConflictException ex) {
         return buildErrorResponse(HttpStatus.CONFLICT, ex.getMessage(), null);
