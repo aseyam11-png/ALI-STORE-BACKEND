@@ -10,6 +10,7 @@ import com.store.product.service.ProductService;
 import com.store.search.dto.SearchSuggestionResponse;
 import com.store.search.dto.SearchSuggestionsResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -74,11 +75,11 @@ public class SearchService {
             }
         }
 
-        for (Category category : categoryRepository.findAll()) {
-            if (!Boolean.TRUE.equals(category.getActive())) continue;
-            int score = scoreText(category.getName(), query);
-            score = Math.max(score, scoreText(category.getSlug(), query));
-            score = Math.max(score, scoreText(category.getDescription(), query));
+        for (Category category : categoryRepository.searchActive(query, PageRequest.of(0, 12)).getContent()) {
+            int score = Math.max(
+                    scoreText(category.getName(), query),
+                    Math.max(scoreText(category.getSlug(), query), scoreText(category.getDescription(), query))
+            );
             if (score > 0) {
                 ranked.add(SearchSuggestionResponse.builder()
                         .type("CATEGORY")
@@ -91,7 +92,7 @@ public class SearchService {
             }
         }
 
-        for (Brand brand : brandRepository.findAll()) {
+        for (Brand brand : brandRepository.searchByName(query, PageRequest.of(0, 12)).getContent()) {
             int score = scoreText(brand.getName(), query);
             if (score > 0) {
                 ranked.add(SearchSuggestionResponse.builder()
