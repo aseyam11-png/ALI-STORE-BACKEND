@@ -382,6 +382,106 @@ class FoundationIntegrationTest {
     }
 
     @Test
+    void shippingAddressCrud_persistsCompleteFieldsAndAllowsOwnedLifecycle() throws Exception {
+        User owner = createUser("address-owner-" + System.nanoTime() + "@example.com", userRole);
+        String suffix = Long.toString(System.nanoTime());
+
+        Map<String, Object> createBody = Map.ofEntries(
+                Map.entry("label", "Home"),
+                Map.entry("recipientName", "Ali Store"),
+                Map.entry("phone", "0599000000"),
+                Map.entry("street", "Al-Wehda Street"),
+                Map.entry("city", "Gaza"),
+                Map.entry("state", "Gaza"),
+                Map.entry("country", "PS"),
+                Map.entry("postalCode", "00000"),
+                Map.entry("building", "12"),
+                Map.entry("apartment", "4"),
+                Map.entry("notes", "Call before delivery"),
+                Map.entry("isDefault", true)
+        );
+
+        String createdJson = mockMvc.perform(post("/api/v1/shipping-addresses")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createBody)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.label").value("Home"))
+                .andExpect(jsonPath("$.data.recipientName").value("Ali Store"))
+                .andExpect(jsonPath("$.data.phone").value("0599000000"))
+                .andExpect(jsonPath("$.data.building").value("12"))
+                .andExpect(jsonPath("$.data.apartment").value("4"))
+                .andExpect(jsonPath("$.data.notes").value("Call before delivery"))
+                .andExpect(jsonPath("$.data.isDefault").value(true))
+                .andReturn().getResponse().getContentAsString();
+
+        long addressId = objectMapper.readTree(createdJson).path("data").path("id").asLong();
+
+        Map<String, Object> updateBody = Map.ofEntries(
+                Map.entry("label", "Work"),
+                Map.entry("recipientName", "Ali Store Updated"),
+                Map.entry("phone", "0599111111"),
+                Map.entry("street", "Al-Rashid Street"),
+                Map.entry("city", "Gaza"),
+                Map.entry("state", "Gaza"),
+                Map.entry("country", "PS"),
+                Map.entry("postalCode", "11111"),
+                Map.entry("building", "20"),
+                Map.entry("apartment", "7"),
+                Map.entry("notes", "Updated notes"),
+                Map.entry("isDefault", true)
+        );
+
+        mockMvc.perform(put("/api/v1/shipping-addresses/" + addressId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateBody)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.label").value("Work"))
+                .andExpect(jsonPath("$.data.recipientName").value("Ali Store Updated"))
+                .andExpect(jsonPath("$.data.phone").value("0599111111"))
+                .andExpect(jsonPath("$.data.building").value("20"))
+                .andExpect(jsonPath("$.data.apartment").value("7"))
+                .andExpect(jsonPath("$.data.notes").value("Updated notes"))
+                .andExpect(jsonPath("$.data.isDefault").value(true));
+
+        Map<String, Object> secondAddress = Map.ofEntries(
+                Map.entry("street", "Second Street " + suffix),
+                Map.entry("city", "Gaza"),
+                Map.entry("country", "PS"),
+                Map.entry("isDefault", false)
+        );
+
+        String secondJson = mockMvc.perform(post("/api/v1/shipping-addresses")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(secondAddress)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        long secondAddressId = objectMapper.readTree(secondJson).path("data").path("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/shipping-addresses/" + secondAddressId + "/default")
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(secondAddressId))
+                .andExpect(jsonPath("$.data.isDefault").value(true));
+
+        mockMvc.perform(get("/api/v1/shipping-addresses/" + addressId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.isDefault").value(false));
+
+        mockMvc.perform(delete("/api/v1/shipping-addresses/" + secondAddressId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/shipping-addresses/" + secondAddressId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().is4xxClientError());
+    }
+
+    @Test
     void wishlist_ignoresClientSuppliedIdentityHeader() throws Exception {
         mockMvc.perform(get("/api/v1/wishlists"))
                 .andExpect(status().is4xxClientError());
