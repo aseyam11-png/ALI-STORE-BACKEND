@@ -4,16 +4,14 @@ import com.store.inventory.entity.Inventory;
 import com.store.inventory.enums.PublicAvailability;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.List;
 
-/**
- * Server-side query boundary for product listing/search. Deliberately built on
- * JPA Specifications rather than loading everything and filtering in Java, so
- * it stays correct as the catalog grows past what fits in memory.
- */
 public final class ProductSpecifications {
 
     private ProductSpecifications() {
@@ -49,11 +47,45 @@ public final class ProductSpecifications {
     }
 
     public static Specification<Product> nameOrSkuContains(String q) {
-        String like = "%" + q.toLowerCase() + "%";
-        return (root, query, cb) -> cb.or(
-                cb.like(cb.lower(root.get("name")), like),
-                cb.like(cb.lower(root.get("sku")), like)
-        );
+        return matchesQuery(q);
+    }
+
+    /**
+     * Customer search is token-aware and database-backed. Every meaningful token
+     * must appear in at least one public catalog field. This allows queries such
+     * as "wireless mouse" to match across name, description, brand and category
+     * without exposing supplier metadata or loading the catalog into memory.
+     */
+    public static Specification<Product> matchesQuery(String q) {
+        String normalized = q == null ? "" : q.trim().toLowerCase();
+        List<String> tokens = Arrays.stream(normalized.split("\\s+"))
+                .map(String::trim)
+                .filter(token -> token.length() >= 2)
+                .limit(8)
+                .toList();
+
+        return (root, query, cb) -> {
+            if (tokens.isEmpty()) return cb.conjunction();
+
+            var brand = root.join("brand", JoinType.LEFT);
+            var category = root.join("category", JoinType.LEFT);
+            var allTokens = cb.conjunction();
+
+            for (String token : tokens) {
+                String like = "%" + token + "%";
+                allTokens = cb.and(allTokens, cb.or(
+                        cb.like(cb.lower(root.get("name")), like),
+                        cb.like(cb.lower(root.get("sku")), like),
+                        cb.like(cb.lower(root.get("description")), like),
+                        cb.like(cb.lower(brand.get("name")), like),
+                        cb.like(cb.lower(category.get("name")), like),
+                        cb.like(cb.lower(category.get("slug")), like)
+                ));
+            }
+
+            query.distinct(true);
+            return allTokens;
+        };
     }
 
     public static Specification<Product> inCategory(Long categoryId) {
@@ -80,7 +112,7 @@ public final class ProductSpecifications {
                     .where(
                             cb.equal(inventoryRoot.get("product"), root),
                             cb.isNotNull(inventoryRoot.get("lastSyncedAt")),
-                    availability == PublicAvailability.IN_STOCK
+                            availability == PublicAvailability.IN_STOCK
                                     ? cb.greaterThan(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
                                     : cb.lessThanOrEqualTo(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
                     );
