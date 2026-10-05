@@ -28,7 +28,21 @@ jobs:
           java-version: '17'
           cache: maven
       - name: Run unit and application tests
-        run: bash ./mvnw -B test -Dtest='!PostgresConcurrencyIT'
+        id: unit_test
+        run: |
+          set +e
+          bash ./mvnw -B test -Dtest='!PostgresConcurrencyIT' > backend-unit.log 2>&1
+          status=$?
+          cat backend-unit.log
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+      - name: Upload unit test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-diagnostics
+          path: backend-unit.log
+          if-no-files-found: warn
 
   postgres-concurrency:
     runs-on: ubuntu-latest
@@ -48,4 +62,18 @@ jobs:
           java-version: '17'
           cache: maven
       - name: Run PostgreSQL concurrency integration test
-        run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test
+        id: postgres_test
+        run: |
+          set +e
+          bash ./mvnw -B -Dtest=PostgresConcurrencyIT test > backend-postgres.log 2>&1
+          status=$?
+          cat backend-postgres.log
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+      - name: Upload PostgreSQL diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-postgres-diagnostics
+          path: backend-postgres.log
+          if-no-files-found: warn
