@@ -10,30 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  runner:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Runner sanity
-        run: |
-          echo "runner-ok"
-          uname -a
-          java -version || true
-
-  checkout:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Checkout sanity
-        run: |
-          pwd
-          test -f pom.xml
-          test -f mvnw
-          echo "checkout-ok"
-
-  unit:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -44,52 +21,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Runtime diagnostics
-        run: |
-          java -version
-          mvn --version || true
-          ls -la
-      - name: Run unit and application tests
-        id: unit_test
-        run: |
-          set +e
-          bash ./mvnw -B test -Dtest='!PostgresConcurrencyIT' > backend-unit.log 2>&1
-          status=$?
-          cat backend-unit.log
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit $status
-      - name: Upload unit test diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-unit-diagnostics
-          path: backend-unit.log
-          if-no-files-found: warn
 
-  postgres-concurrency:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      JWT_SECRET: dGVzdC1wcm9kdWN0aW9uLXNpZ25pbmcta2V5LWZvci1jaS1vbmx5LWRvLW5vdC11c2UtaW4tcHJvZHVjdGlvbg==
-      JWT_EXPIRATION: 3600000
-      CORS_ALLOWED_ORIGINS: http://localhost:3000
-      AUTH_COOKIE_SECURE: false
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Run PostgreSQL concurrency integration test
-        id: postgres_test
-        run: |
-          set +e
-          bash ./mvnw -B -Dtest=PostgresConcurrencyIT test > backend-postgres.log 2>&1
-          status=$?
-          cat backend-postgres.log
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit $status
-      - name: Upload PostgreSQL diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
         with:
-          name: backend-postgres-diagnostics
-          path: backend-postgres.log
-          if-no-files-found: warn
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Run tests
+        run: bash ./mvnw -B test
+
+      - name: Run PostgreSQL integration test
+        run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test
