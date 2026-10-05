@@ -31,7 +31,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             "/api/v1/auth/register", 10,
             "/api/v1/auth/email/verify", 5,
             "/api/v1/auth/email/resend", 3,
-            "/api/v1/visual-search", 5
+            "/api/v1/visual-search", 5,
+            "/api/v1/search/suggestions", 60,
+            "/api/v1/ai/ask", 8,
+            "/api/v1/ai/discover", 8
     );
     private static final long WINDOW_MILLIS = 60_000L;
 

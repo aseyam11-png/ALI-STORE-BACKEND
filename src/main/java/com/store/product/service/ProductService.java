@@ -127,8 +127,10 @@ public class ProductService {
             throw new BusinessException("pageSize must be between 1 and " + MAX_PAGE_SIZE);
         }
 
-        Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE));
-        if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.nameOrSkuContains(q.trim()));
+        Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE))
+                .and(ProductSpecifications.hasActiveCategory())
+                .and(ProductSpecifications.hasActiveSupplier());
+        if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.matchesQuery(q));
         if (categoryId != null) spec = spec.and(ProductSpecifications.inCategory(categoryId));
         if (brandId != null) spec = spec.and(ProductSpecifications.hasBrand(brandId));
         if (minPrice != null) spec = spec.and(ProductSpecifications.priceGreaterThanOrEqual(minPrice));
