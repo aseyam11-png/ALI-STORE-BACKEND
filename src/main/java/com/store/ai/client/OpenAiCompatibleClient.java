@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -27,8 +26,8 @@ public class OpenAiCompatibleClient implements AiProviderClient {
         ensureConfigured();
 
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(properties.getTimeoutMs()));
-        factory.setReadTimeout(Duration.ofMillis(properties.getTimeoutMs()));
+        factory.setConnectTimeout(properties.getTimeoutMs());
+        factory.setReadTimeout(properties.getTimeoutMs());
 
         RestClient client = RestClient.builder()
                 .baseUrl(properties.getBaseUrl().trim())
