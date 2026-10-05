@@ -39,6 +39,19 @@ public class NotificationController {
                 .body(ApiResponse.success(notificationService.sendNotification(request), "Notification sent successfully"));
     }
 
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteNotification(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        notificationService.deleteNotification(
+                userDetails.getUsername(),
+                id);
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        null,
+                        "Notification deleted successfully"));
+    }
+
     @PatchMapping("/{id}/read")
     public ResponseEntity<ApiResponse<NotificationResponse>> markAsRead(
             @PathVariable Long id,

@@ -12,14 +12,12 @@ import com.store.order.service.OrderService;
 import com.store.payment.dto.PaymentRequest;
 import com.store.payment.dto.PaymentResponse;
 import com.store.payment.entity.Payment;
-import com.store.payment.entity.PaymentCollectionStatus;
 import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.provider.PaymentProvider;
 import com.store.payment.repository.PaymentRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
-import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +32,6 @@ public class PaymentService {
     private final PaymentProvider paymentProvider;
     private final PaymentReservationService paymentReservationService;
     private final OrderService orderService;
-    private final EntityManager entityManager;
 
     @Transactional(noRollbackFor = OrderExpiredException.class)
     public PaymentResponse processPayment(String email, PaymentRequest request) {
@@ -74,15 +71,8 @@ public class PaymentService {
             throw new BusinessException("Order contains an item without a valid external supplier mapping");
         }
 
-        String idempotencyKey = "order-" + order.getId();
-
-        Payment existingPayment = paymentRepository.findByOrderId(request.getOrderId())
-                .orElse(null);
-
-        if (existingPayment != null
-                && existingPayment.getStatus() != PaymentStatus.FAILED) {
-            throw new ConflictException(
-                    "This order already has a payment attempt that cannot be retried");
+        if (paymentRepository.findByOrderId(request.getOrderId()).isPresent()) {
+            throw new ConflictException("A payment attempt already exists for this order");
         }
 
         if (request.getMethod() == PaymentMethod.CASH_ON_DELIVERY) {
@@ -91,113 +81,33 @@ public class PaymentService {
                     .amount(request.getAmount())
                     .method(PaymentMethod.CASH_ON_DELIVERY)
                     .status(PaymentStatus.PENDING)
-                    .idempotencyKey(idempotencyKey)
-                    .collectionStatus(PaymentCollectionStatus.PENDING)
                     .build());
 
             orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
             return mapToResponse(codPayment);
         }
 
-        Payment reserved = existingPayment == null
-                ? paymentReservationService.reserve(
-                        request.getOrderId(),
-                        request.getAmount(),
-                        request.getMethod(),
-                        idempotencyKey)
-                : paymentReservationService.reopenFailed(
-                        existingPayment.getId(),
-                        request.getAmount(),
-                        request.getMethod());
+        Payment reserved = paymentReservationService.reserve(
+                request.getOrderId(), request.getAmount(), request.getMethod());
 
-        String paymentAttemptKey = reserved.getIdempotencyKey();
+        PaymentProvider.PaymentResult result =
+                paymentProvider.charge(
+                        order.getId(), request.getAmount(),
+                        request.getMethod(), "order-" + order.getId());
 
-        PaymentProvider.PaymentResult result;
-        try {
-            result = paymentProvider.charge(
-                    order.getId(), request.getAmount(),
-                    request.getMethod(), paymentAttemptKey);
-        } catch (RuntimeException ex) {
-            paymentReservationService.markRequiresReconciliation(
-                    reserved.getId(), ex.getMessage());
-            throw new ConflictException(
-                    "Payment outcome could not be confirmed; reconciliation is required");
-        }
+        reserved.setStatus(result.success()
+                ? PaymentStatus.COMPLETED : PaymentStatus.FAILED);
+        reserved.setTransactionId(result.transactionId());
+
+        Payment saved = paymentRepository.save(reserved);
 
         if (result.success()) {
-            try {
-                Payment completed = paymentReservationService.markCompleted(
-                        reserved.getId(), result.transactionId());
-
-                // markCompleted commits in REQUIRES_NEW. Clear the outer persistence
-                // context so OrderService cannot observe the stale PENDING Payment
-                // entity that was reserved before the independent commit.
-                entityManager.clear();
-
-                orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
-
-                return mapToResponse(completed);
-            } catch (RuntimeException ex) {
-                paymentReservationService.markRequiresReconciliation(
-                        reserved.getId(), ex.getMessage());
-                throw new ConflictException(
-                        "Payment was accepted by the provider but local settlement failed; reconciliation is required");
-            }
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
+        } else {
+            orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         }
 
-        try {
-            reserved.setStatus(PaymentStatus.FAILED);
-            reserved.setTransactionId(result.transactionId());
-            reserved.setCollectionStatus(PaymentCollectionStatus.NOT_REQUIRED);
-
-            return mapToResponse(paymentRepository.save(reserved));
-        } catch (RuntimeException ex) {
-            paymentReservationService.markFailed(
-                    reserved.getId(), ex.getMessage());
-            throw new ConflictException(
-                    "Payment was declined by the provider and could not be finalized locally");
-        }
-    }
-
-    @Transactional
-    public PaymentResponse confirmCodCollectionByPaymentId(Long paymentId) {
-        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
-
-        if (payment.getMethod() != PaymentMethod.CASH_ON_DELIVERY) {
-            throw new ConflictException("This payment is not cash on delivery");
-        }
-
-        return confirmCodCollection(payment.getOrderId());
-    }
-
-    @Transactional
-    public PaymentResponse confirmCodCollection(Long orderId) {
-        Order order = orderRepository.findByIdForUpdate(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
-
-        if (order.getStatus() != OrderStatus.DELIVERED) {
-            throw new ConflictException("COD can only be collected after the order is delivered");
-        }
-
-        Payment payment = paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment not found for order id: " + orderId));
-
-        if (payment.getMethod() != PaymentMethod.CASH_ON_DELIVERY) {
-            throw new ConflictException("This order does not use cash on delivery");
-        }
-
-        if (payment.getCollectionStatus() == PaymentCollectionStatus.COLLECTED) {
-            return mapToResponse(payment);
-        }
-
-        if (payment.getCollectionStatus() != PaymentCollectionStatus.PENDING) {
-            throw new ConflictException("COD payment is not awaiting collection");
-        }
-
-        payment.setCollectionStatus(PaymentCollectionStatus.COLLECTED);
-        payment.setStatus(PaymentStatus.COMPLETED);
-        return mapToResponse(paymentRepository.save(payment));
+        return mapToResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -220,7 +130,6 @@ public class PaymentService {
         return PaymentResponse.builder()
                 .id(payment.getId()).orderId(payment.getOrderId()).amount(payment.getAmount())
                 .method(payment.getMethod()).status(payment.getStatus())
-                .transactionId(payment.getTransactionId()).collectionStatus(payment.getCollectionStatus())
-                .createdAt(payment.getCreatedAt()).build();
+                .transactionId(payment.getTransactionId()).createdAt(payment.getCreatedAt()).build();
     }
 }

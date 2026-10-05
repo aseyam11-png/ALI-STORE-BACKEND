@@ -3,7 +3,6 @@ package com.store.fulfillment.dto;
 import lombok.Builder;
 import lombok.Value;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Value
@@ -21,6 +20,6 @@ public class SupplierFulfillmentRequest {
     public static class Item {
         String supplierSku;
         Integer quantity;
-        BigDecimal supplierUnitCost;
+
     }
 }

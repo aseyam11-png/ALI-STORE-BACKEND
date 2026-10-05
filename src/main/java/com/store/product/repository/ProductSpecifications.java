@@ -9,11 +9,6 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 
-/**
- * Server-side query boundary for product listing/search. Deliberately built on
- * JPA Specifications rather than loading everything and filtering in Java, so
- * it stays correct as the catalog grows past what fits in memory.
- */
 public final class ProductSpecifications {
 
     private ProductSpecifications() {
@@ -32,16 +27,6 @@ public final class ProductSpecifications {
                 cb.equal(root.get("supplier").get("status"), com.store.supplier.entity.SupplierStatus.ACTIVE),
                 cb.isTrue(root.get("supplier").get("fulfillmentEnabled"))
         );
-    }
-
-    public static Specification<Product> inCategorySlug(String slug) {
-        return (root, query, cb) -> cb.equal(root.get("category").get("slug"), slug);
-    }
-
-    public static Specification<Product> hasBrandName(String brandName) {
-        return (root, query, cb) -> cb.equal(
-                cb.lower(root.get("brand").get("name")),
-                brandName.toLowerCase());
     }
 
     public static Specification<Product> statusIn(ProductStatus... statuses) {
@@ -79,8 +64,7 @@ public final class ProductSpecifications {
             subquery.select(inventoryRoot.get("id"))
                     .where(
                             cb.equal(inventoryRoot.get("product"), root),
-                            cb.isNotNull(inventoryRoot.get("lastSyncedAt")),
-                    availability == PublicAvailability.IN_STOCK
+                            availability == PublicAvailability.IN_STOCK
                                     ? cb.greaterThan(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
                                     : cb.lessThanOrEqualTo(cb.diff(inventoryRoot.get("quantity"), inventoryRoot.get("reservedQuantity")), 0)
                     );

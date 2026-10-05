@@ -23,7 +23,20 @@ public interface FulfillmentTaskRepository extends JpaRepository<FulfillmentTask
 
     boolean existsByShipmentId(Long shipmentId);
 
+    Optional<FulfillmentTask> findByShipmentId(Long shipmentId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select t from FulfillmentTask t
+            join fetch t.shipment s
+            join fetch s.supplier
+            where t.shipment.id = :shipmentId
+            """)
+    Optional<FulfillmentTask> findByShipmentIdForUpdate(Long shipmentId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from FulfillmentTask t join fetch t.shipment s join fetch s.supplier where t.id = :id")
     Optional<FulfillmentTask> findByIdForUpdate(Long id);
+
+    List<FulfillmentTask> findByShipmentOrderId(Long orderId);
 }

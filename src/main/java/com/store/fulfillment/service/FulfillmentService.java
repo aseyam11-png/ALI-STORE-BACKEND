@@ -27,11 +27,10 @@ public class FulfillmentService {
     private final FulfillmentTaskRepository taskRepository;
     private final FulfillmentTaskProcessor taskProcessor;
 
-    /**
-     * Creates durable per-supplier fulfillment work. The actual supplier HTTP
-     * request is intentionally performed by FulfillmentTaskProcessor outside
-     * this transaction.
-     */
+    public FulfillmentTask findTaskByShipmentId(Long shipmentId) {
+        return taskRepository.findByShipmentId(shipmentId).orElse(null);
+    }
+
     @Transactional
     public void enqueueForOrder(Long orderId) {
         Order order = orderRepository.findById(orderId)
@@ -43,7 +42,6 @@ public class FulfillmentService {
 
         for (var entry : bySupplier.entrySet()) {
             Supplier supplier = entry.getValue().get(0).getSupplier();
-
             Shipment shipment = shipmentRepository.findByOrderIdAndSupplierId(orderId, supplier.getId())
                     .orElseGet(() -> shipmentRepository.save(
                             Shipment.builder()
@@ -53,13 +51,38 @@ public class FulfillmentService {
                                     .status(ShipmentStatus.PENDING)
                                     .build()));
 
-            if (!taskRepository.existsByShipmentId(shipment.getId())) {
+            FulfillmentTask existing = taskRepository.findByShipmentId(shipment.getId()).orElse(null);
+            if (existing == null) {
                 taskRepository.save(FulfillmentTask.builder()
                         .shipment(shipment)
                         .status(FulfillmentTaskStatus.PENDING)
                         .attempts(0)
                         .nextAttemptAt(LocalDateTime.now())
                         .build());
+            } else if (existing.getStatus() == FulfillmentTaskStatus.CANCELLED
+                    && shipment.getStatus() == ShipmentStatus.PENDING) {
+                existing.setStatus(FulfillmentTaskStatus.PENDING);
+                existing.setAttempts(0);
+                existing.setNextAttemptAt(LocalDateTime.now());
+                existing.setLastError(null);
+                taskRepository.save(existing);
+            }
+        }
+    }
+
+    @Transactional
+    public void cancelPendingWorkForOrder(Long orderId) {
+        List<Shipment> shipments = shipmentRepository.findByOrderIdOrderByIdAsc(orderId);
+        for (Shipment shipment : shipments) {
+            FulfillmentTask task = taskRepository.findByShipmentIdForUpdate(shipment.getId()).orElse(null);
+            if (task != null && task.getStatus() == FulfillmentTaskStatus.PENDING) {
+                task.setStatus(FulfillmentTaskStatus.CANCELLED);
+                task.setLastError("Order cancelled before supplier fulfillment started");
+                taskRepository.save(task);
+            }
+            if (shipment.getStatus() == ShipmentStatus.PENDING) {
+                shipment.setStatus(ShipmentStatus.CANCELLED);
+                shipmentRepository.save(shipment);
             }
         }
     }

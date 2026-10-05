@@ -9,6 +9,8 @@ import com.store.category.repository.CategoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.supplier.entity.Supplier;
+import com.store.supplier.repository.SupplierRepository;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -55,9 +57,11 @@ class CatalogSecurityTest {
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private BrandRepository brandRepository;
     @Autowired private ProductRepository productRepository;
+    @Autowired private SupplierRepository supplierRepository;
 
     private Role adminRole;
     private Category category;
+    private Supplier supplier;
 
     @BeforeEach
     void setUp() {
@@ -66,6 +70,10 @@ class CatalogSecurityTest {
         adminRole = roleRepository.findByName("ROLE_ADMIN")
                 .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
         category = categoryRepository.save(Category.builder().name("Electronics").slug("electronics").active(true).build());
+        supplier = supplierRepository.findByExternalCode("TEST-SUPPLIER")
+                .orElseGet(() -> supplierRepository.save(
+                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier")
+                                .fulfillmentEnabled(true).inventorySyncEnabled(true).build()));
     }
 
     private String adminToken() {
@@ -131,16 +139,16 @@ class CatalogSecurityTest {
     }
 
     @Test
-    void archivedProduct_hiddenFromListing_and_notResolvableById() throws Exception {
+    void archivedProduct_hiddenFromListing_andDirectLookup() throws Exception {
         Product active = productRepository.save(Product.builder()
                 .name("Active One").slug("active-one").price(BigDecimal.TEN).currency("USD").sku("ACT-1")
-                .status(ProductStatus.ACTIVE).category(category).build());
+                .status(ProductStatus.ACTIVE).category(category).supplier(supplier).supplierSku("SUP-ACT-1").supplierCost(new BigDecimal("5.00")).build());
         Product archived = productRepository.save(Product.builder()
                 .name("Archived One").slug("archived-one").price(BigDecimal.TEN).currency("USD").sku("ARC-1")
-                .status(ProductStatus.ARCHIVED).category(category).build());
+                .status(ProductStatus.ARCHIVED).category(category).supplier(supplier).supplierSku("SUP-ARC-1").supplierCost(new BigDecimal("5.00")).build());
         Product draft = productRepository.save(Product.builder()
                 .name("Draft One").slug("draft-one").price(BigDecimal.TEN).currency("USD").sku("DRF-1")
-                .status(ProductStatus.DRAFT).category(category).build());
+                .status(ProductStatus.DRAFT).category(category).supplier(supplier).supplierSku("SUP-DRF-1").supplierCost(new BigDecimal("5.00")).build());
 
         // Listing only ever contains ACTIVE products.
         mockMvc.perform(get("/api/v1/products"))
@@ -148,8 +156,8 @@ class CatalogSecurityTest {
                 .andExpect(jsonPath("$.data.content[?(@.sku=='ARC-1')]").isEmpty())
                 .andExpect(jsonPath("$.data.content[?(@.sku=='DRF-1')]").isEmpty());
 
-        // Archived products are intentionally not customer-resolvable; order history
-        // keeps its own historical snapshot and does not depend on catalog visibility.
+        // Archived products are not customer-visible by direct lookup either; historical
+        // orders keep their own product snapshots/references.
         mockMvc.perform(get("/api/v1/products/" + archived.getId()))
                 .andExpect(status().isNotFound());
 
@@ -176,9 +184,11 @@ class CatalogSecurityTest {
     @Test
     void productSearch_filtersByPriceRange() throws Exception {
         productRepository.save(Product.builder().name("Cheap").slug("cheap-x").price(new BigDecimal("10.00"))
-                .currency("USD").sku("CHEAP-1").status(ProductStatus.ACTIVE).category(category).build());
+                .currency("USD").sku("CHEAP-1").status(ProductStatus.ACTIVE).category(category)
+                .supplier(supplier).supplierSku("SUP-CHEAP-1").supplierCost(new BigDecimal("5.00")).build());
         productRepository.save(Product.builder().name("Expensive").slug("expensive-x").price(new BigDecimal("500.00"))
-                .currency("USD").sku("EXP-1").status(ProductStatus.ACTIVE).category(category).build());
+                .currency("USD").sku("EXP-1").status(ProductStatus.ACTIVE).category(category)
+                .supplier(supplier).supplierSku("SUP-EXP-1").supplierCost(new BigDecimal("5.00")).build());
 
         mockMvc.perform(get("/api/v1/products").param("minPrice", "100").param("maxPrice", "1000"))
                 .andExpect(status().isOk())

@@ -8,6 +8,7 @@ import com.store.common.exception.ConflictException;
 import com.store.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -19,44 +20,47 @@ public class BrandService {
     private final BrandRepository brandRepository;
 
     public List<BrandResponse> getAllBrands() {
-        return brandRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
+        return brandRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
     public BrandResponse getBrandById(Long id) {
-        Brand brand = brandRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Brand not found with id: " + id));
-        return mapToResponse(brand);
+        return mapToResponse(brandRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Brand not found with id: " + id)));
     }
 
+    @Transactional
     public BrandResponse createBrand(BrandRequest request) {
-        if (brandRepository.existsByName(request.getName())) {
+        String name = request.getName().trim();
+        if (brandRepository.existsByName(name)) {
             throw new ConflictException("Brand name already exists");
         }
 
-        Brand brand = Brand.builder()
-                .name(request.getName())
+        return mapToResponse(brandRepository.save(Brand.builder()
+                .name(name)
                 .description(request.getDescription())
                 .logoUrl(request.getLogoUrl())
-                .build();
-
-        Brand savedBrand = brandRepository.save(brand);
-        return mapToResponse(savedBrand);
+                .build()));
     }
 
+    @Transactional
     public BrandResponse updateBrand(Long id, BrandRequest request) {
         Brand brand = brandRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Brand not found with id: " + id));
 
-        brand.setName(request.getName());
+        String name = request.getName().trim();
+        brandRepository.findByName(name)
+                .filter(existing -> !existing.getId().equals(id))
+                .ifPresent(existing -> {
+                    throw new ConflictException("Brand name already exists");
+                });
+
+        brand.setName(name);
         brand.setDescription(request.getDescription());
         brand.setLogoUrl(request.getLogoUrl());
-
-        Brand updatedBrand = brandRepository.save(brand);
-        return mapToResponse(updatedBrand);
+        return mapToResponse(brandRepository.save(brand));
     }
 
+    @Transactional
     public void deleteBrand(Long id) {
         if (!brandRepository.existsById(id)) {
             throw new ResourceNotFoundException("Brand not found with id: " + id);

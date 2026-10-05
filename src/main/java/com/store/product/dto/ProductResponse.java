@@ -20,10 +20,8 @@ public class ProductResponse {
     private String sku;
     private ProductStatus status;
     private PublicAvailability availability;
-    private Integer availableQuantity;
     private Long categoryId;
     private String categoryName;
-    private String categorySlug;
     private Long brandId;
     private String brandName;
     private List<String> images;

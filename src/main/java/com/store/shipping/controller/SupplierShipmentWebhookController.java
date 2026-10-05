@@ -25,9 +25,6 @@ import java.util.HexFormat;
 @RequiredArgsConstructor
 public class SupplierShipmentWebhookController {
 
-    private static final int MAX_SUPPLIER_CODE_LENGTH = 80;
-    private static final int MAX_EVENT_ID_LENGTH = 150;
-
     private final ObjectMapper objectMapper;
     private final Validator validator;
     private final SupplierCredentialResolver credentialResolver;
@@ -56,21 +53,11 @@ public class SupplierShipmentWebhookController {
         }
 
         String supplierCode = request.getSupplierCode().trim();
-        String normalizedEventId = eventId == null ? null : eventId.trim();
-
         if (eventId == null || eventId.isBlank()
                 || timestampHeader == null || timestampHeader.isBlank()
                 || signature == null || signature.isBlank()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error("Missing supplier webhook authentication headers"));
-        }
-
-        if (supplierCode.length() > MAX_SUPPLIER_CODE_LENGTH
-                || normalizedEventId == null
-                || normalizedEventId.length() > MAX_EVENT_ID_LENGTH) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(
-                            "Supplier webhook identifiers exceed the supported length"));
         }
 
         long timestamp;
@@ -95,7 +82,7 @@ public class SupplierShipmentWebhookController {
 
         String expected;
         try {
-            expected = sign(secret, normalizedEventId + "." + timestamp + "." + rawBody);
+            expected = sign(secret, eventId.trim() + "." + timestamp + "." + rawBody);
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Supplier webhook verification failed"));
@@ -110,7 +97,7 @@ public class SupplierShipmentWebhookController {
         }
 
         ShipmentResponse response = processorService.process(
-                supplierCode, normalizedEventId, request);
+                supplierCode, eventId.trim(), request);
 
         return ResponseEntity.ok(ApiResponse.success(response, "Supplier shipment update applied"));
     }

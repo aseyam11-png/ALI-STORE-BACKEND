@@ -10,16 +10,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "orders", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_orders_user_idempotency_key", columnNames = {"user_id", "idempotency_key"})
-})
+@Table(name = "orders")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class Order extends BaseEntity {
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
@@ -43,16 +40,9 @@ public class Order extends BaseEntity {
     @Column(nullable = false)
     private String shippingAddress;
 
-    /**
-     * Client-generated idempotency key for checkout retries. It is scoped to the
-     * authenticated customer so a gateway/frontend retry cannot create duplicate
-     * orders for the same logical checkout attempt.
-     */
-    @Column(name = "idempotency_key", length = 100)
-    private String idempotencyKey;
-
-    @Column(name = "reservation_expires_at")
-    private java.time.LocalDateTime reservationExpiresAt;
+    @Column(name = "reservation_expires_at", nullable = false)
+    @Builder.Default
+    private java.time.LocalDateTime reservationExpiresAt = java.time.LocalDateTime.now().plusMinutes(30);
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

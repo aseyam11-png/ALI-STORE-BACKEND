@@ -26,15 +26,6 @@ public class CartController {
                 "Cart retrieved successfully"));
     }
 
-    @PutMapping
-    public ResponseEntity<ApiResponse<CartResponse>> replaceCart(
-            @AuthenticationPrincipal UserDetails userDetails,
-            @RequestBody @Valid java.util.List<@Valid CartItemRequest> requests) {
-        return ResponseEntity.ok(ApiResponse.success(
-                cartService.replaceCart(userDetails.getUsername(), requests),
-                "Cart replaced successfully"));
-    }
-
     @PostMapping("/items")
     public ResponseEntity<ApiResponse<CartResponse>> addItem(
             @AuthenticationPrincipal UserDetails userDetails,

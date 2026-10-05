@@ -1,7 +1,11 @@
 package com.store.wishlist.service;
 
+import com.store.common.exception.BusinessException;
 import com.store.common.exception.ConflictException;
 import com.store.common.exception.ResourceNotFoundException;
+import com.store.product.entity.Product;
+import com.store.product.enums.ProductStatus;
+import com.store.product.repository.ProductRepository;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.wishlist.dto.WishlistRequest;
@@ -21,6 +25,7 @@ public class WishlistService {
 
     private final WishlistRepository wishlistRepository;
     private final UserRepository userRepository;
+    private final ProductRepository productRepository;
 
     public List<WishlistResponse> getMyWishlist(String email) {
         Long userId = resolveUserId(email);
@@ -33,6 +38,18 @@ public class WishlistService {
     public WishlistResponse addToWishlist(String email, WishlistRequest request) {
         Long userId = resolveUserId(email);
 
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+
+        if (product.getStatus() != ProductStatus.ACTIVE
+                || product.getCategory() == null
+                || !Boolean.TRUE.equals(product.getCategory().getActive())
+                || product.getSupplier() == null
+                || product.getSupplier().getStatus() != com.store.supplier.entity.SupplierStatus.ACTIVE
+                || !Boolean.TRUE.equals(product.getSupplier().getFulfillmentEnabled())) {
+            throw new BusinessException("Product is not currently available");
+        }
+
         if (wishlistRepository.existsByUserIdAndProductId(userId, request.getProductId())) {
             throw new ConflictException("Product is already in wishlist");
         }
@@ -42,8 +59,7 @@ public class WishlistService {
                 .productId(request.getProductId())
                 .build();
 
-        Wishlist saved = wishlistRepository.save(wishlist);
-        return mapToResponse(saved);
+        return mapToResponse(wishlistRepository.save(wishlist));
     }
 
     @Transactional
@@ -57,9 +73,9 @@ public class WishlistService {
     }
 
     private Long resolveUserId(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return user.getId();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"))
+                .getId();
     }
 
     private WishlistResponse mapToResponse(Wishlist wishlist) {

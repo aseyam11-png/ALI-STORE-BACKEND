@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -15,8 +16,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     Page<Product> findByCategoryId(Long categoryId, Pageable pageable);
     Optional<Product> findBySku(String sku);
     Optional<Product> findBySlug(String slug);
-    Optional<Product> findBySlugAndStatusIn(String slug, java.util.List<ProductStatus> statuses);
-    Optional<Product> findBySupplierIdAndSupplierSku(Long supplierId, String supplierSku);
+    Optional<Product> findBySlugAndStatusIn(String slug, List<ProductStatus> statuses);
+    Optional<Product> findFirstBySupplierIdAndSupplierSku(Long supplierId, String supplierSku);
+    List<Product> findBySupplierIdAndSupplierSkuIsNotNull(Long supplierId);
     boolean existsBySku(String sku);
     boolean existsBySlug(String slug);
 }

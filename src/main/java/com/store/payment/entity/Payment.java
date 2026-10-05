@@ -34,15 +34,4 @@ public class Payment extends BaseEntity {
 
     @Column(name = "transaction_id", unique = true)
     private String transactionId;
-
-    @Column(name = "idempotency_key", nullable = false, unique = true, length = 255)
-    private String idempotencyKey;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "collection_status", nullable = false, length = 30)
-    @Builder.Default
-    private PaymentCollectionStatus collectionStatus = PaymentCollectionStatus.NOT_REQUIRED;
-
-    @Column(name = "provider_error", length = 1000)
-    private String providerError;
 }
