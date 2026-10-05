@@ -33,6 +33,9 @@ public class SearchService {
         if (query.length() < 2) {
             return new SearchSuggestionsResponse(query, List.of());
         }
+        if (query.length() > 120) {
+            throw new com.store.common.exception.BusinessException("Search query must be 120 characters or less");
+        }
 
         int limit = Math.min(MAX_LIMIT, Math.max(1, requestedLimit));
         List<SearchSuggestionResponse> ranked = new ArrayList<>();
@@ -127,9 +130,20 @@ public class SearchService {
         score = Math.max(score, scoreText(product.getSku(), query) + 10);
         score = Math.max(score, scoreText(product.getBrandName(), query) + 4);
         score = Math.max(score, scoreText(product.getCategoryName(), query));
+        if (query.contains(" ")) {
+            int tokenScore = 0;
+            for (String token : query.split("\\s+")) {
+                if (token.length() >= 2) {
+                    tokenScore += Math.max(
+                            Math.max(scoreText(product.getName(), token), scoreText(product.getBrandName(), token)),
+                            scoreText(product.getCategoryName(), token)
+                    );
+                }
+            }
+            score = Math.max(score, Math.min(95, tokenScore / Math.max(1, query.split("\\s+").length) + 8));
+        }
         return score;
     }
-
     private int scoreText(String value, String query) {
         String text = normalize(value);
         if (text.isBlank()) return 0;
