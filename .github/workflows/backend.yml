@@ -60,4 +60,4 @@ jobs:
           cache: maven
 
       - name: Run real PostgreSQL concurrency tests
-        run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test
+        run: bash ./mvnw -B -Dtest=store.postgres.PostgresConcurrencyIT test
