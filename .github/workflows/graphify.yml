@@ -1,0 +1,44 @@
+name: Graphify Architecture Map
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  graphify:
+    name: Build code knowledge graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.12"
+
+      - name: Install Graphify
+        run: uv tool install --upgrade "graphifyy==0.9.72"
+
+      - name: Build code graph
+        run: graphify extract . --code-only --no-cluster
+
+      - name: Upload graph artifact
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ali-store-backend-graphify
+          path: graphify-out/graph.json
+          if-no-files-found: warn
+          retention-days: 7
