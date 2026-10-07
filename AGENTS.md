@@ -5,7 +5,7 @@
 Graphify is the architecture map for this repository. Before any non-trivial analysis, diagnosis, refactor, bug fix, or feature change:
 
 1. Ensure Graphify is installed from the official package:
-   `uv tool install --upgrade "graphifyy==0.9.72"`
+   `uv tool install --upgrade "graphifyy==0.9.79"`
 2. If `graphify-out/graph.json` does not exist, build the code graph:
    `graphify extract . --code-only`
 3. Use Graphify to locate the relevant subsystem before opening/editing source files:
