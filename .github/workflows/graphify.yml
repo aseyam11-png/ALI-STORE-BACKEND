@@ -28,11 +28,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Graphify
-        run: uv tool install --upgrade "graphifyy==0.9.72"
+      - name: Verify Graphify
+        run: uvx --from "graphifyy==0.9.72" graphify --version
 
       - name: Build code graph
-        run: graphify extract . --code-only --no-cluster
+        run: uvx --from "graphifyy==0.9.72" graphify extract . --code-only --no-cluster
 
       - name: Upload graph artifact
         uses: actions/upload-artifact@v6
