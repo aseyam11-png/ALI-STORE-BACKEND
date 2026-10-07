@@ -10,7 +10,7 @@ For any non-trivial backend question or code change, use Graphify before reading
 ## Required sequence
 
 1. Ensure the CLI exists:
-   `uv tool install --upgrade "graphifyy==0.9.72"`
+   `uv tool install --upgrade "graphifyy==0.9.79"`
 2. Build the graph when missing:
    `graphify extract . --code-only`
 3. Navigate the architecture with:
