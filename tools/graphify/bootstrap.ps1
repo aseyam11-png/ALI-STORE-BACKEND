@@ -4,8 +4,8 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
   throw "uv is required. Install uv first: https://docs.astral.sh/uv/"
 }
 
-Write-Host "Installing Graphify 0.9.72..."
-uv tool install --upgrade "graphifyy==0.9.72"
+Write-Host "Installing Graphify 0.9.79..."
+uv tool install --upgrade "graphifyy==0.9.79"
 
 Write-Host "Graphify version:"
 graphify --version
