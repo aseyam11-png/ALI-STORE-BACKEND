@@ -29,10 +29,10 @@ jobs:
           python-version: "3.12"
 
       - name: Verify Graphify
-        run: uvx --from "graphifyy==0.9.72" graphify --version
+        run: uvx --from "graphifyy==0.9.79" graphify --version
 
       - name: Build code graph
-        run: uvx --from "graphifyy==0.9.72" graphify extract . --code-only --no-cluster
+        run: uvx --from "graphifyy==0.9.79" graphify extract . --code-only --no-cluster
 
       - name: Upload graph artifact
         uses: actions/upload-artifact@v6
