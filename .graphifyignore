@@ -1,0 +1,11 @@
+# Build / generated output
+target/
+build/
+.gradle/
+
+# Graphify local artifacts
+graphify-out/
+
+# Local/editor/tool caches
+.cache/
+.tmp/
