@@ -158,6 +158,10 @@ public class ShippingMethodService {
         return value == null || value.isBlank() ? null : value.trim().toUpperCase();
     }
 
+    private String normalizeOptionalCurrency(String value) {
+        return value == null || value.isBlank() ? null : normalizeCurrency(value);
+    }
+
     private String normalizeCurrency(String value) {
         if (value == null || value.isBlank()) {
             throw new BusinessException("Shipping currency is required");
