@@ -25,6 +25,9 @@ import com.store.product.repository.ProductVariantRepository;
 import com.store.review.dto.ProductReviewSummaryResponse;
 import com.store.review.repository.ProductRatingSummary;
 import com.store.review.repository.ReviewRepository;
+import com.store.pricing.service.PromotionService;
+import com.store.shipping.dto.ShippingMethodResponse;
+import com.store.shipping.service.ShippingMethodService;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.entity.SupplierStatus;
 import com.store.supplier.repository.SupplierRepository;
@@ -56,6 +59,8 @@ public class ProductService {
     private final com.store.pricing.service.PricingService pricingService;
     private final ProductVariantRepository productVariantRepository;
     private final ReviewRepository reviewRepository;
+    private final PromotionService promotionService;
+    private final ShippingMethodService shippingMethodService;
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
@@ -268,15 +273,20 @@ public class ProductService {
                 .filter(ProductImage::getIsPrimary).map(ProductImage::getUrl)
                 .findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
 
+        com.store.pricing.service.PromotionService.PriceResult productPrice =
+                promotionService.calculate(product, null);
+
         List<com.store.product.dto.ProductVariantResponse> variants =
                 productVariantRepository.findByProductIdAndActiveTrueOrderByIdAsc(product.getId()).stream()
-                        .map(v -> com.store.product.dto.ProductVariantResponse.builder()
-                                .id(v.getId()).productId(product.getId()).sku(v.getSku())
-                                .name(v.getOptionName()).value(v.getOptionValue()).price(v.getPrice())
-                                .currency(product.getCurrency()).availableQuantity(v.getAvailableQuantity())
-                                .imageUrl(v.getImageUrl()).active(v.getActive())
-                                .createdAt(v.getCreatedAt()).updatedAt(v.getUpdatedAt()).build())
-                        .toList();
+                        .map(v -> {
+                            var result = promotionService.calculate(product, v);
+                            return com.store.product.dto.ProductVariantResponse.builder()
+                                    .id(v.getId()).productId(product.getId()).sku(v.getSku())
+                                    .name(v.getOptionName()).value(v.getOptionValue())
+                                    .price(result.effectivePrice()).currency(product.getCurrency())
+                                    .availableQuantity(v.getAvailableQuantity()).imageUrl(v.getImageUrl())
+                                    .active(v.getActive()).createdAt(v.getCreatedAt()).updatedAt(v.getUpdatedAt()).build();
+                        }).toList();
 
         BigDecimal average = rating == null || rating.getAverageRating() == null ? BigDecimal.ZERO : rating.getAverageRating();
         long count = rating == null || rating.getReviewCount() == null ? 0L : rating.getReviewCount();
@@ -290,9 +300,11 @@ public class ProductService {
                 .fiveStar(countValue(rating == null ? null : rating.getFiveStar()))
                 .build();
 
+        List<ShippingMethodResponse> shippingMethods = shippingMethodService.getPublicMethods(null, product.getCurrency());
+
         return ProductResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
-                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
+                .price(productPrice.effectivePrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
                 .availableQuantity(inventoryService.getAvailableQuantity(product.getId()))
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
@@ -300,6 +312,11 @@ public class ProductService {
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
                 .images(imageUrls).primaryImageUrl(primaryImageUrl).variants(variants)
+                .originalPrice(productPrice.originalPrice())
+                .discountPercentage(productPrice.discountPercentage())
+                .promotionTitle(productPrice.promotion() == null ? null : productPrice.promotion().getTitle())
+                .flashSale(productPrice.promotion() != null && Boolean.TRUE.equals(productPrice.promotion().getFlashSale()))
+                .shippingMethods(shippingMethods)
                 .rating(average).reviewCount(count).reviewSummary(summary)
                 .createdAt(product.getCreatedAt()).updatedAt(product.getUpdatedAt()).build();
     }

@@ -40,6 +40,10 @@ public class Order extends BaseEntity {
     @Column(name = "discount_amount", precision = 10, scale = 2)
     private BigDecimal discountAmount;
 
+    @Column(name = "promotion_discount_amount", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal promotionDiscountAmount = BigDecimal.ZERO;
+
     @Column(name = "shipping_method_code", length = 60)
     private String shippingMethodCode;
 

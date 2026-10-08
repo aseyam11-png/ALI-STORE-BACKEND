@@ -32,6 +32,7 @@ import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.entity.ShippingMethod;
 import com.store.shipping.service.ShippingMethodService;
+import com.store.pricing.service.PromotionService;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -114,9 +115,20 @@ public class OrderService {
             throw new BusinessException("A single order cannot contain products in different currencies");
         }
 
-        BigDecimal subtotal = cartItems.stream()
-                .map(item -> item.getProduct().getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+        BigDecimal originalSubtotal = cartItems.stream()
+                .map(item -> {
+                    BigDecimal base = item.getVariant() != null && item.getVariant().getPrice() != null
+                            ? item.getVariant().getPrice() : item.getProduct().getPrice();
+                    return base.multiply(BigDecimal.valueOf(item.getQuantity()));
+                })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal subtotal = cartItems.stream()
+                .map(item -> promotionService.calculate(item.getProduct(), item.getVariant()).effectivePrice()
+                        .multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal promotionDiscountAmount = originalSubtotal.subtract(subtotal).max(BigDecimal.ZERO);
 
         String couponCode = null;
         BigDecimal discountAmount = BigDecimal.ZERO;
@@ -148,6 +160,7 @@ public class OrderService {
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
+                .promotionDiscountAmount(promotionDiscountAmount)
                 .shippingMethodCode(shippingMethod == null ? null : shippingMethod.getCode())
                 .shippingAmount(shippingAmount)
                 .build();
@@ -363,6 +376,7 @@ public class OrderService {
                 .currency(order.getCurrency())
                 .couponCode(order.getCouponCode())
                 .discountAmount(order.getDiscountAmount())
+                .promotionDiscountAmount(order.getPromotionDiscountAmount())
                 .shippingMethodCode(order.getShippingMethodCode())
                 .shippingAmount(order.getShippingAmount())
                 .shippingAddress(order.getShippingAddress())

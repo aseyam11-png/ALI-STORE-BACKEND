@@ -31,6 +31,11 @@ public class ProductResponse {
     private List<String> images;
     private String primaryImageUrl;
     private List<ProductVariantResponse> variants;
+    private BigDecimal originalPrice;
+    private BigDecimal discountPercentage;
+    private String promotionTitle;
+    private Boolean flashSale;
+    private List<com.store.shipping.dto.ShippingMethodResponse> shippingMethods;
     private BigDecimal rating;
     private long reviewCount;
     private ProductReviewSummaryResponse reviewSummary;
