@@ -50,7 +50,12 @@ public interface PaymentProvider {
         throw new UnsupportedOperationException("Payment provider reconciliation is not configured");
     }
 
-    record PaymentResult(boolean success, String transactionId, String message) {
+    record PaymentResult(
+            boolean success,
+            boolean pending,
+            String transactionId,
+            String checkoutUrl,
+            String message) {
     }
 
     record RefundResult(boolean success, String refundTransactionId, String message) {
