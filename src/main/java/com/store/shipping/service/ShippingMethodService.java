@@ -30,7 +30,7 @@ public class ShippingMethodService {
     @Transactional(readOnly = true)
     public List<ShippingMethodResponse> getPublicMethods(String country, String currency) {
         String normalizedCountry = normalizeCountry(country);
-        String normalizedCurrency = normalizeCurrency(currency);
+        String normalizedCurrency = normalizeOptionalCurrency(currency);
         List<ShippingMethod> methods = normalizedCurrency == null
                 ? repository.findPublicMethods(normalizedCountry)
                 : repository.findPublicMethodsByCurrency(normalizedCountry, normalizedCurrency);
