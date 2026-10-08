@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -28,6 +29,7 @@ public class ProductResponse {
     private String brandName;
     private List<String> images;
     private String primaryImageUrl;
-    private java.time.LocalDateTime createdAt;
-    private java.time.LocalDateTime updatedAt;
+    private List<ProductVariantResponse> variants;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

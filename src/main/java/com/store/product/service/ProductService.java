@@ -19,6 +19,7 @@ import com.store.product.entity.Product;
 import com.store.product.entity.ProductImage;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.product.repository.ProductVariantRepository;
 import com.store.product.repository.ProductSpecifications;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.entity.SupplierStatus;
@@ -49,6 +50,7 @@ public class ProductService {
     private final SupplierRepository supplierRepository;
     private final InventoryService inventoryService;
     private final com.store.pricing.service.PricingService pricingService;
+    private final ProductVariantRepository productVariantRepository;
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
@@ -247,8 +249,28 @@ public class ProductService {
     }
 
     private ProductResponse mapToResponse(Product product) {
-        List<String> imageUrls = product.getImages().stream().sorted(Comparator.comparing(ProductImage::getSortOrder)).map(ProductImage::getUrl).collect(Collectors.toList());
-        String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+        List<String> imageUrls = product.getImages().stream()
+                .sorted(Comparator.comparing(ProductImage::getSortOrder))
+                .map(ProductImage::getUrl)
+                .collect(Collectors.toList());
+        String primaryImageUrl = product.getImages().stream()
+                .filter(ProductImage::getIsPrimary)
+                .map(ProductImage::getUrl)
+                .findFirst()
+                .orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+
+        List<com.store.product.dto.ProductVariantResponse> variants =
+                productVariantRepository.findByProductIdAndActiveTrueOrderByIdAsc(product.getId())
+                        .stream()
+                        .map(v -> com.store.product.dto.ProductVariantResponse.builder()
+                                .id(v.getId()).productId(product.getId()).sku(v.getSku())
+                                .name(v.getOptionName()).value(v.getOptionValue())
+                                .price(v.getPrice()).currency(product.getCurrency())
+                                .availableQuantity(v.getAvailableQuantity()).imageUrl(v.getImageUrl())
+                                .active(v.getActive()).createdAt(v.getCreatedAt()).updatedAt(v.getUpdatedAt())
+                                .build())
+                        .toList();
+
         return ProductResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
                 .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
@@ -258,7 +280,7 @@ public class ProductService {
                 .categorySlug(product.getCategory().getSlug())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
-                .images(imageUrls).primaryImageUrl(primaryImageUrl)
+                .images(imageUrls).primaryImageUrl(primaryImageUrl).variants(variants)
                 .createdAt(product.getCreatedAt()).updatedAt(product.getUpdatedAt()).build();
     }
 
