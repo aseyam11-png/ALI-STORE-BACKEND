@@ -35,7 +35,6 @@ import com.store.shipping.service.ShippingMethodService;
 import com.store.product.entity.ProductVariant;
 import com.store.product.repository.ProductVariantRepository;
 import com.store.pricing.service.PromotionService;
-import com.store.pricing.service.PromotionService;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -387,6 +386,10 @@ public class OrderService {
                         .id(item.getId())
                         .productId(item.getProduct().getId())
                         .productName(item.getProduct().getName())
+                        .variantId(item.getVariant() != null ? item.getVariant().getId() : null)
+                        .variantName(item.getVariantOptionName())
+                        .variantValue(item.getVariantOptionValue())
+                        .variantSku(item.getVariantSku())
                         .quantity(item.getQuantity())
                         .price(item.getUnitPrice())
                         .subTotal(item.getSubtotal())
