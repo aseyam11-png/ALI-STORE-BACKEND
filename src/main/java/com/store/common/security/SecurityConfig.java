@@ -63,7 +63,9 @@ public class SecurityConfig {
                                 // Supplier webhooks are machine-to-machine and are protected
                                 // by their own HMAC signature + replay-window validation.
                                 new AntPathRequestMatcher(
-                                        "/api/v1/integrations/suppliers/shipments/update"))
+                                        "/api/v1/integrations/suppliers/shipments/update"),
+                                new AntPathRequestMatcher(
+                                        "/api/v1/integrations/payments/stripe/webhook"))
                 )
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(exceptions -> exceptions
