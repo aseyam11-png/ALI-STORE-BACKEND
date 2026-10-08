@@ -88,8 +88,8 @@ class PaymentFinancialIntegrityTest {
                 eq(new BigDecimal("25.00")),
                 eq(PaymentMethod.CREDIT_CARD),
                 any()))
-                .thenReturn(new PaymentProvider.PaymentResult(false, null, "card declined"))
-                .thenReturn(new PaymentProvider.PaymentResult(true, "TXN-RETRY-1", "approved"));
+                .thenReturn(new PaymentProvider.PaymentResult(false, false, null, null, "card declined"))
+                .thenReturn(new PaymentProvider.PaymentResult(true, false, "TXN-RETRY-1", null, "approved"));
 
         var first = paymentService.processPayment(user.getEmail(), request);
         Assertions.assertEquals(PaymentStatus.FAILED, first.getStatus());
