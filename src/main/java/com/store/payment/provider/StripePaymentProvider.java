@@ -67,7 +67,7 @@ public class StripePaymentProvider implements PaymentProvider {
                 + "&metadata%5Border_id%5D=" + encode(String.valueOf(orderId))
                 + "&customer_email=" + encode(order.getUser().getEmail())
                 + "&line_items%5B0%5D%5Bprice_data%5D%5Bcurrency%5D=" + encode(order.getCurrency().toLowerCase())
-                + "&line_items%5B0%5D%5Bprice_data%5Bproduct_data%5D%5Bname%5D="
+                + "&line_items%5B0%5D%5Bprice_data%5D%5Bproduct_data%5D%5Bname%5D="
                 + encode("ALI STORE Order #" + orderId)
                 + "&line_items%5B0%5D%5Bprice_data%5D%5Bunit_amount%5D=" + minorAmount
                 + "&line_items%5B0%5D%5Bquantity%5D=1";
