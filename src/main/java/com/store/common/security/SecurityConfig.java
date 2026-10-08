@@ -92,7 +92,9 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/v1/categories", "/api/v1/categories/**",
-                                "/api/v1/products", "/api/v1/products/**"
+                                "/api/v1/products", "/api/v1/products/**",
+                                "/api/v1/shipping/methods", "/api/v1/shipping/methods/**",
+                                "/api/v1/promotions", "/api/v1/promotions/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

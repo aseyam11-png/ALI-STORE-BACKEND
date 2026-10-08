@@ -30,6 +30,8 @@ import com.store.payment.service.RefundService;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
+import com.store.shipping.entity.ShippingMethod;
+import com.store.shipping.service.ShippingMethodService;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -130,7 +132,11 @@ public class OrderService {
             couponService.redeem(coupon);
         }
 
-        BigDecimal totalAmount = subtotal.subtract(discountAmount);
+        ShippingMethod shippingMethod = shippingMethodService.resolveForOrder(
+                request.getShippingMethodCode(), request.getShippingCountry(), orderCurrency);
+        BigDecimal shippingAmount = shippingMethod == null ? BigDecimal.ZERO : shippingMethod.getPrice();
+
+        BigDecimal totalAmount = subtotal.subtract(discountAmount).add(shippingAmount);
 
         Order order = Order.builder()
                 .user(user)
@@ -142,6 +148,8 @@ public class OrderService {
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
+                .shippingMethodCode(shippingMethod == null ? null : shippingMethod.getCode())
+                .shippingAmount(shippingAmount)
                 .build();
 
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
@@ -355,6 +363,8 @@ public class OrderService {
                 .currency(order.getCurrency())
                 .couponCode(order.getCouponCode())
                 .discountAmount(order.getDiscountAmount())
+                .shippingMethodCode(order.getShippingMethodCode())
+                .shippingAmount(order.getShippingAmount())
                 .shippingAddress(order.getShippingAddress())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
