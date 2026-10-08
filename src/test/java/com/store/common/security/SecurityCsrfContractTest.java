@@ -8,6 +8,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,5 +31,15 @@ class SecurityCsrfContractTest {
 
         String body = result.getResponse().getContentAsString();
         assertTrue(body.contains("CSRF token retrieved successfully"));
+    }
+
+    @Test
+    void hmacProtectedSupplierWebhookIsNotBlockedByBrowserCsrf() throws Exception {
+        mockMvc.perform(post("/api/v1/integrations/suppliers/shipments/update")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"supplierCode":"alpha","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}
+                                """))
+                .andExpect(status().isUnauthorized());
     }
 }
