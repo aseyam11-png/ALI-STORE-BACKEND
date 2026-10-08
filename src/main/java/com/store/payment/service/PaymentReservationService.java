@@ -49,6 +49,29 @@ public class PaymentReservationService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Payment attachCheckoutSession(Long paymentId, String transactionId, String checkoutUrl) {
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+
+        if (payment.getStatus() == PaymentStatus.COMPLETED) {
+            return payment;
+        }
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new com.store.common.exception.ConflictException(
+                    "Only pending payments can receive a checkout session");
+        }
+        if (transactionId == null || transactionId.isBlank()
+                || checkoutUrl == null || checkoutUrl.isBlank()) {
+            throw new com.store.common.exception.ConflictException(
+                    "Checkout provider did not return a valid session");
+        }
+
+        payment.setTransactionId(transactionId.trim());
+        payment.setCheckoutUrl(checkoutUrl.trim());
+        return paymentRepository.saveAndFlush(payment);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(Long paymentId, String message) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));

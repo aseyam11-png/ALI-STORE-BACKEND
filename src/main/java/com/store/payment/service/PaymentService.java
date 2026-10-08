@@ -132,9 +132,10 @@ public class PaymentService {
 
         if (result.pending()) {
             try {
-                reserved.setTransactionId(result.transactionId());
-                reserved.setCheckoutUrl(result.checkoutUrl());
-                return mapToResponse(paymentRepository.saveAndFlush(reserved));
+                Payment pendingPayment = paymentReservationService.attachCheckoutSession(
+                        reserved.getId(), result.transactionId(), result.checkoutUrl());
+                entityManager.clear();
+                return mapToResponse(pendingPayment);
             } catch (RuntimeException ex) {
                 paymentReservationService.markRequiresReconciliation(reserved.getId(), ex.getMessage());
                 throw new ConflictException("Payment checkout was created but local persistence failed; reconciliation is required");
