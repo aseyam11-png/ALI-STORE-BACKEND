@@ -10,6 +10,8 @@ import com.store.pricing.repository.PromotionRepository;
 import com.store.product.entity.Product;
 import com.store.product.entity.ProductVariant;
 import com.store.product.repository.ProductRepository;
+import com.store.inventory.enums.PublicAvailability;
+import com.store.inventory.service.InventoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +26,7 @@ import java.util.List;
 public class PromotionService {
     private final PromotionRepository repository;
     private final ProductRepository productRepository;
+    private final InventoryService inventoryService;
 
     @Transactional(readOnly = true)
     public Promotion findActiveForProduct(Long productId) {
@@ -111,7 +114,10 @@ public class PromotionService {
                 .productName(promotion.getProduct().getName()).productImageUrl(image).title(promotion.getTitle())
                 .type(promotion.getType()).discountValue(promotion.getDiscountValue()).originalPrice(original)
                 .price(result.effectivePrice()).discountPercentage(result.discountPercentage())
-                .currency(promotion.getProduct().getCurrency()).startsAt(promotion.getStartsAt())
+                .currency(promotion.getProduct().getCurrency())
+                .availability(inventoryService.getPublicAvailability(promotion.getProduct().getId()))
+                .availableQuantity(inventoryService.getAvailableQuantity(promotion.getProduct().getId()))
+                .startsAt(promotion.getStartsAt())
                 .endsAt(promotion.getEndsAt()).active(promotion.getActive()).flashSale(promotion.getFlashSale())
                 .priority(promotion.getPriority()).build();
     }

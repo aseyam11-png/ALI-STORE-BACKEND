@@ -1,6 +1,7 @@
 package com.store.pricing.dto;
 
 import com.store.pricing.entity.PromotionType;
+import com.store.inventory.enums.PublicAvailability;
 import lombok.Builder;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -19,6 +20,8 @@ public class PromotionResponse {
     private BigDecimal price;
     private BigDecimal discountPercentage;
     private String currency;
+    private PublicAvailability availability;
+    private Integer availableQuantity;
     private LocalDateTime startsAt;
     private LocalDateTime endsAt;
     private Boolean active;
