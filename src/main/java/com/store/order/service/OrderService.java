@@ -307,8 +307,12 @@ public class OrderService {
 
     @Transactional
     public void commitOrderReservations(Order order) {
-        order.getItems().forEach(item ->
-                inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity()));
+        order.getItems().forEach(item -> {
+            inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity());
+            if (Boolean.TRUE.equals(item.getVariantReservationActive())) {
+                item.setVariantReservationActive(false);
+            }
+        });
     }
 
     @Transactional
@@ -316,6 +320,11 @@ public class OrderService {
         order.getItems().forEach(item -> {
             try {
                 inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
+                if (Boolean.TRUE.equals(item.getVariantReservationActive()) && item.getVariant() != null) {
+                    item.getVariant().setAvailableQuantity(
+                            item.getVariant().getAvailableQuantity() + item.getQuantity());
+                    item.setVariantReservationActive(false);
+                }
             } catch (BusinessException ignored) {
                 // Reservation may already have been committed after supplier acceptance.
                 // Cancellation must not corrupt inventory a second time.

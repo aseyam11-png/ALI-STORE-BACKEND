@@ -21,3 +21,4 @@ ALTER TABLE order_items
     ADD COLUMN IF NOT EXISTS variant_sku VARCHAR(120),
     ADD COLUMN IF NOT EXISTS variant_option_name VARCHAR(80),
     ADD COLUMN IF NOT EXISTS variant_option_value VARCHAR(160);
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_reservation_active BOOLEAN NOT NULL DEFAULT FALSE;
