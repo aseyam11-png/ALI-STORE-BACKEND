@@ -73,6 +73,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/email/verify",
                                 "/api/v1/auth/email/resend",
+                                "/api/v1/auth/csrf",
                                 "/api/v1/auth/google",
                                 "/oauth2/authorization/**",
                                 "/login/oauth2/code/**",
