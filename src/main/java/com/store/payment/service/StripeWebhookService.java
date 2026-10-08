@@ -13,6 +13,7 @@ import com.store.payment.entity.PaymentMethod;
 import com.store.payment.repository.PaymentRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.Mac;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@Profile("prod")
 public class StripeWebhookService {
 
     private final ObjectMapper objectMapper;
