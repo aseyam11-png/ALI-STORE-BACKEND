@@ -25,6 +25,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
@@ -112,6 +113,12 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(java.net.URI.create("/oauth2/authorization/google"))
                 .build();
+    }
+
+    @GetMapping("/csrf")
+    public ResponseEntity<ApiResponse<String>> csrfToken(CsrfToken csrfToken) {
+        return ResponseEntity.ok(
+                ApiResponse.success(csrfToken.getToken(), "CSRF token retrieved successfully"));
     }
 
     @GetMapping("/session")
