@@ -2,6 +2,7 @@ package com.store.product.dto;
 
 import com.store.inventory.enums.PublicAvailability;
 import com.store.product.enums.ProductStatus;
+import com.store.review.dto.ProductReviewSummaryResponse;
 import lombok.Builder;
 import lombok.Data;
 
@@ -30,6 +31,9 @@ public class ProductResponse {
     private List<String> images;
     private String primaryImageUrl;
     private List<ProductVariantResponse> variants;
+    private BigDecimal rating;
+    private long reviewCount;
+    private ProductReviewSummaryResponse reviewSummary;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
