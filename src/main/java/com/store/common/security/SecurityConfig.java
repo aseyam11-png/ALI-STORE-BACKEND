@@ -84,6 +84,7 @@ public class SecurityConfig {
                                 "/oauth2/authorization/**",
                                 "/login/oauth2/code/**",
                                 "/api/v1/integrations/suppliers/shipments/update",
+                                "/api/v1/integrations/payments/stripe/webhook",
                                 "/api/v1/search/suggestions",
                                 "/api/v1/ai/ask",
                                 "/api/v1/ai/discover",
