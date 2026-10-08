@@ -5,8 +5,7 @@ import com.store.payment.entity.PaymentMethod;
 import java.math.BigDecimal;
 
 /**
- * Abstraction over an actual payment gateway. No real gateway is integrated
- * in this phase (explicitly deferred) - this interface exists so that
+ * Abstraction over an actual payment gateway. Payment gateways are isolated behind this interface - this interface exists so that
  * charging money is never hardcoded to "always succeeds" again. Production
  * deployments must supply a real implementation as a Spring bean; if none is
  * configured, the application fails to start rather than silently faking

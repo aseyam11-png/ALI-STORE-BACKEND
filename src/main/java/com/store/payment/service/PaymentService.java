@@ -80,7 +80,13 @@ public class PaymentService {
                 .orElse(null);
 
         if (existingPayment != null
-                && existingPayment.getStatus() != PaymentStatus.FAILED) {
+                && existingPayment.getStatus() != PaymentStatus.FAILED
+                && existingPayment.getStatus() != PaymentStatus.REQUIRES_RECONCILIATION) {
+            if (existingPayment.getStatus() == PaymentStatus.PENDING
+                    && existingPayment.getCheckoutUrl() != null
+                    && existingPayment.getTransactionId() != null) {
+                return mapToResponse(existingPayment);
+            }
             throw new ConflictException(
                     "This order already has a payment attempt that cannot be retried");
         }
@@ -124,7 +130,18 @@ public class PaymentService {
                     "Payment outcome could not be confirmed; reconciliation is required");
         }
 
-        if (result.success()) {
+        if (result.pending()) {
+            try {
+                reserved.setTransactionId(result.transactionId());
+                reserved.setCheckoutUrl(result.checkoutUrl());
+                return mapToResponse(paymentRepository.saveAndFlush(reserved));
+            } catch (RuntimeException ex) {
+                paymentReservationService.markRequiresReconciliation(reserved.getId(), ex.getMessage());
+                throw new ConflictException("Payment checkout was created but local persistence failed; reconciliation is required");
+            }
+        }
+
+        if (result.success())
             try {
                 Payment completed = paymentReservationService.markCompleted(
                         reserved.getId(), result.transactionId());
