@@ -53,6 +53,12 @@ public class PromotionService {
     public List<PromotionResponse> getActivePromotions(boolean flashOnly) {
         return repository.findActive(LocalDateTime.now()).stream()
                 .filter(p -> !flashOnly || Boolean.TRUE.equals(p.getFlashSale()))
+                .collect(java.util.stream.Collectors.toMap(
+                        p -> p.getProduct().getId(),
+                        p -> p,
+                        (first, ignored) -> first,
+                        java.util.LinkedHashMap::new))
+                .values().stream()
                 .map(this::map)
                 .toList();
     }
@@ -106,7 +112,7 @@ public class PromotionService {
 
     private PromotionResponse map(Promotion promotion) {
         BigDecimal original = promotion.getProduct().getPrice();
-        PriceResult result = calculate(promotion.getProduct(), null);
+        PriceResult result = calculatePromotion(promotion, promotion.getProduct().getPrice());
         String image = promotion.getProduct().getImages().stream()
                 .filter(com.store.product.entity.ProductImage::getIsPrimary)
                 .map(com.store.product.entity.ProductImage::getUrl).findFirst().orElse(null);
