@@ -128,6 +128,27 @@ public class PromotionService {
                 .priority(promotion.getPriority()).build();
     }
 
+    private PriceResult calculatePromotion(Promotion promotion, BigDecimal base) {
+        BigDecimal normalizedBase = base == null
+                ? BigDecimal.ZERO
+                : base.setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal discount = promotion.getType() == PromotionType.PERCENTAGE
+                ? normalizedBase.multiply(promotion.getDiscountValue())
+                    .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+                : promotion.getDiscountValue();
+
+        discount = discount.max(BigDecimal.ZERO).min(normalizedBase);
+        BigDecimal effective = normalizedBase.subtract(discount)
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal percent = normalizedBase.signum() == 0
+                ? BigDecimal.ZERO
+                : discount.multiply(BigDecimal.valueOf(100))
+                    .divide(normalizedBase, 2, RoundingMode.HALF_UP);
+
+        return new PriceResult(normalizedBase, effective, discount, percent, promotion);
+    }
+
     public record PriceResult(BigDecimal originalPrice, BigDecimal effectivePrice, BigDecimal discountAmount,
                               BigDecimal discountPercentage, Promotion promotion) {
         static PriceResult full(BigDecimal base, Promotion promotion) {
