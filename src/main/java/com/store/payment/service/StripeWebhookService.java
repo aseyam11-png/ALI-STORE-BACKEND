@@ -9,6 +9,7 @@ import com.store.order.repository.OrderRepository;
 import com.store.order.service.OrderService;
 import com.store.payment.entity.Payment;
 import com.store.payment.entity.PaymentStatus;
+import com.store.payment.entity.PaymentMethod;
 import com.store.payment.repository.PaymentRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -88,11 +89,25 @@ public class StripeWebhookService {
             if (orderId != null && !payment.getOrderId().equals(orderId)) {
                 throw new IllegalArgumentException("Stripe payment order does not match the stored payment");
             }
+            if (payment.getMethod() != PaymentMethod.CREDIT_CARD) {
+                throw new IllegalArgumentException("Stripe webhook cannot settle a non-card payment");
+            }
 
-            reservationService.markCompleted(payment.getId(), sessionId);
             Order order = orderRepository.findById(payment.getOrderId())
                     .orElseThrow(() -> new ResourceNotFoundException("Order not found for Stripe payment"));
+            long webhookAmount = object.path("amount_total").asLong(-1L);
+            String webhookCurrency = object.path("currency").asText("");
+            if (webhookAmount < 0 || !webhookCurrency.equalsIgnoreCase(order.getCurrency())) {
+                throw new IllegalArgumentException("Stripe checkout amount or currency is missing");
+            }
+            long expectedAmount = order.getTotalAmount()
+                    .movePointRight(zeroDecimalCurrency(order.getCurrency()) ? 0 : 2)
+                    .longValueExact();
+            if (webhookAmount != expectedAmount) {
+                throw new IllegalArgumentException("Stripe checkout amount does not match the order total");
+            }
 
+            reservationService.markCompleted(payment.getId(), sessionId);
             if (order.getStatus() == OrderStatus.PENDING) {
                 orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
             }
@@ -103,6 +118,12 @@ public class StripeWebhookService {
                 && payment.getStatus() == PaymentStatus.PENDING) {
             reservationService.markFailed(payment.getId(), "Stripe Checkout session expired");
         }
+    }
+
+    private boolean zeroDecimalCurrency(String currency) {
+        return java.util.Set.of(
+                "BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF","UGX",
+                "VND","VUV","XAF","XOF","XPF").contains(currency.toUpperCase(java.util.Locale.ROOT));
     }
 
     private void verifySignature(String payload, String header) {
