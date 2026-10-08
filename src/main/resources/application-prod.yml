@@ -33,3 +33,6 @@ app:
       secret-key: ${STRIPE_SECRET_KEY}
       webhook-secret: ${STRIPE_WEBHOOK_SECRET}
       frontend-public-url: ${FRONTEND_PUBLIC_URL}
+
+  shipping:
+    require-method: true
