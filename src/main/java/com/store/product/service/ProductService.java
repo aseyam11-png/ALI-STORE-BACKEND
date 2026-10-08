@@ -19,7 +19,6 @@ import com.store.product.entity.Product;
 import com.store.product.entity.ProductImage;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
-import com.store.product.repository.ProductVariantRepository;
 import com.store.product.repository.ProductSpecifications;
 import com.store.product.repository.ProductVariantRepository;
 import com.store.review.dto.ProductReviewSummaryResponse;

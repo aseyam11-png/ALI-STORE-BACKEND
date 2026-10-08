@@ -32,6 +32,9 @@ import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.entity.ShippingMethod;
 import com.store.shipping.service.ShippingMethodService;
+import com.store.product.entity.ProductVariant;
+import com.store.product.repository.ProductVariantRepository;
+import com.store.pricing.service.PromotionService;
 import com.store.pricing.service.PromotionService;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -75,6 +78,9 @@ public class OrderService {
     private final ShipmentRepository shipmentRepository;
     private final FulfillmentService fulfillmentService;
     private final RefundService refundService;
+    private final ProductVariantRepository productVariantRepository;
+    private final PromotionService promotionService;
+    private final ShippingMethodService shippingMethodService;
 
     @Transactional
     public OrderResponse createOrder(String email, OrderRequest request, String idempotencyKey) {
@@ -177,10 +183,27 @@ public class OrderService {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
 
+            ProductVariant variant = cartItem.getVariant() == null ? null
+                    : productVariantRepository.findWithProductForUpdate(cartItem.getVariant().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product variant not found"));
+
+            if (variant != null) {
+                if (!Boolean.TRUE.equals(variant.getActive())) {
+                    throw new BusinessException("Selected product variant is no longer available");
+                }
+                if (variant.getAvailableQuantity() < cartItem.getQuantity()) {
+                    throw new BusinessException("Selected product variant is out of stock");
+                }
+            }
+
             inventoryService.reserveStock(product.getId(), cartItem.getQuantity());
 
-            BigDecimal unitPrice = product.getPrice();
+            BigDecimal unitPrice = promotionService.calculate(product, variant).effectivePrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
+
+            if (variant != null) {
+                variant.setAvailableQuantity(variant.getAvailableQuantity() - cartItem.getQuantity());
+            }
 
             return OrderItem.builder()
                     .order(order)
@@ -188,6 +211,11 @@ public class OrderService {
                     .supplier(product.getSupplier())
                     .supplierSku(product.getSupplierSku())
                     .supplierUnitCost(product.getSupplierCost())
+                    .variant(variant)
+                    .variantSku(variant != null ? variant.getSku() : null)
+                    .variantOptionName(variant != null ? variant.getOptionName() : null)
+                    .variantOptionValue(variant != null ? variant.getOptionValue() : null)
+                    .variantReservationActive(variant != null)
                     .quantity(cartItem.getQuantity())
                     .unitPrice(unitPrice)
                     .subtotal(itemSubtotal)
