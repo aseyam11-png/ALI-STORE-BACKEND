@@ -9,6 +9,7 @@ import com.store.shipping.entity.ShippingMethod;
 import com.store.shipping.repository.ShippingMethodRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -22,6 +23,9 @@ import java.util.Objects;
 public class ShippingMethodService {
 
     private final ShippingMethodRepository repository;
+
+    @Value("${app.shipping.require-method:false}")
+    private boolean requireShippingMethod;
 
     @Transactional(readOnly = true)
     public List<ShippingMethodResponse> getPublicMethods(String country, String currency) {
@@ -42,7 +46,7 @@ public class ShippingMethodService {
                 : repository.findPublicMethodsByCurrency(normalizedCountry, normalizedCurrency);
 
         if (code == null || code.isBlank()) {
-            if (!methods.isEmpty()) {
+            if (requireShippingMethod || !methods.isEmpty()) {
                 throw new BusinessException("Shipping method is required");
             }
             return null;
