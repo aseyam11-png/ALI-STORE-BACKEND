@@ -27,3 +27,9 @@ app:
 # A real PaymentProvider bean MUST be supplied for this profile.
 # MockPaymentProvider is excluded from "prod", so the app fails to start
 # instead of silently accepting fake payments.
+
+  payment:
+    stripe:
+      secret-key: ${STRIPE_SECRET_KEY}
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+      frontend-public-url: ${FRONTEND_PUBLIC_URL}
