@@ -238,7 +238,9 @@ public class PaymentService {
         return PaymentResponse.builder()
                 .id(payment.getId()).orderId(payment.getOrderId()).amount(payment.getAmount())
                 .method(payment.getMethod()).status(payment.getStatus())
-                .transactionId(payment.getTransactionId()).collectionStatus(payment.getCollectionStatus())
+                .transactionId(payment.getTransactionId())
+                .checkoutUrl(payment.getCheckoutUrl())
+                .collectionStatus(payment.getCollectionStatus())
                 .createdAt(payment.getCreatedAt()).build();
     }
 }
