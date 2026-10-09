@@ -17,15 +17,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
 
 @Component
 @Profile("prod")
 public class StripePaymentProvider implements PaymentProvider {
-
-    private static final Set<String> ZERO_DECIMAL_CURRENCIES = Set.of(
-            "BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF","UGX",
-            "VND","VUV","XAF","XOF","XPF");
 
     private final RestClient stripeClient;
     private final ObjectMapper objectMapper;
@@ -53,7 +48,11 @@ public class StripePaymentProvider implements PaymentProvider {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException("Order not found for payment checkout"));
 
-        long minorAmount = toMinorUnits(amount, order.getCurrency());
+        if (amount == null || amount.signum() <= 0
+                || amount.compareTo(order.getTotalAmount()) != 0) {
+            throw new BusinessException("Stripe amount must match the positive server order total");
+        }
+        long minorAmount = StripeCurrency.toMinorUnits(amount, order.getCurrency());
         String baseUrl = normalizeBaseUrl(frontendPublicUrl);
         String successUrl = baseUrl + "/buyer/orders/" + orderId
                 + "/confirmation?payment=success&session_id={CHECKOUT_SESSION_ID}";
@@ -100,15 +99,145 @@ public class StripePaymentProvider implements PaymentProvider {
         }
     }
 
-    private long toMinorUnits(BigDecimal amount, String currency) {
-        int scale = ZERO_DECIMAL_CURRENCIES.contains(currency.toUpperCase()) ? 0 : 2;
-        try {
-            return amount.movePointRight(scale)
-                    .setScale(0, RoundingMode.UNNECESSARY)
-                    .longValueExact();
-        } catch (ArithmeticException ex) {
-            throw new BusinessException("Payment amount cannot be represented in the minor units of " + currency);
+    @Override
+    public ChargeStatusResult getChargeStatus(Long orderId, String transactionId) {
+        if (transactionId == null || !transactionId.matches("cs_[A-Za-z0-9_]+")) {
+            return new ChargeStatusResult(false, false, transactionId,
+                    "A registered Stripe Checkout session id is required for reconciliation");
         }
+
+        JsonNode session = loadCheckoutSession(transactionId);
+        Order order = requireMatchingOrder(orderId, session);
+        String paymentStatus = session.path("payment_status").asText("");
+        String sessionStatus = session.path("status").asText("");
+
+        if ("paid".equalsIgnoreCase(paymentStatus)) {
+            verifySessionAmountAndCurrency(order, session);
+            return new ChargeStatusResult(true, false, transactionId,
+                    "Stripe confirms the Checkout Session is paid");
+        }
+
+        if ("expired".equalsIgnoreCase(sessionStatus)) {
+            return new ChargeStatusResult(false, true, transactionId,
+                    "Stripe confirms the Checkout Session expired without payment");
+        }
+
+        return new ChargeStatusResult(false, false, transactionId,
+                "Stripe Checkout Session is not in a definitive paid or expired state");
+    }
+
+    @Override
+    public RefundResult refund(
+            Long orderId,
+            BigDecimal amount,
+            String transactionId,
+            String idempotencyKey) {
+        if (transactionId == null || !transactionId.matches("cs_[A-Za-z0-9_]+")) {
+            throw new BusinessException("A registered Stripe Checkout session id is required for refund");
+        }
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new BusinessException("Refund idempotency key is required");
+        }
+
+        JsonNode session = loadCheckoutSession(transactionId);
+        Order order = requireMatchingOrder(orderId, session);
+        verifySessionAmountAndCurrency(order, session);
+
+        if (!"paid".equalsIgnoreCase(session.path("payment_status").asText(""))) {
+            throw new BusinessException("Only a paid Stripe Checkout Session can be refunded");
+        }
+
+        String paymentIntent = session.path("payment_intent").asText(null);
+        if (paymentIntent == null || !paymentIntent.matches("pi_[A-Za-z0-9_]+")) {
+            throw new IllegalStateException("Stripe Checkout Session has no PaymentIntent for refund");
+        }
+
+        long minorAmount = StripeCurrency.toMinorUnits(amount, order.getCurrency());
+        if (minorAmount <= 0) {
+            throw new BusinessException("Refund amount must be greater than zero");
+        }
+
+        String body = "payment_intent=" + encode(paymentIntent)
+                + "&amount=" + minorAmount
+                + "&reason=requested_by_customer"
+                + "&metadata%5Border_id%5D=" + encode(String.valueOf(orderId))
+                + "&metadata%5Bcheckout_session_id%5D=" + encode(transactionId);
+
+        try {
+            String raw = stripeClient.post()
+                    .uri("/v1/refunds")
+                    .header("Authorization", "Bearer " + secretKey)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode refund = objectMapper.readTree(raw);
+            String refundId = refund.path("id").asText(null);
+            String status = refund.path("status").asText("");
+            if (refundId == null || refundId.isBlank()) {
+                throw new IllegalStateException("Stripe refund response is missing an id");
+            }
+            if ("succeeded".equalsIgnoreCase(status)) {
+                return new RefundResult(true, refundId, "Stripe confirms the refund succeeded");
+            }
+            return new RefundResult(false, refundId,
+                    "Stripe refund is not yet successful; current state: " + status);
+        } catch (RestClientResponseException ex) {
+            throw new IllegalStateException(
+                    "Stripe rejected the refund request: " + truncate(ex.getResponseBodyAsString()), ex);
+        } catch (Exception ex) {
+            if (ex instanceof RuntimeException runtime) throw runtime;
+            throw new IllegalStateException("Stripe refund outcome could not be confirmed", ex);
+        }
+    }
+
+    private JsonNode loadCheckoutSession(String sessionId) {
+        try {
+            String raw = stripeClient.get()
+                    .uri("/v1/checkout/sessions/{id}", sessionId)
+                    .header("Authorization", "Bearer " + secretKey)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode session = objectMapper.readTree(raw);
+            if (!sessionId.equals(session.path("id").asText(""))) {
+                throw new IllegalStateException("Stripe returned a different Checkout Session id");
+            }
+            return session;
+        } catch (RestClientResponseException ex) {
+            throw new IllegalStateException(
+                    "Stripe Checkout Session lookup failed: " + truncate(ex.getResponseBodyAsString()), ex);
+        } catch (Exception ex) {
+            if (ex instanceof RuntimeException runtime) throw runtime;
+            throw new IllegalStateException("Stripe Checkout Session could not be read", ex);
+        }
+    }
+
+    private Order requireMatchingOrder(Long orderId, JsonNode session) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("Order not found for Stripe reconciliation"));
+        String metadataOrder = session.path("metadata").path("order_id").asText("");
+        String clientReference = session.path("client_reference_id").asText("");
+        if (!String.valueOf(orderId).equals(metadataOrder)
+                || !String.valueOf(orderId).equals(clientReference)) {
+            throw new IllegalArgumentException("Stripe Checkout Session does not match the requested order");
+        }
+        return order;
+    }
+
+    private void verifySessionAmountAndCurrency(Order order, JsonNode session) {
+        long sessionAmount = session.path("amount_total").asLong(-1L);
+        String sessionCurrency = session.path("currency").asText("");
+        long expectedAmount = StripeCurrency.toMinorUnits(order.getTotalAmount(), order.getCurrency());
+        if (sessionAmount != expectedAmount
+                || !sessionCurrency.equalsIgnoreCase(order.getCurrency())) {
+            throw new IllegalArgumentException("Stripe amount or currency does not match the server order");
+        }
+    }
+
+    private long toMinorUnits(BigDecimal amount, String currency) {
+        return StripeCurrency.toMinorUnits(amount, currency);
     }
 
     private String normalizeBaseUrl(String value) {
