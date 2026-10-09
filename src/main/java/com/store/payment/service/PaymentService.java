@@ -79,16 +79,29 @@ public class PaymentService {
         Payment existingPayment = paymentRepository.findByOrderId(request.getOrderId())
                 .orElse(null);
 
-        if (existingPayment != null
-                && existingPayment.getStatus() != PaymentStatus.FAILED
-                && existingPayment.getStatus() != PaymentStatus.REQUIRES_RECONCILIATION) {
+        if (existingPayment != null) {
+            if (existingPayment.getStatus() == PaymentStatus.REQUIRES_RECONCILIATION) {
+                throw new ConflictException(
+                        "This payment has an unknown provider outcome and must be reconciled before retrying");
+            }
+
             if (existingPayment.getStatus() == PaymentStatus.PENDING
                     && existingPayment.getCheckoutUrl() != null
                     && existingPayment.getTransactionId() != null) {
+                if (existingPayment.getMethod() != request.getMethod()) {
+                    throw new ConflictException("Payment method cannot be changed after a checkout session was created");
+                }
                 return mapToResponse(existingPayment);
             }
-            throw new ConflictException(
-                    "This order already has a payment attempt that cannot be retried");
+
+            if (existingPayment.getStatus() != PaymentStatus.FAILED) {
+                throw new ConflictException(
+                        "This order already has a payment attempt that cannot be retried");
+            }
+
+            if (existingPayment.getMethod() != request.getMethod()) {
+                throw new ConflictException("Payment method cannot be changed when retrying the same order");
+            }
         }
 
         if (request.getMethod() == PaymentMethod.CASH_ON_DELIVERY) {
