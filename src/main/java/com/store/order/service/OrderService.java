@@ -368,14 +368,15 @@ public class OrderService {
         order.getItems().forEach(item -> {
             try {
                 inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
-                if (Boolean.TRUE.equals(item.getVariantReservationActive()) && item.getVariant() != null) {
-                    item.getVariant().setAvailableQuantity(
-                            item.getVariant().getAvailableQuantity() + item.getQuantity());
-                    item.setVariantReservationActive(false);
-                }
             } catch (BusinessException ignored) {
-                // Reservation may already have been committed after supplier acceptance.
-                // Cancellation must not corrupt inventory a second time.
+                // Product-level reservation may already have been committed or released.
+                // Variant reservation is tracked separately and must still be reconciled.
+            }
+
+            if (Boolean.TRUE.equals(item.getVariantReservationActive()) && item.getVariant() != null) {
+                item.getVariant().setAvailableQuantity(
+                        item.getVariant().getAvailableQuantity() + item.getQuantity());
+                item.setVariantReservationActive(false);
             }
         });
     }
