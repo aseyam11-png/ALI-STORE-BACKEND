@@ -126,8 +126,20 @@ public class RefundService {
         Payment payment = paymentRepository.findByIdForUpdate(refund.getPaymentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found for refund"));
 
+        if (refund.getStatus() == RefundStatus.REQUIRES_RECONCILIATION
+                && refund.getProviderRefundId() != null
+                && !refund.getProviderRefundId().isBlank()) {
+            throw new com.store.common.exception.ConflictException(
+                    "This refund has a provider reference and must be reconciled before retrying");
+        }
+
         if (refund.getStatus() == RefundStatus.FAILED
                 || refund.getStatus() == RefundStatus.REQUIRES_RECONCILIATION) {
+            if (refund.getStatus() == RefundStatus.FAILED) {
+                refund.setIdempotencyKey(
+                        refund.getIdempotencyKey() + ":retry:" + java.util.UUID.randomUUID());
+                refund.setProviderRefundId(null);
+            }
             refund.setStatus(RefundStatus.PENDING);
             refund.setLastError(null);
             payment.setStatus(PaymentStatus.REFUND_PENDING);
@@ -147,11 +159,73 @@ public class RefundService {
                 .map(Refund::getId)
                 .toList();
 
+        List<Long> unresolvedProviderRefundIds = refundRepository
+                .findByStatusAndProviderRefundIdIsNotNullOrderByCreatedAtAsc(RefundStatus.REQUIRES_RECONCILIATION)
+                .stream()
+                .limit(20)
+                .map(Refund::getId)
+                .toList();
+
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         refundIds.forEach(id -> tx.executeWithoutResult(status -> processPendingRefund(id)));
+        unresolvedProviderRefundIds.forEach(
+                id -> tx.executeWithoutResult(status -> reconcileProviderRefund(id)));
     }
 
     @Transactional
+    private void reconcileProviderRefund(Long refundId) {
+        Refund refund = refundRepository.findByIdForUpdate(refundId).orElse(null);
+        if (refund == null
+                || refund.getStatus() != RefundStatus.REQUIRES_RECONCILIATION
+                || refund.getProviderRefundId() == null
+                || refund.getProviderRefundId().isBlank()) {
+            return;
+        }
+
+        Payment payment = paymentRepository.findByIdForUpdate(refund.getPaymentId()).orElse(null);
+        if (payment == null) {
+            refund.setLastError("Payment record is missing during provider refund reconciliation");
+            refundRepository.save(refund);
+            return;
+        }
+
+        try {
+            PaymentProvider.RefundStatusResult result =
+                    paymentProvider.getRefundStatus(refund.getProviderRefundId());
+
+            if (result != null && result.succeeded()) {
+                if (result.refundTransactionId() != null
+                        && !refund.getProviderRefundId().equals(result.refundTransactionId())) {
+                    throw new IllegalStateException("Provider refund id does not match the stored refund");
+                }
+                refund.setStatus(RefundStatus.SUCCEEDED);
+                refund.setLastError(null);
+            } else if (result != null && result.failed()) {
+                refund.setStatus(RefundStatus.FAILED);
+                refund.setLastError(result.message() == null || result.message().isBlank()
+                        ? "Payment provider confirmed the refund failed"
+                        : result.message().substring(0, Math.min(result.message().length(), 1000)));
+            } else {
+                refund.setLastError(result == null || result.message() == null
+                        ? "Payment provider refund state is not definitive"
+                        : result.message().substring(0, Math.min(result.message().length(), 1000)));
+            }
+        } catch (RuntimeException ex) {
+            String message = ex.getMessage();
+            refund.setLastError(message == null || message.isBlank()
+                    ? ex.getClass().getSimpleName()
+                    : message.substring(0, Math.min(message.length(), 1000)));
+        }
+
+        refundRepository.save(refund);
+        BigDecimal successful = refundRepository.sumByPaymentIdAndStatus(
+                payment.getId(), RefundStatus.SUCCEEDED);
+        payment.setStatus(successful.compareTo(payment.getAmount()) >= 0
+                ? PaymentStatus.REFUNDED
+                : PaymentStatus.REFUND_PENDING);
+        paymentRepository.save(payment);
+    }
+
     private void processPendingRefund(Long refundId) {
         Refund refund = refundRepository.findByIdForUpdate(refundId).orElse(null);
         if (refund == null || refund.getStatus() != RefundStatus.PENDING) return;
@@ -219,6 +293,11 @@ public class RefundService {
                 refund.setProviderRefundId(result.refundTransactionId());
                 refund.setLastError(null);
             } else {
+                if (result != null
+                        && result.refundTransactionId() != null
+                        && !result.refundTransactionId().isBlank()) {
+                    refund.setProviderRefundId(result.refundTransactionId());
+                }
                 refund.setStatus(RefundStatus.REQUIRES_RECONCILIATION);
                 refund.setLastError(result == null ? "Payment provider returned no refund result"
                         : result.message());
