@@ -100,6 +100,23 @@ public class StripePaymentProvider implements PaymentProvider {
     }
 
     @Override
+    public void expireCheckoutSession(String transactionId) {
+        if (transactionId == null || !transactionId.matches("cs_[A-Za-z0-9_]+")) {
+            throw new BusinessException("A registered Stripe Checkout session id is required for expiry");
+        }
+        try {
+            stripeClient.post()
+                    .uri("/v1/checkout/sessions/{id}/expire", transactionId)
+                    .header("Authorization", "Bearer " + secretKey)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            throw new IllegalStateException(
+                    "Stripe Checkout session could not be expired: " + truncate(ex.getResponseBodyAsString()), ex);
+        }
+    }
+
+    @Override
     public ChargeStatusResult getChargeStatus(Long orderId, String transactionId) {
         if (transactionId == null || !transactionId.matches("cs_[A-Za-z0-9_]+")) {
             return new ChargeStatusResult(false, false, transactionId,
