@@ -3,6 +3,7 @@ package com.store.product.service;
 import com.store.common.exception.ConflictException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.product.dto.ProductVariantRequest;
+import com.store.product.dto.ProductVariantAdminResponse;
 import com.store.product.dto.ProductVariantResponse;
 import com.store.product.entity.Product;
 import com.store.product.entity.ProductVariant;
@@ -26,13 +27,13 @@ public class ProductVariantService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProductVariantResponse> getAdminVariants(Long productId) {
+    public List<ProductVariantAdminResponse> getAdminVariants(Long productId) {
         requireProduct(productId);
-        return variantRepository.findByProductIdOrderByIdAsc(productId).stream().map(this::map).toList();
+        return variantRepository.findByProductIdOrderByIdAsc(productId).stream().map(this::mapAdmin).toList();
     }
 
     @Transactional
-    public ProductVariantResponse create(Long productId, ProductVariantRequest request) {
+    public ProductVariantAdminResponse create(Long productId, ProductVariantRequest request) {
         Product product = requireProduct(productId);
         String sku = request.getSku().trim();
         String optionName = request.getOptionName().trim();
@@ -42,16 +43,18 @@ public class ProductVariantService {
                 v.getOptionName().equalsIgnoreCase(optionName) && v.getOptionValue().equalsIgnoreCase(optionValue))) {
             throw new ConflictException("This variant option already exists for the product");
         }
+        validateSupplierPricing(product, request.getPrice(), request.getSupplierCost());
         ProductVariant variant = ProductVariant.builder().product(product).sku(sku)
+                .supplierSku(request.getSupplierSku().trim()).supplierCost(request.getSupplierCost())
                 .optionName(optionName).optionValue(optionValue).price(request.getPrice())
                 .availableQuantity(request.getAvailableQuantity() == null ? 0 : request.getAvailableQuantity())
                 .imageUrl(normalize(request.getImageUrl()))
                 .active(request.getActive() == null || request.getActive()).build();
-        return map(variantRepository.save(variant));
+        return mapAdmin(variantRepository.save(variant));
     }
 
     @Transactional
-    public ProductVariantResponse update(Long productId, Long variantId, ProductVariantRequest request) {
+    public ProductVariantAdminResponse update(Long productId, Long variantId, ProductVariantRequest request) {
         ProductVariant variant = variantRepository.findByIdAndProductId(variantId, productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Variant not found"));
         String sku = request.getSku().trim();
@@ -64,10 +67,14 @@ public class ProductVariantService {
                 .filter(v -> !v.getId().equals(variantId))
                 .filter(v -> v.getOptionName().equalsIgnoreCase(optionName) && v.getOptionValue().equalsIgnoreCase(optionValue))
                 .findFirst().ifPresent(v -> { throw new ConflictException("This variant option already exists for the product"); });
-        variant.setSku(sku); variant.setOptionName(optionName); variant.setOptionValue(optionValue);
+        validateSupplierPricing(variant.getProduct(), request.getPrice(), request.getSupplierCost());
+        variant.setSku(sku);
+        variant.setSupplierSku(request.getSupplierSku().trim());
+        variant.setSupplierCost(request.getSupplierCost());
+        variant.setOptionName(optionName); variant.setOptionValue(optionValue);
         variant.setPrice(request.getPrice()); variant.setAvailableQuantity(request.getAvailableQuantity() == null ? 0 : request.getAvailableQuantity());
         variant.setImageUrl(normalize(request.getImageUrl())); variant.setActive(request.getActive() == null || request.getActive());
-        return map(variantRepository.save(variant));
+        return mapAdmin(variantRepository.save(variant));
     }
 
     @Transactional
@@ -80,6 +87,26 @@ public class ProductVariantService {
 
     private Product requireProduct(Long id) {
         return productRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+    }
+
+    private void validateSupplierPricing(Product product, java.math.BigDecimal variantPrice,
+                                         java.math.BigDecimal variantSupplierCost) {
+        if (variantSupplierCost != null && variantSupplierCost.signum() <= 0) {
+            throw new com.store.common.exception.BusinessException("Variant supplier cost must be greater than zero");
+        }
+        java.math.BigDecimal cost = variantSupplierCost != null ? variantSupplierCost : product.getSupplierCost();
+        java.math.BigDecimal sellingPrice = variantPrice != null ? variantPrice : product.getPrice();
+        if (cost != null && sellingPrice.compareTo(cost) < 0) {
+            throw new com.store.common.exception.BusinessException("Variant selling price cannot be lower than supplier cost");
+        }
+    }
+
+    private ProductVariantAdminResponse mapAdmin(ProductVariant v) {
+        return ProductVariantAdminResponse.builder().id(v.getId()).productId(v.getProduct().getId())
+                .sku(v.getSku()).supplierSku(v.getSupplierSku()).supplierCost(v.getSupplierCost())
+                .name(v.getOptionName()).value(v.getOptionValue()).price(v.getPrice())
+                .currency(v.getProduct().getCurrency()).availableQuantity(v.getAvailableQuantity()).imageUrl(v.getImageUrl())
+                .active(v.getActive()).createdAt(v.getCreatedAt()).updatedAt(v.getUpdatedAt()).build();
     }
 
     private ProductVariantResponse map(ProductVariant v) {
