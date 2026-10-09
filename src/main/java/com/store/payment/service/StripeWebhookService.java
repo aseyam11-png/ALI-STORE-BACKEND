@@ -108,7 +108,7 @@ public class StripeWebhookService {
                 throw new IllegalArgumentException("Stripe webhook cannot settle a non-card payment");
             }
 
-            Order order = orderRepository.findById(payment.getOrderId())
+            Order order = orderRepository.findByIdForUpdate(payment.getOrderId())
                     .orElseThrow(() -> new ResourceNotFoundException("Order not found for Stripe payment"));
             long webhookAmount = object.path("amount_total").asLong(-1L);
             String webhookCurrency = object.path("currency").asText("");
