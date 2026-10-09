@@ -61,6 +61,13 @@ public interface PaymentProvider {
     record RefundResult(boolean success, String refundTransactionId, String message) {
     }
 
+    default RefundStatusResult getRefundStatus(String refundTransactionId) {
+        throw new UnsupportedOperationException("Payment provider refund reconciliation is not configured");
+    }
+
     record ChargeStatusResult(boolean completed, boolean failed, String transactionId, String message) {
+    }
+
+    record RefundStatusResult(boolean succeeded, boolean failed, String refundTransactionId, String message) {
     }
 }
