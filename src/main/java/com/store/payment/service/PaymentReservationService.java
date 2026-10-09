@@ -108,6 +108,7 @@ public class PaymentReservationService {
 
         payment.setStatus(PaymentStatus.PENDING);
         payment.setTransactionId(null);
+        payment.setCheckoutUrl(null);
         payment.setProviderError(null);
         payment.setCollectionStatus(
                 com.store.payment.entity.PaymentCollectionStatus.NOT_REQUIRED);
