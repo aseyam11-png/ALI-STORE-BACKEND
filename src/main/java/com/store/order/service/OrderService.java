@@ -177,8 +177,7 @@ public class OrderService {
                 throw new BusinessException("Product is no longer available for purchase: " + product.getId());
             }
 
-            if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
-                    || product.getSupplierCost() == null) {
+            if (product.getSupplier() == null) {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
 
@@ -195,6 +194,14 @@ public class OrderService {
                 }
             }
 
+            String fulfillmentSku = variant != null ? variant.getSupplierSku() : product.getSupplierSku();
+            BigDecimal supplierUnitCost = variant != null && variant.getSupplierCost() != null
+                    ? variant.getSupplierCost() : product.getSupplierCost();
+            if (fulfillmentSku == null || fulfillmentSku.isBlank()
+                    || supplierUnitCost == null || supplierUnitCost.signum() <= 0) {
+                throw new BusinessException("Product variant is not configured for supplier fulfillment: " + product.getId());
+            }
+
             inventoryService.reserveStock(product.getId(), cartItem.getQuantity());
 
             BigDecimal unitPrice = promotionService.calculate(product, variant).effectivePrice();
@@ -208,8 +215,8 @@ public class OrderService {
                     .order(order)
                     .product(product)
                     .supplier(product.getSupplier())
-                    .supplierSku(product.getSupplierSku())
-                    .supplierUnitCost(product.getSupplierCost())
+                    .supplierSku(fulfillmentSku)
+                    .supplierUnitCost(supplierUnitCost)
                     .variant(variant)
                     .variantSku(variant != null ? variant.getSku() : null)
                     .variantOptionName(variant != null ? variant.getOptionName() : null)
