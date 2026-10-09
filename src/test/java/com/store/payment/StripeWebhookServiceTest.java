@@ -76,7 +76,7 @@ class StripeWebhookServiceTest {
         when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
 
         String payload = """
-                {"id":"evt_test_123","type":"checkout.session.completed","data":{"object":{
+                {"id":"evt_test_123","livemode":true,"type":"checkout.session.completed","data":{"object":{
                   "id":"cs_test_123",
                   "amount_total":2500,
                   "currency":"usd",
@@ -93,9 +93,47 @@ class StripeWebhookServiceTest {
     }
 
     @Test
+    void oldOrUnregisteredSessionCannotSettleByOrderIdFallback() throws Exception {
+        String payload = """
+                {"id":"evt_old_session","livemode":true,"type":"checkout.session.completed","data":{"object":{
+                  "id":"cs_old_123",
+                  "amount_total":2500,
+                  "currency":"usd",
+                  "payment_status":"paid",
+                  "client_reference_id":"42",
+                  "metadata":{"order_id":"42"}
+                }}}""";
+
+        when(paymentRepository.findByTransactionId("cs_old_123")).thenReturn(Optional.empty());
+
+        assertThrows(com.store.common.exception.ResourceNotFoundException.class,
+                () -> service.process(payload, signatureHeader(payload)));
+        verify(paymentRepository).findByTransactionId("cs_old_123");
+        verify(paymentRepository, never()).findByOrderId(anyLong());
+        verifyNoInteractions(reservationService, orderRepository, orderService);
+    }
+
+    @Test
+    void testModeEventCannotSettleProductionPayment() throws Exception {
+        String payload = """
+                {"id":"evt_test_mode","livemode":false,"type":"checkout.session.completed","data":{"object":{
+                  "id":"cs_test_123",
+                  "amount_total":2500,
+                  "currency":"usd",
+                  "payment_status":"paid",
+                  "client_reference_id":"42",
+                  "metadata":{"order_id":"42"}
+                }}}""";
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.process(payload, signatureHeader(payload)));
+        verifyNoInteractions(paymentRepository, reservationService, orderRepository, orderService);
+    }
+
+    @Test
     void invalidSignature_isRejectedBeforePaymentLookup() throws Exception {
         String payload = """
-                {"id":"evt_test_123","type":"checkout.session.completed","data":{"object":{
+                {"id":"evt_test_123","livemode":true,"type":"checkout.session.completed","data":{"object":{
                   "id":"cs_test_123"
                 }}}""";
 
