@@ -10,6 +10,10 @@ import java.math.BigDecimal;
 public class ProductVariantRequest {
     @NotBlank(message = "Variant SKU is required")
     private String sku;
+    @NotBlank(message = "Variant supplier SKU is required")
+    private String supplierSku;
+    @DecimalMin(value = "0.01", message = "Supplier cost must be greater than zero")
+    private BigDecimal supplierCost;
     @NotBlank(message = "Variant option name is required")
     private String optionName;
     @NotBlank(message = "Variant option value is required")
