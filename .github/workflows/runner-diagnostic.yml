@@ -1,0 +1,24 @@
+name: GitHub Actions Runner Allocation Diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostics/actions-runner-probe-20261009
+
+permissions:
+  contents: read
+
+jobs:
+  runner-probe:
+    name: Minimal hosted-runner probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm runner allocated and executing steps
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner-probe-started"
+          echo "runner_name=${RUNNER_NAME:-unknown}"
+          echo "runner_os=${RUNNER_OS:-unknown}"
+          echo "runner-probe-finished"
