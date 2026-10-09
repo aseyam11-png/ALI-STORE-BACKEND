@@ -73,24 +73,45 @@ public class PaymentReservationService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(Long paymentId, String message) {
-        Payment payment = paymentRepository.findById(paymentId)
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+        if (payment.getStatus() == PaymentStatus.COMPLETED
+                || payment.getStatus() == PaymentStatus.REFUND_PENDING
+                || payment.getStatus() == PaymentStatus.REFUNDED) {
+            return;
+        }
+        if (payment.getStatus() == PaymentStatus.FAILED) {
+            return;
+        }
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new com.store.common.exception.ConflictException(
+                    "Only pending payments can be marked failed");
+        }
         payment.setStatus(PaymentStatus.FAILED);
         payment.setProviderError(message == null || message.isBlank()
                 ? "Payment provider reported failure"
                 : message.substring(0, Math.min(message.length(), 1000)));
-        paymentRepository.save(payment);
+        paymentRepository.saveAndFlush(payment);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markRequiresReconciliation(Long paymentId, String message) {
-        Payment payment = paymentRepository.findById(paymentId)
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found for reconciliation"));
+        if (payment.getStatus() == PaymentStatus.COMPLETED
+                || payment.getStatus() == PaymentStatus.REFUND_PENDING
+                || payment.getStatus() == PaymentStatus.REFUNDED) {
+            return;
+        }
+        if (payment.getStatus() != PaymentStatus.PENDING
+                && payment.getStatus() != PaymentStatus.REQUIRES_RECONCILIATION) {
+            return;
+        }
         payment.setStatus(PaymentStatus.REQUIRES_RECONCILIATION);
         payment.setProviderError(message == null || message.isBlank()
                 ? "Provider outcome could not be confirmed"
                 : message.substring(0, Math.min(message.length(), 1000)));
-        paymentRepository.save(payment);
+        paymentRepository.saveAndFlush(payment);
     }
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Payment reopenFailed(Long paymentId, BigDecimal amount, PaymentMethod method) {
@@ -122,6 +143,11 @@ public class PaymentReservationService {
         Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
 
+        if (payment.getStatus() == PaymentStatus.COMPLETED
+                && transactionId != null
+                && transactionId.equals(payment.getTransactionId())) {
+            return payment;
+        }
         if (payment.getStatus() != PaymentStatus.PENDING) {
             throw new com.store.common.exception.ConflictException(
                     "Only pending payments can be completed");
