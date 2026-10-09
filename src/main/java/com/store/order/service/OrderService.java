@@ -27,6 +27,7 @@ import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.repository.PaymentRepository;
 import com.store.payment.service.RefundService;
+import com.store.payment.provider.PaymentProvider;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
@@ -37,6 +38,7 @@ import com.store.product.repository.ProductVariantRepository;
 import com.store.pricing.service.PromotionService;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -55,6 +57,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
 
     private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED_TRANSITIONS = new EnumMap<>(OrderStatus.class);
@@ -77,6 +80,7 @@ public class OrderService {
     private final ShipmentRepository shipmentRepository;
     private final FulfillmentService fulfillmentService;
     private final RefundService refundService;
+    private final PaymentProvider paymentProvider;
     private final ProductVariantRepository productVariantRepository;
     private final PromotionService promotionService;
     private final ShippingMethodService shippingMethodService;
@@ -263,6 +267,7 @@ public class OrderService {
     }
 
     private void expireOrderReservation(Order order) {
+        expirePendingHostedCheckout(order);
         releaseOrderReservations(order);
         order.setStatus(OrderStatus.CANCELLED);
         orderRepository.save(order);
@@ -338,6 +343,7 @@ public class OrderService {
         }
 
         if (newStatus == OrderStatus.CANCELLED) {
+            expirePendingHostedCheckout(order);
             releaseOrderReservations(order);
         }
 
@@ -358,6 +364,25 @@ public class OrderService {
         }
 
         return mapToResponse(saved);
+    }
+
+    private void expirePendingHostedCheckout(Order order) {
+        Payment payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
+        if (payment == null
+                || payment.getMethod() != PaymentMethod.CREDIT_CARD
+                || payment.getStatus() != PaymentStatus.PENDING
+                || payment.getTransactionId() == null
+                || !payment.getTransactionId().matches("cs_[A-Za-z0-9_]+")) {
+            return;
+        }
+
+        try {
+            paymentProvider.expireCheckoutSession(payment.getTransactionId());
+        } catch (RuntimeException ex) {
+            // The reservation is still cancelled/released. Stripe webhook handling
+            // separately detects a paid session for a cancelled order and requests a refund.
+            log.warn("Could not expire Stripe Checkout session for cancelled order {}", order.getId(), ex);
+        }
     }
 
     @Transactional
