@@ -57,7 +57,8 @@ public class StripePaymentProvider implements PaymentProvider {
         String baseUrl = normalizeBaseUrl(frontendPublicUrl);
         String successUrl = baseUrl + "/buyer/orders/" + orderId
                 + "/confirmation?payment=success&session_id={CHECKOUT_SESSION_ID}";
-        String cancelUrl = baseUrl + "/shop/checkout?payment=cancelled&orderId=" + orderId;
+        String cancelUrl = baseUrl + "/buyer/orders/" + orderId
+                + "/confirmation?payment=cancelled";
 
         String body =
                 "mode=payment"
