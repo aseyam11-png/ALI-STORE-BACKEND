@@ -11,6 +11,7 @@ import com.store.payment.entity.Payment;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.entity.PaymentMethod;
 import com.store.payment.repository.PaymentRepository;
+import com.store.payment.provider.StripeCurrency;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.context.annotation.Profile;
@@ -115,9 +116,7 @@ public class StripeWebhookService {
             if (webhookAmount < 0 || !webhookCurrency.equalsIgnoreCase(order.getCurrency())) {
                 throw new IllegalArgumentException("Stripe checkout amount or currency is missing");
             }
-            long expectedAmount = order.getTotalAmount()
-                    .movePointRight(zeroDecimalCurrency(order.getCurrency()) ? 0 : 2)
-                    .longValueExact();
+            long expectedAmount = StripeCurrency.toMinorUnits(order.getTotalAmount(), order.getCurrency());
             if (webhookAmount != expectedAmount) {
                 throw new IllegalArgumentException("Stripe checkout amount does not match the order total");
             }
@@ -133,12 +132,6 @@ public class StripeWebhookService {
                 && payment.getStatus() == PaymentStatus.PENDING) {
             reservationService.markFailed(payment.getId(), "Stripe Checkout session expired");
         }
-    }
-
-    private boolean zeroDecimalCurrency(String currency) {
-        return java.util.Set.of(
-                "BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF","UGX",
-                "VND","VUV","XAF","XOF","XPF").contains(currency.toUpperCase(java.util.Locale.ROOT));
     }
 
     private void verifySignature(String payload, String header) {
