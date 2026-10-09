@@ -29,6 +29,12 @@ public class ProductVariant extends BaseEntity {
     @Column(precision = 10, scale = 2)
     private BigDecimal price;
 
+    @Column(name = "supplier_sku", length = 120)
+    private String supplierSku;
+
+    @Column(name = "supplier_cost", precision = 10, scale = 2)
+    private BigDecimal supplierCost;
+
     @Column(name = "available_quantity", nullable = false)
     @Builder.Default
     private Integer availableQuantity = 0;
