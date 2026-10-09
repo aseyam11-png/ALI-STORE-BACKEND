@@ -62,9 +62,19 @@ public class StripeWebhookService {
         }
 
         String type = event.path("type").asText("");
+        if (!"checkout.session.completed".equals(type)
+                && !"checkout.session.expired".equals(type)) {
+            return;
+        }
+        if (!event.path("livemode").asBoolean(false)) {
+            throw new IllegalArgumentException("Test-mode Stripe events cannot settle production payments");
+        }
+
         JsonNode object = event.path("data").path("object");
         String sessionId = object.path("id").asText(null);
-        if (sessionId == null || sessionId.isBlank()) return;
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("Stripe checkout session id is missing");
+        }
 
         Long metadataOrderId = object.path("metadata").path("order_id").asLong(0L);
         Long orderId = metadataOrderId > 0 ? metadataOrderId : null;
@@ -74,13 +84,16 @@ public class StripeWebhookService {
                 orderId = Long.valueOf(reference);
             }
         }
-
-        Payment payment = paymentRepository.findByTransactionId(sessionId).orElse(null);
-        if (payment == null && orderId != null) {
-            payment = paymentRepository.findByOrderId(orderId).orElse(null);
+        if (orderId == null) {
+            throw new IllegalArgumentException("Stripe checkout order reference is missing");
         }
-        if (payment == null) {
-            throw new ResourceNotFoundException("Stripe payment session is not registered");
+
+        Payment payment = paymentRepository.findByTransactionId(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Stripe payment session is not registered"));
+
+        if (!payment.getOrderId().equals(orderId)
+                || !sessionId.equals(payment.getTransactionId())) {
+            throw new IllegalArgumentException("Stripe checkout session does not match the registered payment attempt");
         }
 
         if ("checkout.session.completed".equals(type)
