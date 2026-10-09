@@ -12,6 +12,8 @@ import com.store.payment.entity.PaymentStatus;
 import com.store.payment.entity.PaymentMethod;
 import com.store.payment.repository.PaymentRepository;
 import com.store.payment.provider.StripeCurrency;
+import com.store.payment.service.RefundService;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.context.annotation.Profile;
@@ -34,6 +36,8 @@ public class StripeWebhookService {
     private final PaymentReservationService reservationService;
     private final OrderRepository orderRepository;
     private final OrderService orderService;
+    private final RefundService refundService;
+    private final EntityManager entityManager;
 
     @Value("${app.payment.stripe.webhook-secret}")
     private String webhookSecret;
@@ -43,12 +47,16 @@ public class StripeWebhookService {
             PaymentRepository paymentRepository,
             PaymentReservationService reservationService,
             OrderRepository orderRepository,
-            OrderService orderService) {
+            OrderService orderService,
+            RefundService refundService,
+            EntityManager entityManager) {
         this.objectMapper = objectMapper;
         this.paymentRepository = paymentRepository;
         this.reservationService = reservationService;
         this.orderRepository = orderRepository;
         this.orderService = orderService;
+        this.refundService = refundService;
+        this.entityManager = entityManager;
     }
 
     @Transactional
@@ -99,11 +107,9 @@ public class StripeWebhookService {
 
         if ("checkout.session.completed".equals(type)
                 && "paid".equalsIgnoreCase(object.path("payment_status").asText(""))) {
-            if (payment.getStatus() == PaymentStatus.COMPLETED) return;
-            if (payment.getStatus() != PaymentStatus.PENDING) return;
-
-            if (orderId != null && !payment.getOrderId().equals(orderId)) {
-                throw new IllegalArgumentException("Stripe payment order does not match the stored payment");
+            if (payment.getStatus() != PaymentStatus.PENDING
+                    && payment.getStatus() != PaymentStatus.COMPLETED) {
+                return;
             }
             if (payment.getMethod() != PaymentMethod.CREDIT_CARD) {
                 throw new IllegalArgumentException("Stripe webhook cannot settle a non-card payment");
@@ -121,9 +127,30 @@ public class StripeWebhookService {
                 throw new IllegalArgumentException("Stripe checkout amount does not match the order total");
             }
 
-            reservationService.markCompleted(payment.getId(), sessionId);
-            if (order.getStatus() == OrderStatus.PENDING) {
-                orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
+            if (payment.getStatus() == PaymentStatus.PENDING) {
+                reservationService.markCompleted(payment.getId(), sessionId);
+            }
+            entityManager.clear();
+
+            Order currentOrder = orderRepository.findByIdForUpdate(payment.getOrderId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found for Stripe payment"));
+            if (currentOrder.getStatus() == OrderStatus.PENDING
+                    && orderService.expireIfReservationElapsed(currentOrder)) {
+                entityManager.clear();
+                currentOrder = orderRepository.findByIdForUpdate(payment.getOrderId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Order not found after reservation expiry"));
+            }
+
+            if (currentOrder.getStatus() == OrderStatus.CANCELLED) {
+                entityManager.clear();
+                refundService.prepareOrderCancellationRefund(
+                        currentOrder.getId(),
+                        "Stripe payment completed after order cancellation or reservation expiry");
+                return;
+            }
+
+            if (currentOrder.getStatus() == OrderStatus.PENDING) {
+                orderService.updateOrderStatus(currentOrder.getId(), OrderStatus.PROCESSING);
             }
             return;
         }
