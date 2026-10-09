@@ -193,6 +193,45 @@ public class StripePaymentProvider implements PaymentProvider {
         }
     }
 
+    @Override
+    public RefundStatusResult getRefundStatus(String refundTransactionId) {
+        if (refundTransactionId == null
+                || !refundTransactionId.matches("re_[A-Za-z0-9_]+")) {
+            return new RefundStatusResult(false, false, refundTransactionId,
+                    "A registered Stripe refund id is required for refund reconciliation");
+        }
+
+        try {
+            String raw = stripeClient.get()
+                    .uri("/v1/refunds/{id}", refundTransactionId)
+                    .header("Authorization", "Bearer " + secretKey)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode refund = objectMapper.readTree(raw);
+            if (!refundTransactionId.equals(refund.path("id").asText(""))) {
+                throw new IllegalStateException("Stripe returned a different refund id");
+            }
+
+            String status = refund.path("status").asText("");
+            if ("succeeded".equalsIgnoreCase(status)) {
+                return new RefundStatusResult(true, false, refundTransactionId,
+                        "Stripe confirms the refund succeeded");
+            }
+            if ("failed".equalsIgnoreCase(status) || "canceled".equalsIgnoreCase(status)) {
+                return new RefundStatusResult(false, true, refundTransactionId,
+                        "Stripe refund reached terminal state: " + status);
+            }
+            return new RefundStatusResult(false, false, refundTransactionId,
+                    "Stripe refund is not terminal; current state: " + status);
+        } catch (RestClientResponseException ex) {
+            throw new IllegalStateException(
+                    "Stripe refund lookup failed: " + truncate(ex.getResponseBodyAsString()), ex);
+        } catch (Exception ex) {
+            if (ex instanceof RuntimeException runtime) throw runtime;
+            throw new IllegalStateException("Stripe refund status could not be read", ex);
+        }
+    }
+
     private JsonNode loadCheckoutSession(String sessionId) {
         try {
             String raw = stripeClient.get()
