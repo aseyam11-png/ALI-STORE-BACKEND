@@ -28,7 +28,7 @@ public class AdminProductVariantController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(service.create(productId, request), "Product variant created successfully"));
     }
     @PutMapping("/{variantId}")
-    public ResponseEntity<ApiResponse<ProductVariantResponse>> update(@PathVariable Long productId, @PathVariable Long variantId, @Valid @RequestBody ProductVariantRequest request) {
+    public ResponseEntity<ApiResponse<ProductVariantAdminResponse>> update(@PathVariable Long productId, @PathVariable Long variantId, @Valid @RequestBody ProductVariantRequest request) {
         return ResponseEntity.ok(ApiResponse.success(service.update(productId, variantId, request), "Product variant updated successfully"));
     }
     @DeleteMapping("/{variantId}")
