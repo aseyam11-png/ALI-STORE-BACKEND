@@ -50,6 +50,10 @@ public interface PaymentProvider {
         throw new UnsupportedOperationException("Payment provider reconciliation is not configured");
     }
 
+    default void expireCheckoutSession(String transactionId) {
+        throw new UnsupportedOperationException("Payment provider checkout-session expiry is not configured");
+    }
+
     record PaymentResult(
             boolean success,
             boolean pending,
