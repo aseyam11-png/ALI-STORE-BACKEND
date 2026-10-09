@@ -2,7 +2,7 @@ package com.store.admin.controller;
 
 import com.store.common.response.ApiResponse;
 import com.store.product.dto.ProductVariantRequest;
-import com.store.product.dto.ProductVariantResponse;
+import com.store.product.dto.ProductVariantAdminResponse;
 import com.store.product.service.ProductVariantService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +20,11 @@ public class AdminProductVariantController {
     private final ProductVariantService service;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductVariantResponse>>> getAll(@PathVariable Long productId) {
+    public ResponseEntity<ApiResponse<List<ProductVariantAdminResponse>>> getAll(@PathVariable Long productId) {
         return ResponseEntity.ok(ApiResponse.success(service.getAdminVariants(productId), "Product variants retrieved successfully"));
     }
     @PostMapping
-    public ResponseEntity<ApiResponse<ProductVariantResponse>> create(@PathVariable Long productId, @Valid @RequestBody ProductVariantRequest request) {
+    public ResponseEntity<ApiResponse<ProductVariantAdminResponse>> create(@PathVariable Long productId, @Valid @RequestBody ProductVariantRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(service.create(productId, request), "Product variant created successfully"));
     }
     @PutMapping("/{variantId}")
