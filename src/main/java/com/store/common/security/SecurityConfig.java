@@ -52,7 +52,21 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder) throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(
+                                org.springframework.security.web.csrf.CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .ignoringRequestMatchers(
+                                new AntPathRequestMatcher("/api/v1/auth/login"),
+                                new AntPathRequestMatcher("/api/v1/auth/register"),
+                                new AntPathRequestMatcher("/api/v1/auth/email/verify"),
+                                new AntPathRequestMatcher("/api/v1/auth/email/resend"),
+                                // Supplier webhooks are machine-to-machine and are protected
+                                // by their own HMAC signature + replay-window validation.
+                                new AntPathRequestMatcher(
+                                        "/api/v1/integrations/suppliers/shipments/update"),
+                                new AntPathRequestMatcher(
+                                        "/api/v1/integrations/payments/stripe/webhook"))
+                )
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(exceptions -> exceptions
                         .defaultAuthenticationEntryPointFor(
@@ -65,10 +79,12 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/email/verify",
                                 "/api/v1/auth/email/resend",
+                                "/api/v1/auth/csrf",
                                 "/api/v1/auth/google",
                                 "/oauth2/authorization/**",
                                 "/login/oauth2/code/**",
                                 "/api/v1/integrations/suppliers/shipments/update",
+                                "/api/v1/integrations/payments/stripe/webhook",
                                 "/api/v1/search/suggestions",
                                 "/api/v1/ai/ask",
                                 "/api/v1/ai/discover",
@@ -79,7 +95,9 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/v1/categories", "/api/v1/categories/**",
-                                "/api/v1/products", "/api/v1/products/**"
+                                "/api/v1/products", "/api/v1/products/**",
+                                "/api/v1/shipping/methods", "/api/v1/shipping/methods/**",
+                                "/api/v1/promotions", "/api/v1/promotions/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
@@ -110,7 +128,13 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "Idempotency-Key",
+                "X-XSRF-TOKEN"
+        ));
         configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(List.of("Retry-After"));
         configuration.setMaxAge(3600L);

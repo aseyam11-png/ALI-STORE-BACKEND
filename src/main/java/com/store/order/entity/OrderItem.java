@@ -1,6 +1,7 @@
 package com.store.order.entity;
 
 import com.store.product.entity.Product;
+import com.store.product.entity.ProductVariant;
 import com.store.supplier.entity.Supplier;
 import jakarta.persistence.*;
 import lombok.*;
@@ -28,6 +29,23 @@ public class OrderItem {
 
     @Column(nullable = false)
     private BigDecimal subtotal;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "variant_id")
+    private ProductVariant variant;
+
+    @Column(name = "variant_sku", length = 120)
+    private String variantSku;
+
+    @Column(name = "variant_option_name", length = 80)
+    private String variantOptionName;
+
+    @Column(name = "variant_option_value", length = 160)
+    private String variantOptionValue;
+
+    @Column(name = "variant_reservation_active", nullable = false)
+    @Builder.Default
+    private Boolean variantReservationActive = false;
 
     // Snapshots preserve the supplier mapping and source cost used at checkout.
     @ManyToOne(fetch = FetchType.LAZY)

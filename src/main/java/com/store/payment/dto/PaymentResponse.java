@@ -18,6 +18,7 @@ public class PaymentResponse {
     private PaymentMethod method;
     private PaymentStatus status;
     private String transactionId;
+    private String checkoutUrl;
     private PaymentCollectionStatus collectionStatus;
     private LocalDateTime createdAt;
 }

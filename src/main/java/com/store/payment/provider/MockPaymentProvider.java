@@ -26,6 +26,7 @@ public class MockPaymentProvider implements PaymentProvider {
     @Override
     public PaymentResult charge(Long orderId, BigDecimal amount, PaymentMethod method, String idempotencyKey) {
         String transactionId = "MOCK-TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        return new PaymentResult(true, transactionId, "Simulated success (development/test environment only, no real gateway is configured)");
+        return new PaymentResult(true, false, transactionId, null,
+                "Simulated success (development/test environment only, no real gateway is configured)");
     }
 }

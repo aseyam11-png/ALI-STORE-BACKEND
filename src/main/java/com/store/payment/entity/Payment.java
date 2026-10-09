@@ -35,6 +35,9 @@ public class Payment extends BaseEntity {
     @Column(name = "transaction_id", unique = true)
     private String transactionId;
 
+    @Column(name = "checkout_url", length = 2048)
+    private String checkoutUrl;
+
     @Column(name = "idempotency_key", nullable = false, unique = true, length = 255)
     private String idempotencyKey;
 

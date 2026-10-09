@@ -2,10 +2,12 @@ package com.store.product.dto;
 
 import com.store.inventory.enums.PublicAvailability;
 import com.store.product.enums.ProductStatus;
+import com.store.review.dto.ProductReviewSummaryResponse;
 import lombok.Builder;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -28,6 +30,15 @@ public class ProductResponse {
     private String brandName;
     private List<String> images;
     private String primaryImageUrl;
-    private java.time.LocalDateTime createdAt;
-    private java.time.LocalDateTime updatedAt;
+    private List<ProductVariantResponse> variants;
+    private BigDecimal originalPrice;
+    private BigDecimal discountPercentage;
+    private String promotionTitle;
+    private Boolean flashSale;
+    private List<com.store.shipping.dto.ShippingMethodResponse> shippingMethods;
+    private BigDecimal rating;
+    private long reviewCount;
+    private ProductReviewSummaryResponse reviewSummary;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

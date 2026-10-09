@@ -88,8 +88,8 @@ class PaymentFinancialIntegrityTest {
                 eq(new BigDecimal("25.00")),
                 eq(PaymentMethod.CREDIT_CARD),
                 any()))
-                .thenReturn(new PaymentProvider.PaymentResult(false, null, "card declined"))
-                .thenReturn(new PaymentProvider.PaymentResult(true, "TXN-RETRY-1", "approved"));
+                .thenReturn(new PaymentProvider.PaymentResult(false, false, null, null, "card declined"))
+                .thenReturn(new PaymentProvider.PaymentResult(true, false, "TXN-RETRY-1", null, "approved"));
 
         var first = paymentService.processPayment(user.getEmail(), request);
         Assertions.assertEquals(PaymentStatus.FAILED, first.getStatus());
@@ -125,6 +125,37 @@ class PaymentFinancialIntegrityTest {
         Assertions.assertNotEquals(
                 attemptKeyCaptor.getAllValues().get(0),
                 attemptKeyCaptor.getAllValues().get(1));
+    }
+
+    @Test
+    void hostedCheckout_createsPendingPaymentAndCanBeReadWithoutChargingAgain() {
+        User user = user();
+        Product product = product("FIN-HOSTED", "FIN-HOSTED-SUP");
+        Order order = order(user, product, new BigDecimal("25.00"));
+
+        PaymentRequest request = new PaymentRequest();
+        request.setOrderId(order.getId());
+        request.setAmount(new BigDecimal("25.00"));
+        request.setMethod(PaymentMethod.CREDIT_CARD);
+
+        when(paymentProvider.charge(
+                eq(order.getId()),
+                eq(new BigDecimal("25.00")),
+                eq(PaymentMethod.CREDIT_CARD),
+                any()))
+                .thenReturn(new PaymentProvider.PaymentResult(
+                        false, true, "cs_test_123", "https://checkout.stripe.com/cs_test_123", "checkout"));
+
+        var first = paymentService.processPayment(user.getEmail(), request);
+        var second = paymentService.processPayment(user.getEmail(), request);
+
+        Assertions.assertEquals(PaymentStatus.PENDING, first.getStatus());
+        Assertions.assertEquals("cs_test_123", first.getTransactionId());
+        Assertions.assertEquals("https://checkout.stripe.com/cs_test_123", first.getCheckoutUrl());
+        Assertions.assertEquals(first.getId(), second.getId());
+        verify(paymentProvider, times(1)).charge(
+                eq(order.getId()), eq(new BigDecimal("25.00")),
+                eq(PaymentMethod.CREDIT_CARD), any());
     }
 
     @Test

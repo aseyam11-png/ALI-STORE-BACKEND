@@ -79,10 +79,29 @@ public class PaymentService {
         Payment existingPayment = paymentRepository.findByOrderId(request.getOrderId())
                 .orElse(null);
 
-        if (existingPayment != null
-                && existingPayment.getStatus() != PaymentStatus.FAILED) {
-            throw new ConflictException(
-                    "This order already has a payment attempt that cannot be retried");
+        if (existingPayment != null) {
+            if (existingPayment.getStatus() == PaymentStatus.REQUIRES_RECONCILIATION) {
+                throw new ConflictException(
+                        "This payment has an unknown provider outcome and must be reconciled before retrying");
+            }
+
+            if (existingPayment.getStatus() == PaymentStatus.PENDING
+                    && existingPayment.getCheckoutUrl() != null
+                    && existingPayment.getTransactionId() != null) {
+                if (existingPayment.getMethod() != request.getMethod()) {
+                    throw new ConflictException("Payment method cannot be changed after a checkout session was created");
+                }
+                return mapToResponse(existingPayment);
+            }
+
+            if (existingPayment.getStatus() != PaymentStatus.FAILED) {
+                throw new ConflictException(
+                        "This order already has a payment attempt that cannot be retried");
+            }
+
+            if (existingPayment.getMethod() != request.getMethod()) {
+                throw new ConflictException("Payment method cannot be changed when retrying the same order");
+            }
         }
 
         if (request.getMethod() == PaymentMethod.CASH_ON_DELIVERY) {
@@ -124,7 +143,19 @@ public class PaymentService {
                     "Payment outcome could not be confirmed; reconciliation is required");
         }
 
-        if (result.success()) {
+        if (result.pending()) {
+            try {
+                Payment pendingPayment = paymentReservationService.attachCheckoutSession(
+                        reserved.getId(), result.transactionId(), result.checkoutUrl());
+                entityManager.clear();
+                return mapToResponse(pendingPayment);
+            } catch (RuntimeException ex) {
+                paymentReservationService.markRequiresReconciliation(reserved.getId(), ex.getMessage());
+                throw new ConflictException("Payment checkout was created but local persistence failed; reconciliation is required");
+            }
+        }
+
+        if (result.success())
             try {
                 Payment completed = paymentReservationService.markCompleted(
                         reserved.getId(), result.transactionId());
@@ -220,7 +251,9 @@ public class PaymentService {
         return PaymentResponse.builder()
                 .id(payment.getId()).orderId(payment.getOrderId()).amount(payment.getAmount())
                 .method(payment.getMethod()).status(payment.getStatus())
-                .transactionId(payment.getTransactionId()).collectionStatus(payment.getCollectionStatus())
+                .transactionId(payment.getTransactionId())
+                .checkoutUrl(payment.getCheckoutUrl())
+                .collectionStatus(payment.getCollectionStatus())
                 .createdAt(payment.getCreatedAt()).build();
     }
 }

@@ -20,6 +20,13 @@ import com.store.product.entity.ProductImage;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
 import com.store.product.repository.ProductSpecifications;
+import com.store.product.repository.ProductVariantRepository;
+import com.store.review.dto.ProductReviewSummaryResponse;
+import com.store.review.repository.ProductRatingSummary;
+import com.store.review.repository.ReviewRepository;
+import com.store.pricing.service.PromotionService;
+import com.store.shipping.dto.ShippingMethodResponse;
+import com.store.shipping.service.ShippingMethodService;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.entity.SupplierStatus;
 import com.store.supplier.repository.SupplierRepository;
@@ -49,6 +56,10 @@ public class ProductService {
     private final SupplierRepository supplierRepository;
     private final InventoryService inventoryService;
     private final com.store.pricing.service.PricingService pricingService;
+    private final ProductVariantRepository productVariantRepository;
+    private final ReviewRepository reviewRepository;
+    private final PromotionService promotionService;
+    private final ShippingMethodService shippingMethodService;
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
@@ -140,8 +151,13 @@ public class ProductService {
         }
 
         Pageable pageable = PageRequest.of(page, pageSize, resolveSort(sort));
-        Page<ProductResponse> results = productRepository.findAll(spec, pageable).map(this::mapToResponse);
-        return toPageResponse(results);
+        Page<Product> pageResult = productRepository.findAll(spec, pageable);
+        java.util.Map<Long, ProductRatingSummary> ratings = loadRatings(pageResult.getContent());
+        List<ProductResponse> content = pageResult.getContent().stream()
+                .map(product -> mapToResponse(product, ratings.get(product.getId())))
+                .toList();
+        return PageResponse.of(content, pageResult.getNumber(), pageResult.getSize(),
+                pageResult.getTotalElements(), pageResult.getTotalPages(), pageResult.isLast());
     }
 
     private Sort resolveSort(String sort) {
@@ -154,16 +170,18 @@ public class ProductService {
         };
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
         return productRepository.findById(id)
                 .filter(p -> p.getStatus() == ProductStatus.ACTIVE)
-                .map(this::mapToResponse)
+                .map(p -> mapToResponse(p, loadRatings(List.of(p)).get(p.getId())))
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProductBySlug(String slug) {
         return productRepository.findBySlugAndStatusIn(slug, List.of(ProductStatus.ACTIVE))
-                .map(this::mapToResponse)
+                .map(p -> mapToResponse(p, loadRatings(List.of(p)).get(p.getId())))
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with slug: " + slug));
     }
 
@@ -246,20 +264,70 @@ public class ProductService {
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
 
-    private ProductResponse mapToResponse(Product product) {
-        List<String> imageUrls = product.getImages().stream().sorted(Comparator.comparing(ProductImage::getSortOrder)).map(ProductImage::getUrl).collect(Collectors.toList());
-        String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+    private ProductResponse mapToResponse(Product product, ProductRatingSummary rating) {
+        List<String> imageUrls = product.getImages().stream()
+                .sorted(Comparator.comparing(ProductImage::getSortOrder))
+                .map(ProductImage::getUrl).collect(Collectors.toList());
+        String primaryImageUrl = product.getImages().stream()
+                .filter(ProductImage::getIsPrimary).map(ProductImage::getUrl)
+                .findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
+
+        com.store.pricing.service.PromotionService.PriceResult productPrice =
+                promotionService.calculate(product, null);
+
+        List<com.store.product.dto.ProductVariantResponse> variants =
+                productVariantRepository.findByProductIdAndActiveTrueOrderByIdAsc(product.getId()).stream()
+                        .map(v -> {
+                            var result = promotionService.calculate(product, v);
+                            return com.store.product.dto.ProductVariantResponse.builder()
+                                    .id(v.getId()).productId(product.getId()).sku(v.getSku())
+                                    .name(v.getOptionName()).value(v.getOptionValue())
+                                    .price(result.effectivePrice()).currency(product.getCurrency())
+                                    .availableQuantity(v.getAvailableQuantity()).imageUrl(v.getImageUrl())
+                                    .active(v.getActive()).createdAt(v.getCreatedAt()).updatedAt(v.getUpdatedAt()).build();
+                        }).toList();
+
+        BigDecimal average = rating == null || rating.getAverageRating() == null ? BigDecimal.ZERO : rating.getAverageRating();
+        long count = rating == null || rating.getReviewCount() == null ? 0L : rating.getReviewCount();
+
+        ProductReviewSummaryResponse summary = ProductReviewSummaryResponse.builder()
+                .averageRating(average).reviewCount(count)
+                .oneStar(countValue(rating == null ? null : rating.getOneStar()))
+                .twoStar(countValue(rating == null ? null : rating.getTwoStar()))
+                .threeStar(countValue(rating == null ? null : rating.getThreeStar()))
+                .fourStar(countValue(rating == null ? null : rating.getFourStar()))
+                .fiveStar(countValue(rating == null ? null : rating.getFiveStar()))
+                .build();
+
+        List<ShippingMethodResponse> shippingMethods = shippingMethodService.getPublicMethods(null, product.getCurrency());
+
         return ProductResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
-                .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
+                .price(productPrice.effectivePrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
                 .availability(inventoryService.getPublicAvailability(product.getId()))
                 .availableQuantity(inventoryService.getAvailableQuantity(product.getId()))
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
                 .categorySlug(product.getCategory().getSlug())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
                 .brandName(product.getBrand() != null ? product.getBrand().getName() : null)
-                .images(imageUrls).primaryImageUrl(primaryImageUrl)
+                .images(imageUrls).primaryImageUrl(primaryImageUrl).variants(variants)
+                .originalPrice(productPrice.originalPrice())
+                .discountPercentage(productPrice.discountPercentage())
+                .promotionTitle(productPrice.promotion() == null ? null : productPrice.promotion().getTitle())
+                .flashSale(productPrice.promotion() != null && Boolean.TRUE.equals(productPrice.promotion().getFlashSale()))
+                .shippingMethods(shippingMethods)
+                .rating(average).reviewCount(count).reviewSummary(summary)
                 .createdAt(product.getCreatedAt()).updatedAt(product.getUpdatedAt()).build();
+    }
+
+    private java.util.Map<Long, ProductRatingSummary> loadRatings(List<Product> products) {
+        if (products.isEmpty()) return java.util.Map.of();
+        return reviewRepository.findRatingSummaries(products.stream().map(Product::getId).toList()).stream()
+                .collect(Collectors.toMap(ProductRatingSummary::getProductId, value -> value));
+    }
+
+    private long countValue(Long value) {
+        return value == null ? 0L : value;
     }
 
     private ProductAdminResponse mapToAdminResponse(Product product) {

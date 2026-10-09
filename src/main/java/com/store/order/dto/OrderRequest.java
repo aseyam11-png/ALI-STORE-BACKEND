@@ -13,4 +13,9 @@ public class OrderRequest {
     // coupon's stored percentage (see OrderService) - the client only supplies the code,
     // never the discount amount itself.
     private String couponCode;
+
+    // Optional while no shipping methods are configured. When active methods exist,
+    // checkout must send the selected code and the server recalculates the amount.
+    private String shippingMethodCode;
+    private String shippingCountry;
 }

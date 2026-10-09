@@ -27,11 +27,18 @@ import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.repository.PaymentRepository;
 import com.store.payment.service.RefundService;
+import com.store.payment.provider.PaymentProvider;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
+import com.store.shipping.entity.ShippingMethod;
+import com.store.shipping.service.ShippingMethodService;
+import com.store.product.entity.ProductVariant;
+import com.store.product.repository.ProductVariantRepository;
+import com.store.pricing.service.PromotionService;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -50,6 +57,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
 
     private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED_TRANSITIONS = new EnumMap<>(OrderStatus.class);
@@ -72,6 +80,10 @@ public class OrderService {
     private final ShipmentRepository shipmentRepository;
     private final FulfillmentService fulfillmentService;
     private final RefundService refundService;
+    private final PaymentProvider paymentProvider;
+    private final ProductVariantRepository productVariantRepository;
+    private final PromotionService promotionService;
+    private final ShippingMethodService shippingMethodService;
 
     @Transactional
     public OrderResponse createOrder(String email, OrderRequest request, String idempotencyKey) {
@@ -112,9 +124,20 @@ public class OrderService {
             throw new BusinessException("A single order cannot contain products in different currencies");
         }
 
-        BigDecimal subtotal = cartItems.stream()
-                .map(item -> item.getProduct().getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+        BigDecimal originalSubtotal = cartItems.stream()
+                .map(item -> {
+                    BigDecimal base = item.getVariant() != null && item.getVariant().getPrice() != null
+                            ? item.getVariant().getPrice() : item.getProduct().getPrice();
+                    return base.multiply(BigDecimal.valueOf(item.getQuantity()));
+                })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal subtotal = cartItems.stream()
+                .map(item -> promotionService.calculate(item.getProduct(), item.getVariant()).effectivePrice()
+                        .multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal promotionDiscountAmount = originalSubtotal.subtract(subtotal).max(BigDecimal.ZERO);
 
         String couponCode = null;
         BigDecimal discountAmount = BigDecimal.ZERO;
@@ -130,7 +153,11 @@ public class OrderService {
             couponService.redeem(coupon);
         }
 
-        BigDecimal totalAmount = subtotal.subtract(discountAmount);
+        ShippingMethod shippingMethod = shippingMethodService.resolveForOrder(
+                request.getShippingMethodCode(), request.getShippingCountry(), orderCurrency);
+        BigDecimal shippingAmount = shippingMethod == null ? BigDecimal.ZERO : shippingMethod.getPrice();
+
+        BigDecimal totalAmount = subtotal.subtract(discountAmount).add(shippingAmount);
 
         Order order = Order.builder()
                 .user(user)
@@ -142,6 +169,9 @@ public class OrderService {
                 .totalAmount(totalAmount)
                 .couponCode(couponCode)
                 .discountAmount(discountAmount)
+                .promotionDiscountAmount(promotionDiscountAmount)
+                .shippingMethodCode(shippingMethod == null ? null : shippingMethod.getCode())
+                .shippingAmount(shippingAmount)
                 .build();
 
         List<OrderItem> orderItems = cartItems.stream().map(cartItem -> {
@@ -151,22 +181,51 @@ public class OrderService {
                 throw new BusinessException("Product is no longer available for purchase: " + product.getId());
             }
 
-            if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
-                    || product.getSupplierCost() == null) {
+            if (product.getSupplier() == null) {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
+            }
+
+            ProductVariant variant = cartItem.getVariant() == null ? null
+                    : productVariantRepository.findWithProductForUpdate(cartItem.getVariant().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product variant not found"));
+
+            if (variant != null) {
+                if (!Boolean.TRUE.equals(variant.getActive())) {
+                    throw new BusinessException("Selected product variant is no longer available");
+                }
+                if (variant.getAvailableQuantity() < cartItem.getQuantity()) {
+                    throw new BusinessException("Selected product variant is out of stock");
+                }
+            }
+
+            String fulfillmentSku = variant != null ? variant.getSupplierSku() : product.getSupplierSku();
+            BigDecimal supplierUnitCost = variant != null && variant.getSupplierCost() != null
+                    ? variant.getSupplierCost() : product.getSupplierCost();
+            if (fulfillmentSku == null || fulfillmentSku.isBlank()
+                    || supplierUnitCost == null || supplierUnitCost.signum() <= 0) {
+                throw new BusinessException("Product variant is not configured for supplier fulfillment: " + product.getId());
             }
 
             inventoryService.reserveStock(product.getId(), cartItem.getQuantity());
 
-            BigDecimal unitPrice = product.getPrice();
+            BigDecimal unitPrice = promotionService.calculate(product, variant).effectivePrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
+
+            if (variant != null) {
+                variant.setAvailableQuantity(variant.getAvailableQuantity() - cartItem.getQuantity());
+            }
 
             return OrderItem.builder()
                     .order(order)
                     .product(product)
                     .supplier(product.getSupplier())
-                    .supplierSku(product.getSupplierSku())
-                    .supplierUnitCost(product.getSupplierCost())
+                    .supplierSku(fulfillmentSku)
+                    .supplierUnitCost(supplierUnitCost)
+                    .variant(variant)
+                    .variantSku(variant != null ? variant.getSku() : null)
+                    .variantOptionName(variant != null ? variant.getOptionName() : null)
+                    .variantOptionValue(variant != null ? variant.getOptionValue() : null)
+                    .variantReservationActive(variant != null)
                     .quantity(cartItem.getQuantity())
                     .unitPrice(unitPrice)
                     .subtotal(itemSubtotal)
@@ -208,6 +267,7 @@ public class OrderService {
     }
 
     private void expireOrderReservation(Order order) {
+        expirePendingHostedCheckout(order);
         releaseOrderReservations(order);
         order.setStatus(OrderStatus.CANCELLED);
         orderRepository.save(order);
@@ -283,6 +343,7 @@ public class OrderService {
         }
 
         if (newStatus == OrderStatus.CANCELLED) {
+            expirePendingHostedCheckout(order);
             releaseOrderReservations(order);
         }
 
@@ -305,10 +366,33 @@ public class OrderService {
         return mapToResponse(saved);
     }
 
+    private void expirePendingHostedCheckout(Order order) {
+        Payment payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
+        if (payment == null
+                || payment.getMethod() != PaymentMethod.CREDIT_CARD
+                || payment.getStatus() != PaymentStatus.PENDING
+                || payment.getTransactionId() == null
+                || !payment.getTransactionId().matches("cs_[A-Za-z0-9_]+")) {
+            return;
+        }
+
+        try {
+            paymentProvider.expireCheckoutSession(payment.getTransactionId());
+        } catch (RuntimeException ex) {
+            // The reservation is still cancelled/released. Stripe webhook handling
+            // separately detects a paid session for a cancelled order and requests a refund.
+            log.warn("Could not expire Stripe Checkout session for cancelled order {}", order.getId(), ex);
+        }
+    }
+
     @Transactional
     public void commitOrderReservations(Order order) {
-        order.getItems().forEach(item ->
-                inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity()));
+        order.getItems().forEach(item -> {
+            inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity());
+            if (Boolean.TRUE.equals(item.getVariantReservationActive())) {
+                item.setVariantReservationActive(false);
+            }
+        });
     }
 
     @Transactional
@@ -317,8 +401,14 @@ public class OrderService {
             try {
                 inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
             } catch (BusinessException ignored) {
-                // Reservation may already have been committed after supplier acceptance.
-                // Cancellation must not corrupt inventory a second time.
+                // Product-level reservation may already have been committed or released.
+                // Variant reservation is tracked separately and must still be reconciled.
+            }
+
+            if (Boolean.TRUE.equals(item.getVariantReservationActive()) && item.getVariant() != null) {
+                item.getVariant().setAvailableQuantity(
+                        item.getVariant().getAvailableQuantity() + item.getQuantity());
+                item.setVariantReservationActive(false);
             }
         });
     }
@@ -329,6 +419,10 @@ public class OrderService {
                         .id(item.getId())
                         .productId(item.getProduct().getId())
                         .productName(item.getProduct().getName())
+                        .variantId(item.getVariant() != null ? item.getVariant().getId() : null)
+                        .variantName(item.getVariantOptionName())
+                        .variantValue(item.getVariantOptionValue())
+                        .variantSku(item.getVariantSku())
                         .quantity(item.getQuantity())
                         .price(item.getUnitPrice())
                         .subTotal(item.getSubtotal())
@@ -346,6 +440,9 @@ public class OrderService {
                 .currency(order.getCurrency())
                 .couponCode(order.getCouponCode())
                 .discountAmount(order.getDiscountAmount())
+                .promotionDiscountAmount(order.getPromotionDiscountAmount())
+                .shippingMethodCode(order.getShippingMethodCode())
+                .shippingAmount(order.getShippingAmount())
                 .shippingAddress(order.getShippingAddress())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)

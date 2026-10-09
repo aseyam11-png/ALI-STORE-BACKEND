@@ -11,6 +11,9 @@ import com.store.common.exception.BusinessException;
 import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.inventory.service.InventoryService;
+import com.store.product.entity.ProductVariant;
+import com.store.product.repository.ProductVariantRepository;
+import com.store.pricing.service.PromotionService;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
@@ -33,6 +36,8 @@ public class CartService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
+    private final ProductVariantRepository productVariantRepository;
+    private final PromotionService promotionService;
 
     @Transactional(readOnly = true)
     public CartResponse getCartByUserEmail(String email) {
@@ -62,7 +67,7 @@ public class CartService {
             throw new BusinessException("Cart items are required");
         }
 
-        java.util.Set<Long> productIds = new java.util.HashSet<>();
+        java.util.Set<String> cartKeys = new java.util.HashSet<>();
         String currency = null;
         List<CartItem> replacementItems = new java.util.ArrayList<>();
 
@@ -72,8 +77,10 @@ public class CartService {
                 throw new BusinessException("Every cart item must contain a valid product and quantity");
             }
 
-            if (!productIds.add(request.getProductId())) {
-                throw new BusinessException("A product may appear only once in the cart");
+            ProductVariant variant = resolveVariant(request.getProductId(), request.getVariantId());
+            String cartKey = request.getProductId() + ":" + (variant == null ? "base" : variant.getId());
+            if (!cartKeys.add(cartKey)) {
+                throw new BusinessException("A product variant may appear only once in the cart");
             }
 
             Product product = productRepository.findById(request.getProductId())
@@ -81,7 +88,9 @@ public class CartService {
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Active product not found with id: " + request.getProductId()));
 
-            int available = inventoryService.getAvailableQuantity(product.getId());
+            int productAvailable = inventoryService.getAvailableQuantity(product.getId());
+            int available = variant == null ? productAvailable
+                    : Math.min(productAvailable, variant.getAvailableQuantity());
             if (request.getQuantity() > available) {
                 throw new BusinessException("Cart quantity exceeds currently available stock");
             }
@@ -100,6 +109,7 @@ public class CartService {
             replacementItems.add(CartItem.builder()
                     .cart(cart)
                     .product(product)
+                    .variant(variant)
                     .quantity(request.getQuantity())
                     .build());
         }
@@ -120,7 +130,10 @@ public class CartService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Active product not found with id: " + request.getProductId()));
 
-        int available = inventoryService.getAvailableQuantity(product.getId());
+        ProductVariant variant = resolveVariant(request.getProductId(), request.getVariantId());
+        int productAvailable = inventoryService.getAvailableQuantity(product.getId());
+        int available = variant == null ? productAvailable
+                : Math.min(productAvailable, variant.getAvailableQuantity());
         if (available < request.getQuantity()) {
             throw new BusinessException("Insufficient stock for product: " + product.getName());
         }
@@ -134,8 +147,9 @@ public class CartService {
             throw new BusinessException("A cart cannot contain products in different currencies");
         }
 
-        CartItem cartItem = cartItemRepository.findByCartIdAndProductId(cart.getId(), product.getId())
-                .orElse(CartItem.builder().cart(cart).product(product).quantity(0).build());
+        CartItem cartItem = cartItemRepository.findByCartIdAndProductIdAndVariantId(
+                        cart.getId(), product.getId(), request.getVariantId())
+                .orElse(CartItem.builder().cart(cart).product(product).variant(variant).quantity(0).build());
 
         int nextQuantity = cartItem.getQuantity() + request.getQuantity();
         if (nextQuantity > available) {
@@ -155,7 +169,9 @@ public class CartService {
 
         assertOwnership(cart, item);
 
-        int available = inventoryService.getAvailableQuantity(item.getProduct().getId());
+        int productAvailable = inventoryService.getAvailableQuantity(item.getProduct().getId());
+        int available = item.getVariant() == null ? productAvailable
+                : Math.min(productAvailable, item.getVariant().getAvailableQuantity());
         if (request.getQuantity() > available) {
             throw new BusinessException("Requested quantity exceeds currently available stock");
         }
@@ -182,6 +198,13 @@ public class CartService {
         return mapToResponse(cart.getId());
     }
 
+    private ProductVariant resolveVariant(Long productId, Long variantId) {
+        if (variantId == null) return null;
+        return productVariantRepository.findByIdAndProductId(variantId, productId)
+                .filter(ProductVariant::getActive)
+                .orElseThrow(() -> new ResourceNotFoundException("Active product variant not found"));
+    }
+
     private Long resolveUserId(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"))
@@ -205,13 +228,18 @@ public class CartService {
     private CartResponse mapToResponse(Long cartId) {
         List<CartItemResponse> itemResponses = cartItemRepository.findByCartId(cartId).stream()
                 .map(item -> {
-                    BigDecimal subTotal = item.getProduct().getPrice()
-                            .multiply(BigDecimal.valueOf(item.getQuantity()));
+                    BigDecimal unitPrice = promotionService.calculate(
+                            item.getProduct(), item.getVariant()).effectivePrice();
+                    BigDecimal subTotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
                     return CartItemResponse.builder()
                             .id(item.getId())
                             .productId(item.getProduct().getId())
+                            .variantId(item.getVariant() != null ? item.getVariant().getId() : null)
+                            .variantName(item.getVariant() != null ? item.getVariant().getOptionName() : null)
+                            .variantValue(item.getVariant() != null ? item.getVariant().getOptionValue() : null)
+                            .variantSku(item.getVariant() != null ? item.getVariant().getSku() : null)
                             .productName(item.getProduct().getName())
-                            .productPrice(item.getProduct().getPrice())
+                            .productPrice(unitPrice)
                             .currency(item.getProduct().getCurrency())
                             .quantity(item.getQuantity())
                             .subTotal(subTotal)

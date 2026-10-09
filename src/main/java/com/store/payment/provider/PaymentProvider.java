@@ -5,8 +5,7 @@ import com.store.payment.entity.PaymentMethod;
 import java.math.BigDecimal;
 
 /**
- * Abstraction over an actual payment gateway. No real gateway is integrated
- * in this phase (explicitly deferred) - this interface exists so that
+ * Abstraction over an actual payment gateway. Payment gateways are isolated behind this interface - this interface exists so that
  * charging money is never hardcoded to "always succeeds" again. Production
  * deployments must supply a real implementation as a Spring bean; if none is
  * configured, the application fails to start rather than silently faking
@@ -51,12 +50,28 @@ public interface PaymentProvider {
         throw new UnsupportedOperationException("Payment provider reconciliation is not configured");
     }
 
-    record PaymentResult(boolean success, String transactionId, String message) {
+    default void expireCheckoutSession(String transactionId) {
+        throw new UnsupportedOperationException("Payment provider checkout-session expiry is not configured");
+    }
+
+    record PaymentResult(
+            boolean success,
+            boolean pending,
+            String transactionId,
+            String checkoutUrl,
+            String message) {
     }
 
     record RefundResult(boolean success, String refundTransactionId, String message) {
     }
 
+    default RefundStatusResult getRefundStatus(String refundTransactionId) {
+        throw new UnsupportedOperationException("Payment provider refund reconciliation is not configured");
+    }
+
     record ChargeStatusResult(boolean completed, boolean failed, String transactionId, String message) {
+    }
+
+    record RefundStatusResult(boolean succeeded, boolean failed, String refundTransactionId, String message) {
     }
 }
