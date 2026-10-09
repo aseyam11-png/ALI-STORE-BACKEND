@@ -10,7 +10,9 @@ import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.repository.PaymentRepository;
 import com.store.payment.service.PaymentReservationService;
+import com.store.payment.service.RefundService;
 import com.store.payment.service.StripeWebhookService;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,6 +39,8 @@ class StripeWebhookServiceTest {
     private PaymentReservationService reservationService;
     private OrderRepository orderRepository;
     private OrderService orderService;
+    private RefundService refundService;
+    private EntityManager entityManager;
     private StripeWebhookService service;
 
     @BeforeEach
@@ -45,13 +49,17 @@ class StripeWebhookServiceTest {
         reservationService = mock(PaymentReservationService.class);
         orderRepository = mock(OrderRepository.class);
         orderService = mock(OrderService.class);
+        refundService = mock(RefundService.class);
+        entityManager = mock(EntityManager.class);
 
         service = new StripeWebhookService(
                 new ObjectMapper(),
                 paymentRepository,
                 reservationService,
                 orderRepository,
-                orderService);
+                orderService,
+                refundService,
+                entityManager);
         ReflectionTestUtils.setField(service, "webhookSecret", SECRET);
     }
 
@@ -73,7 +81,7 @@ class StripeWebhookServiceTest {
                 .build();
 
         when(paymentRepository.findByTransactionId("cs_test_123")).thenReturn(Optional.of(payment));
-        when(orderRepository.findById(42L)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(order));
 
         String payload = """
                 {"id":"evt_test_123","livemode":true,"type":"checkout.session.completed","data":{"object":{
@@ -90,6 +98,44 @@ class StripeWebhookServiceTest {
         assertDoesNotThrow(() -> service.process(payload, header));
         verify(reservationService).markCompleted(7L, "cs_test_123");
         verify(orderService).updateOrderStatus(42L, OrderStatus.PROCESSING);
+    }
+
+    @Test
+    void paidSessionForCancelledOrderTriggersRefundInsteadOfFulfillment() throws Exception {
+        Payment payment = Payment.builder()
+                .id(9L)
+                .orderId(55L)
+                .amount(new BigDecimal("25.00"))
+                .method(PaymentMethod.CREDIT_CARD)
+                .status(PaymentStatus.PENDING)
+                .transactionId("cs_late_123")
+                .build();
+        Order order = Order.builder()
+                .id(55L)
+                .status(OrderStatus.CANCELLED)
+                .totalAmount(new BigDecimal("25.00"))
+                .currency("USD")
+                .build();
+
+        when(paymentRepository.findByTransactionId("cs_late_123")).thenReturn(Optional.of(payment));
+        when(orderRepository.findByIdForUpdate(55L)).thenReturn(Optional.of(order));
+
+        String payload = """
+                {"id":"evt_late_123","livemode":true,"type":"checkout.session.completed","data":{"object":{
+                  "id":"cs_late_123",
+                  "amount_total":2500,
+                  "currency":"usd",
+                  "payment_status":"paid",
+                  "client_reference_id":"55",
+                  "metadata":{"order_id":"55"}
+                }}}""";
+
+        service.process(payload, signatureHeader(payload));
+
+        verify(reservationService).markCompleted(9L, "cs_late_123");
+        verify(refundService).prepareOrderCancellationRefund(
+                55L, "Stripe payment completed after order cancellation or reservation expiry");
+        verify(orderService, never()).updateOrderStatus(55L, OrderStatus.PROCESSING);
     }
 
     @Test
@@ -110,7 +156,7 @@ class StripeWebhookServiceTest {
                 () -> service.process(payload, signatureHeader(payload)));
         verify(paymentRepository).findByTransactionId("cs_old_123");
         verify(paymentRepository, never()).findByOrderId(anyLong());
-        verifyNoInteractions(reservationService, orderRepository, orderService);
+        verifyNoInteractions(reservationService, orderRepository, orderService, refundService, entityManager);
     }
 
     @Test
@@ -139,7 +185,7 @@ class StripeWebhookServiceTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> service.process(payload, "t=" + Instant.now().getEpochSecond() + ",v1=bad"));
-        verifyNoInteractions(paymentRepository, orderRepository, reservationService, orderService);
+        verifyNoInteractions(paymentRepository, orderRepository, reservationService, orderService, refundService, entityManager);
     }
 
     private String signatureHeader(String payload) throws Exception {
