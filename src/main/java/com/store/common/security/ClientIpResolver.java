@@ -4,39 +4,28 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Resolves the client IP a security decision (currently: auth rate limiting) should be
- * keyed on, without blindly trusting X-Forwarded-For.
+ * Resolves the client IP used by rate limiting without blindly trusting
+ * X-Forwarded-For.
  *
- * Default behavior (app.trusted-proxies unset/empty): always use request.getRemoteAddr()
- * as-is, ignoring any X-Forwarded-For header entirely. This is the safe default - a client
- * can put anything it wants in X-Forwarded-For, so trusting it unconditionally would let an
- * attacker either spoof past the rate limit (claim a fresh IP every request) or frame another
- * client (claim their IP to get them blocked).
- *
- * Opt-in behavior (app.trusted-proxies set to the known, deployment-specific proxy IP(s)):
- * X-Forwarded-For is only consulted when request.getRemoteAddr() - the IMMEDIATE TCP peer -
- * is itself one of the configured trusted proxies. In that case the first entry in the header
- * (the original client, assuming a single trusted hop that sets rather than blindly appends)
- * is used. A request arriving directly from a non-trusted peer never has its header trusted,
- * even if app.trusted-proxies is configured - so someone bypassing the proxy entirely cannot
- * forge an X-Forwarded-For to dodge the limit either.
- *
- * This is a narrower, purpose-specific, unit-testable alternative to Spring's blanket
- * `server.forward-headers-strategy: framework` (which trusts X-Forwarded-* unconditionally
- * for the whole request, with no allowlist) - deliberately not reused here.
+ * Forwarded data is considered only when the immediate TCP peer is explicitly
+ * configured as a trusted proxy. Even then, the first forwarded value must be a
+ * numeric IP literal; hostnames and malformed values fall back to the peer address.
+ * This keeps client-controlled strings from creating arbitrary rate-limit keys.
  */
 @Component
 public class ClientIpResolver {
 
     private final String trustedProxiesRaw;
 
-    // Constructor injection (rather than field @Value injection) so this class stays
-    // trivially instantiable in a plain unit test without a Spring context.
     public ClientIpResolver(@Value("${app.trusted-proxies:}") String trustedProxiesRaw) {
         this.trustedProxiesRaw = trustedProxiesRaw;
     }
@@ -45,7 +34,7 @@ public class ClientIpResolver {
         String remoteAddr = request.getRemoteAddr();
         Set<String> trustedProxies = parseTrustedProxies();
 
-        if (trustedProxies.isEmpty() || !trustedProxies.contains(remoteAddr)) {
+        if (remoteAddr == null || trustedProxies.isEmpty() || !trustedProxies.contains(remoteAddr)) {
             return remoteAddr;
         }
 
@@ -54,8 +43,58 @@ public class ClientIpResolver {
             return remoteAddr;
         }
 
-        String candidate = forwardedFor.split(",")[0].trim();
-        return candidate.isEmpty() ? remoteAddr : candidate;
+        String candidate = forwardedFor.split(",", -1)[0].trim();
+        String normalizedAddress = normalizeIpLiteral(candidate);
+        return normalizedAddress == null ? remoteAddr : normalizedAddress;
+    }
+
+    /**
+     * Parses only numeric IPv4/IPv6 literals. In particular, never resolve a
+     * client-supplied hostname through DNS while deciding a security rate-limit key.
+     */
+    private String normalizeIpLiteral(String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return null;
+        }
+
+        if (candidate.indexOf(':') >= 0) {
+            if (!candidate.matches("[0-9a-fA-F:.]+")) {
+                return null;
+            }
+            try {
+                InetAddress address = InetAddress.getByName(candidate);
+                if (address instanceof Inet4Address || address instanceof Inet6Address) {
+                    return address.getHostAddress();
+                }
+            } catch (UnknownHostException ignored) {
+                // Invalid numeric IPv6 literal. Fall back to the trusted peer.
+            }
+            return null;
+        }
+
+        String[] octets = candidate.split("\\.", -1);
+        if (octets.length != 4) {
+            return null;
+        }
+
+        int[] normalized = new int[4];
+        for (int i = 0; i < octets.length; i++) {
+            if (octets[i].isEmpty() || octets[i].length() > 3
+                    || !octets[i].chars().allMatch(Character::isDigit)) {
+                return null;
+            }
+            try {
+                normalized[i] = Integer.parseInt(octets[i]);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+            if (normalized[i] > 255) {
+                return null;
+            }
+        }
+
+        return normalized[0] + "." + normalized[1] + "."
+                + normalized[2] + "." + normalized[3];
     }
 
     private Set<String> parseTrustedProxies() {
