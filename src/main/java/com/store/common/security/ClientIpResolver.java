@@ -32,9 +32,11 @@ public class ClientIpResolver {
 
     public String resolve(HttpServletRequest request) {
         String remoteAddr = request.getRemoteAddr();
+        String normalizedPeer = normalizeIpLiteral(remoteAddr);
         Set<String> trustedProxies = parseTrustedProxies();
 
-        if (remoteAddr == null || trustedProxies.isEmpty() || !trustedProxies.contains(remoteAddr)) {
+        if (normalizedPeer == null || trustedProxies.isEmpty()
+                || !trustedProxies.contains(normalizedPeer)) {
             return remoteAddr;
         }
 
@@ -43,9 +45,24 @@ public class ClientIpResolver {
             return remoteAddr;
         }
 
-        String candidate = forwardedFor.split(",", -1)[0].trim();
-        String normalizedAddress = normalizeIpLiteral(candidate);
-        return normalizedAddress == null ? remoteAddr : normalizedAddress;
+        // Proxies conventionally append addresses to X-Forwarded-For. Walk
+        // right-to-left, skipping configured proxies, to avoid trusting a
+        // client-supplied value placed at the beginning of the header.
+        String[] chain = forwardedFor.split(",", -1);
+        for (int i = chain.length - 1; i >= 0; i--) {
+            String candidate = chain[i].trim();
+            String normalizedAddress = normalizeIpLiteral(candidate);
+            if (normalizedAddress == null) {
+                // A malformed hop makes the chain untrustworthy; fail closed.
+                return remoteAddr;
+            }
+            if (!trustedProxies.contains(normalizedAddress)) {
+                return normalizedAddress;
+            }
+        }
+
+        // The header contained only trusted proxy hops, not an identifiable client.
+        return remoteAddr;
     }
 
     /**
@@ -103,7 +120,8 @@ public class ClientIpResolver {
         }
         return Arrays.stream(trustedProxiesRaw.split(","))
                 .map(String::trim)
-                .filter(s -> !s.isEmpty())
+                .map(this::normalizeIpLiteral)
+                .filter(address -> address != null)
                 .collect(Collectors.toSet());
     }
 }
