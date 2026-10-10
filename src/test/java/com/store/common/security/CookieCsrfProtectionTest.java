@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -39,7 +40,7 @@ class CookieCsrfProtectionTest {
         String setCookie = result.getResponse().getHeader("Set-Cookie");
         assertNotNull(setCookie, "CSRF endpoint must issue the XSRF-TOKEN cookie");
         assertTrue(setCookie.contains("XSRF-TOKEN="));
-        assertTrue(setCookie.toLowerCase().contains("httponly=false"));
+        assertFalse(setCookie.toLowerCase().contains("httponly"), "JavaScript-readable CSRF cookies must not be HttpOnly");
     }
 
     @Test
