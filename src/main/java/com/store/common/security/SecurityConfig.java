@@ -50,6 +50,9 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
 
+    @Value("${app.security.require-https:false}")
+    private boolean requireHttps;
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -112,6 +115,10 @@ public class SecurityConfig {
                                 "geolocation=(), camera=(), microphone=(), payment=()"))
                         .addHeaderWriter(new StaticHeadersWriter("Cache-Control", "no-store"))
                 );
+
+        if (requireHttps) {
+            http.requiresChannel(channel -> channel.anyRequest().requiresSecure());
+        }
 
         return http.build();
     }
