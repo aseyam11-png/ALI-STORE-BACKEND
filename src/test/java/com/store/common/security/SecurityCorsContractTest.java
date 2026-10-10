@@ -28,6 +28,7 @@ class SecurityCorsContractTest {
         assertTrue(configuration.getAllowedHeaders().contains(HttpHeaders.AUTHORIZATION));
         assertTrue(configuration.getAllowedHeaders().contains(HttpHeaders.CONTENT_TYPE));
         assertTrue(configuration.getAllowedHeaders().contains("Idempotency-Key"));
+        assertTrue(configuration.getAllowedHeaders().contains("X-XSRF-TOKEN"));
         assertTrue(configuration.getAllowedMethods().containsAll(
                 List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")));
         assertTrue(Boolean.TRUE.equals(configuration.getAllowCredentials()));
