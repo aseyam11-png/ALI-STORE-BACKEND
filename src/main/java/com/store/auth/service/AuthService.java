@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +33,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final EmailOtpService emailOtpService;
+    private final AdminLoginGateService adminLoginGateService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -68,6 +70,11 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
+        return login(request, "unknown");
+    }
+
+    @Transactional
+    public AuthResponse login(LoginRequest request, String clientIp) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
         authenticationManager.authenticate(
@@ -77,25 +84,30 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        boolean adminGateVerified =
+                adminLoginGateService.verifyIfAdmin(user, request, clientIp);
+
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
             if (!emailOtpService.isVerificationEnabled()) {
                 user.setEmailVerified(true);
                 userRepository.save(user);
-                return authenticatedResponse(user);
+                return authenticatedResponse(user, adminGateVerified);
             }
 
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION);
+                    emailOtpService.issueChallenge(
+                            user, EmailOtpPurpose.EMAIL_VERIFICATION, adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
         if (emailOtpService.isLoginOtpEnabled()) {
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+                    emailOtpService.issueChallenge(
+                            user, EmailOtpPurpose.LOGIN, adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
-        return authenticatedResponse(user);
+        return authenticatedResponse(user, adminGateVerified);
     }
 
     @Transactional
@@ -121,7 +133,7 @@ public class AuthService {
             userRepository.save(user);
         }
 
-        return authenticatedResponse(user);
+        return authenticatedResponse(user, challenge.isAdminGateVerified());
     }
 
     @Transactional
@@ -151,6 +163,10 @@ public class AuthService {
     }
 
     private AuthResponse authenticatedResponse(User user) {
+        return authenticatedResponse(user, false);
+    }
+
+    private AuthResponse authenticatedResponse(User user, boolean adminGateVerified) {
         var userDetails = new org.springframework.security.core.userdetails.User(
                 user.getEmail(),
                 user.getPassword(),
@@ -163,7 +179,12 @@ public class AuthService {
                                 user.getRole().getName()))
         );
 
-        String jwtToken = jwtService.generateToken(userDetails);
+        Map<String, Object> claims =
+                adminGateVerified && user.getRole() != null
+                        && "ROLE_ADMIN".equals(user.getRole().getName())
+                        ? Map.of("admin_gate_verified", true)
+                        : Collections.emptyMap();
+        String jwtToken = jwtService.generateToken(claims, userDetails);
 
         return AuthResponse.builder()
                 .token(jwtToken)
