@@ -42,6 +42,30 @@ class SupplierShipmentWebhookControllerTest {
     }
 
     @Test
+    void rejectsMissingAuthenticationHeadersBeforeParsingMalformedPayload() {
+        var result = controller.updateShipment(
+                null,
+                null,
+                null,
+                "{ malformed json");
+
+        assertEquals(401, result.getStatusCode().value());
+        verifyNoInteractions(processorService);
+    }
+
+    @Test
+    void rejectsOversizedPayloadBeforeJsonParsing() {
+        var result = controller.updateShipment(
+                "evt-large",
+                Long.toString(Instant.now().getEpochSecond()),
+                "sha256=invalid",
+                "x".repeat(64 * 1024 + 1));
+
+        assertEquals(413, result.getStatusCode().value());
+        verifyNoInteractions(processorService);
+    }
+
+    @Test
     void rejectsOversizedSupplierCodeBeforeCredentialLookup() {
         String body = """
                 {"supplierCode":"%s","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}
