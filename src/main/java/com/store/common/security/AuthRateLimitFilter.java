@@ -46,9 +46,24 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String path = request.getRequestURI();
+        String clientIp = clientIpResolver.resolve(request);
+
+        // A broad baseline limit applies to all API routes. Admin mutations get a
+        // tighter per-IP ceiling, while specific expensive/authentication routes
+        // below retain their stricter endpoint-specific limits.
+        if (path.startsWith("/api/")) {
+            boolean adminRoute = path.startsWith("/api/v1/admin");
+            int maxApiRequests = adminRoute ? 120 : 300;
+            String apiKey = "api:" + clientIp + (adminRoute ? ":admin" : ":general");
+            if (!rateLimiter.tryConsume(apiKey, maxApiRequests, WINDOW_MILLIS)) {
+                writeTooManyRequests(response);
+                return;
+            }
+        }
+
         Integer maxRequests = LIMITED_PATHS.get(path);
         if (maxRequests != null) {
-            String key = clientIpResolver.resolve(request) + ":" + path;
+            String key = clientIp + ":" + path;
             if (!rateLimiter.tryConsume(key, maxRequests, WINDOW_MILLIS)) {
                 writeTooManyRequests(response);
                 return;
