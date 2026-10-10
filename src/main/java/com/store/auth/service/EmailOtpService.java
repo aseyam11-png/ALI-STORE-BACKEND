@@ -218,7 +218,8 @@ public class EmailOtpService {
                     "A verification code was already sent. Please wait before requesting another code.");
         }
 
-        return issueChallenge(current.getUser(), current.getPurpose());
+        return issueChallenge(
+                current.getUser(), current.getPurpose(), current.isAdminGateVerified());
     }
 
     private String generateCode() {
