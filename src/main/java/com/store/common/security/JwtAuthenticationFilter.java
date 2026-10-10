@@ -57,11 +57,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
 
                     if (jwtService.isTokenValid(jwt, userDetails)) {
+                        var grantedAuthorities = userDetails.getAuthorities();
+                        boolean isAdmin = grantedAuthorities.stream()
+                                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                        if (isAdmin && !jwtService.isAdminGateVerified(jwt)) {
+                            // Keep the session authenticated but remove the administrative
+                            // authority. This blocks legacy and OAuth-issued admin tokens
+                            // from bypassing the new second gate until a gated login occurs.
+                            grantedAuthorities = grantedAuthorities.stream()
+                                    .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                                    .toList();
+                        }
+
                         UsernamePasswordAuthenticationToken authToken =
                                 new UsernamePasswordAuthenticationToken(
                                         userDetails,
                                         null,
-                                        userDetails.getAuthorities()
+                                        grantedAuthorities
                                 );
                         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                         SecurityContextHolder.getContext().setAuthentication(authToken);
