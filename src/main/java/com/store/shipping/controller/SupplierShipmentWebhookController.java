@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HexFormat;
@@ -81,8 +82,14 @@ public class SupplierShipmentWebhookController {
                     .body(ApiResponse.error("Invalid supplier webhook timestamp"));
         }
 
-        long skew = Math.abs(Instant.now().getEpochSecond() - timestamp);
-        if (skew > maxSkewSeconds) {
+        // BigInteger avoids overflow in now - timestamp and Math.abs(Long.MIN_VALUE).
+        // Those overflows can otherwise turn an extreme, stale timestamp into a
+        // negative "skew" which incorrectly passes this freshness check.
+        BigInteger skew = BigInteger.valueOf(timestamp)
+                .subtract(BigInteger.valueOf(Instant.now().getEpochSecond()))
+                .abs();
+        if (maxSkewSeconds < 0
+                || skew.compareTo(BigInteger.valueOf(maxSkewSeconds)) > 0) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error("Supplier webhook timestamp is outside the allowed window"));
         }
