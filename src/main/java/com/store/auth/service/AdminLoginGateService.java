@@ -16,7 +16,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
-import java.util.Locale;
+import java.nio.charset.StandardCharsets;
 
 @Service
 @RequiredArgsConstructor
@@ -65,11 +65,21 @@ public class AdminLoginGateService {
         if (isBlank(captchaToken)
                 || !verifyTurnstile(captchaToken, clientIp)
                 || isBlank(secondPassword)
-                || !passwordEncoder.matches(secondPassword, passwordHash)) {
+                || secondPassword.getBytes(StandardCharsets.UTF_8).length > 72
+                || !safePasswordMatches(secondPassword, passwordHash)) {
             throw new BadCredentialsException("Invalid credentials or security verification failed");
         }
 
         return true;
+    }
+
+    private boolean safePasswordMatches(String rawPassword, String encodedPassword) {
+        try {
+            return passwordEncoder.matches(rawPassword, encodedPassword);
+        } catch (IllegalArgumentException ex) {
+            // Malformed or unsupported hashes fail closed rather than producing a 500.
+            return false;
+        }
     }
 
     private boolean verifyTurnstile(String token, String clientIp) {
