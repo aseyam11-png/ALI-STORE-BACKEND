@@ -34,3 +34,15 @@ spring:
 # A real PaymentProvider bean MUST be supplied for this profile - MockPaymentProvider
 # is annotated @Profile("!prod") and will not be available here, so the application
 # fails to start rather than silently accepting fake payments (see payment.provider package).
+
+# Production-only secondary administrator login gate. Secrets are supplied by the host.
+app:
+  auth:
+    cookie-secure: ${AUTH_COOKIE_SECURE:true}
+    cookie-same-site: ${AUTH_COOKIE_SAME_SITE:Strict}
+  security:
+    admin-gate:
+      enabled: true
+      password-hash: ${ADMIN_GATE_PASSWORD_HASH:}
+      turnstile-secret: ${TURNSTILE_SECRET_KEY:}
+      turnstile-hostname: ${TURNSTILE_HOSTNAME:}
