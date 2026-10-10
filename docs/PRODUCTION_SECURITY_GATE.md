@@ -22,7 +22,7 @@ The application fails to start if the production admin gate is enabled without i
 
 The login endpoint limits requests and temporarily blocks an IP after eight failed login/gate attempts within 15 minutes. The temporary block lasts 15 minutes and responses include `Retry-After`. All API paths also have a baseline per-IP request limit, with a tighter limit for admin API routes.
 
-The current counters are process-local. They provide protection for a single backend instance, but do not coordinate across multiple instances or survive restarts. If the backend is scaled horizontally, use a shared atomic store (for example Redis) and a production WAF/edge rate limit. Do not trust `X-Forwarded-For` unless the immediate peer is explicitly trusted; dynamic proxy networks should be rate-limited at the edge instead of adding broad unverified trust ranges.
+The current counters are process-local. They provide protection for a single backend instance, but do not coordinate across multiple instances or survive restarts. The admin API has a 120-request/minute per-IP ceiling and authentication/expensive routes have stricter endpoint limits. General catalog/product APIs should be protected by a production WAF/edge limit where the real client IP is known, rather than a blanket backend IP cap that could combine multiple customers behind one proxy. If the backend is scaled horizontally, move lockout counters to a shared atomic store (for example Redis) and keep edge/WAF limits enabled. Do not trust `X-Forwarded-For` unless the immediate peer is explicitly trusted; dynamic proxy networks should be rate-limited at the edge instead of adding broad unverified trust ranges.
 
 ## Encryption and API access
 
