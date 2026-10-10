@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HexFormat;
@@ -27,6 +28,7 @@ public class SupplierShipmentWebhookController {
 
     private static final int MAX_SUPPLIER_CODE_LENGTH = 80;
     private static final int MAX_EVENT_ID_LENGTH = 150;
+    private static final int MAX_RAW_BODY_LENGTH = 64 * 1024;
 
     private final ObjectMapper objectMapper;
     private final Validator validator;
@@ -41,23 +43,9 @@ public class SupplierShipmentWebhookController {
             @RequestHeader(name = "X-Supplier-Event-Id", required = false) String eventId,
             @RequestHeader(name = "X-Supplier-Timestamp", required = false) String timestampHeader,
             @RequestHeader(name = "X-Supplier-Signature", required = false) String signature,
-            @RequestBody String rawBody) {
+            @RequestBody(required = false) String rawBody) {
 
-        SupplierShipmentUpdateRequest request;
-        try {
-            request = objectMapper.readValue(rawBody, SupplierShipmentUpdateRequest.class);
-        } catch (JsonProcessingException ex) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Invalid supplier webhook payload"));
-        }
-
-        var validationErrors = validator.validate(request);
-        if (!validationErrors.isEmpty()) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Invalid supplier webhook payload"));
-        }
-
-        String supplierCode = request.getSupplierCode().trim();
-        String normalizedEventId = eventId == null ? null : eventId.trim();
-
+        // Reject unauthenticated or stale requests before JSON parsing and validation.
         if (eventId == null || eventId.isBlank()
                 || timestampHeader == null || timestampHeader.isBlank()
                 || signature == null || signature.isBlank()) {
@@ -65,12 +53,10 @@ public class SupplierShipmentWebhookController {
                     .body(ApiResponse.error("Missing supplier webhook authentication headers"));
         }
 
-        if (supplierCode.length() > MAX_SUPPLIER_CODE_LENGTH
-                || normalizedEventId == null
-                || normalizedEventId.length() > MAX_EVENT_ID_LENGTH) {
+        String normalizedEventId = eventId.trim();
+        if (normalizedEventId.length() > MAX_EVENT_ID_LENGTH) {
             return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(
-                            "Supplier webhook identifiers exceed the supported length"));
+                    .body(ApiResponse.error("Supplier webhook identifiers exceed the supported length"));
         }
 
         long timestamp;
@@ -81,10 +67,43 @@ public class SupplierShipmentWebhookController {
                     .body(ApiResponse.error("Invalid supplier webhook timestamp"));
         }
 
-        long skew = Math.abs(Instant.now().getEpochSecond() - timestamp);
-        if (skew > maxSkewSeconds) {
+        // BigInteger avoids overflow in now - timestamp and Math.abs(Long.MIN_VALUE).
+        BigInteger skew = BigInteger.valueOf(timestamp)
+                .subtract(BigInteger.valueOf(Instant.now().getEpochSecond()))
+                .abs();
+        if (maxSkewSeconds < 0
+                || skew.compareTo(BigInteger.valueOf(maxSkewSeconds)) > 0) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error("Supplier webhook timestamp is outside the allowed window"));
+        }
+
+        if (rawBody == null || rawBody.length() > MAX_RAW_BODY_LENGTH) {
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                    .body(ApiResponse.error("Supplier webhook payload exceeds the supported size"));
+        }
+
+        SupplierShipmentUpdateRequest request;
+        try {
+            request = objectMapper.readValue(rawBody, SupplierShipmentUpdateRequest.class);
+        } catch (JsonProcessingException ex) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Invalid supplier webhook payload"));
+        }
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Invalid supplier webhook payload"));
+        }
+
+        var validationErrors = validator.validate(request);
+        if (!validationErrors.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Invalid supplier webhook payload"));
+        }
+
+        String supplierCode = request.getSupplierCode().trim();
+        if (supplierCode.length() > MAX_SUPPLIER_CODE_LENGTH) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Supplier webhook identifiers exceed the supported length"));
         }
 
         String secret = credentialResolver.resolveWebhookSecret(supplierCode);

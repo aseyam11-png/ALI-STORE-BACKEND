@@ -5,7 +5,6 @@ import com.store.shipping.dto.ShipmentResponse;
 import com.store.supplier.service.SupplierCredentialResolver;
 import com.store.shipping.service.SupplierWebhookProcessorService;
 import com.store.shipping.dto.SupplierShipmentUpdateRequest;
-import com.store.shipping.entity.ShipmentStatus;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +39,30 @@ class SupplierShipmentWebhookControllerTest {
         controller = new SupplierShipmentWebhookController(
                 new ObjectMapper(), validator, resolver, processorService);
         ReflectionTestUtils.setField(controller, "maxSkewSeconds", 300L);
+    }
+
+    @Test
+    void rejectsMissingAuthenticationHeadersBeforeParsingMalformedPayload() {
+        var result = controller.updateShipment(
+                null,
+                null,
+                null,
+                "{ malformed json");
+
+        assertEquals(401, result.getStatusCode().value());
+        verifyNoInteractions(processorService);
+    }
+
+    @Test
+    void rejectsOversizedPayloadBeforeJsonParsing() {
+        var result = controller.updateShipment(
+                "evt-large",
+                Long.toString(Instant.now().getEpochSecond()),
+                "sha256=invalid",
+                "x".repeat(64 * 1024 + 1));
+
+        assertEquals(413, result.getStatusCode().value());
+        verifyNoInteractions(processorService);
     }
 
     @Test
@@ -121,6 +144,25 @@ class SupplierShipmentWebhookControllerTest {
                 """;
         long timestamp = Instant.now().minusSeconds(600).getEpochSecond();
         String eventId = "evt-3";
+        String signature = sign("test-secret", eventId + "." + timestamp + "." + body);
+
+        var result = controller.updateShipment(
+                eventId,
+                Long.toString(timestamp),
+                signature,
+                body);
+
+        assertEquals(401, result.getStatusCode().value());
+        verifyNoInteractions(processorService);
+    }
+
+    @Test
+    void rejectsExtremeNegativeTimestampEvenWhenSignatureIsValid() {
+        String body = """
+                {"supplierCode":"alpha","supplierOrderId":"SUP-1","status":"IN_TRANSIT"}
+                """;
+        long timestamp = Long.MIN_VALUE;
+        String eventId = "evt-extreme-negative";
         String signature = sign("test-secret", eventId + "." + timestamp + "." + body);
 
         var result = controller.updateShipment(
