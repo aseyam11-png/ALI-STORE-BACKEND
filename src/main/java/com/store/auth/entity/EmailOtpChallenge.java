@@ -49,4 +49,10 @@ public class EmailOtpChallenge extends BaseEntity {
 
     @Column(name = "revoked_at")
     private Instant revokedAt;
+
+    // Persists proof that the second admin gate and CAPTCHA succeeded before
+    // an email OTP challenge was issued; the final JWT inherits this state.
+    @Column(name = "admin_gate_verified", nullable = false)
+    @Builder.Default
+    private boolean adminGateVerified = false;
 }
