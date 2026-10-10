@@ -85,6 +85,19 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Indicates that an administrator's second password + CAPTCHA gate was
+     * completed before this token was issued. Old/OAuth tokens fail closed.
+     */
+    public boolean isAdminGateVerified(String token) {
+        try {
+            return Boolean.TRUE.equals(
+                    extractClaim(token, claims -> claims.get("admin_gate_verified", Boolean.class)));
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
     // التحقق من صحة الـ Token
     public boolean isTokenValid(String token, UserDetails userDetails) {
         final String username = extractUsername(token);
