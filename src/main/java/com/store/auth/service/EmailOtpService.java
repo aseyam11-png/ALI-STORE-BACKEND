@@ -104,6 +104,12 @@ public class EmailOtpService {
 
     @Transactional
     public EmailOtpChallengeResponse issueChallenge(User user, EmailOtpPurpose purpose) {
+        return issueChallenge(user, purpose, false);
+    }
+
+    @Transactional
+    public EmailOtpChallengeResponse issueChallenge(
+            User user, EmailOtpPurpose purpose, boolean adminGateVerified) {
         Instant now = Instant.now();
 
         challengeRepository.findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
@@ -128,6 +134,7 @@ public class EmailOtpService {
                 .codeHash(hash(challengeId, code))
                 .expiresAt(now.plusSeconds(expirationSeconds))
                 .attemptCount(0)
+                .adminGateVerified(adminGateVerified)
                 .build();
 
         challengeRepository.save(challenge);
