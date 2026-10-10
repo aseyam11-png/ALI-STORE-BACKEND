@@ -3,6 +3,7 @@ package com.store.auth.service;
 import com.store.auth.dto.LoginRequest;
 import com.store.common.exception.ServiceUnavailableException;
 import com.store.user.entity.User;
+import jakarta.annotation.PostConstruct;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +40,18 @@ public class AdminLoginGateService {
 
     @Value("${app.security.admin-gate.turnstile-hostname:}")
     private String expectedHostname;
+
+    @PostConstruct
+    void validateProductionConfiguration() {
+        if (enabled
+                && (isBlank(passwordHash)
+                || isBlank(turnstileSecret)
+                || isBlank(expectedHostname))) {
+            throw new IllegalStateException(
+                    "ADMIN_GATE_PASSWORD_HASH, TURNSTILE_SECRET_KEY, and TURNSTILE_HOSTNAME "
+                            + "must be configured before enabling the production administrator gate");
+        }
+    }
 
     /**
      * Returns true only when the account is an administrator and the configured
