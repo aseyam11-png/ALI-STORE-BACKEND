@@ -77,15 +77,21 @@ public class AuthService {
     public AuthResponse login(LoginRequest request, String clientIp) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
+        // Resolve the account's role only to decide whether the extra gate applies;
+        // the outward error remains generic. For administrator accounts, CAPTCHA and
+        // the second password are verified BEFORE checking the primary password.
+        User candidate = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        boolean adminGateVerified = candidate != null
+                && adminLoginGateService.verifyIfAdmin(candidate, request, clientIp);
+
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(email, request.getPassword())
         );
 
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-        boolean adminGateVerified =
-                adminLoginGateService.verifyIfAdmin(user, request, clientIp);
+        User user = candidate != null
+                ? candidate
+                : userRepository.findByEmailIgnoreCase(email)
+                        .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
             if (!emailOtpService.isVerificationEnabled()) {
