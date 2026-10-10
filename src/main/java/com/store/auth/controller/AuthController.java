@@ -9,6 +9,8 @@ import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.TokenRevocationService;
+import com.store.common.security.ClientIpResolver;
+import com.store.common.security.LoginAttemptGuard;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
@@ -25,6 +27,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
@@ -41,6 +44,8 @@ public class AuthController {
     private final TokenRevocationService tokenRevocationService;
     private final AuthSessionCookieService cookieService;
     private final ClientRegistrationRepository clientRegistrationRepository;
+    private final ClientIpResolver clientIpResolver;
+    private final LoginAttemptGuard loginAttemptGuard;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
@@ -66,8 +71,27 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(
             @Valid @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse servletResponse) {
-        AuthResponse response = authService.login(request);
+        String clientIp = clientIpResolver.resolve(servletRequest);
+        long blockedFor = loginAttemptGuard.blockedForMillis(clientIp);
+        if (blockedFor > 0L) {
+            return loginRateLimited(blockedFor);
+        }
+
+        final AuthResponse response;
+        try {
+            response = authService.login(request, clientIp);
+        } catch (AuthenticationException ex) {
+            long blockedAfterFailure = loginAttemptGuard.recordFailure(clientIp);
+            if (blockedAfterFailure > 0L) {
+                return loginRateLimited(blockedAfterFailure);
+            }
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "Invalid credentials or administrator security verification failed"));
+        }
+
         writeSessionCookieIfAuthenticated(servletResponse, response);
 
         HttpStatus status = response.isRequiresEmailVerification()
@@ -79,6 +103,21 @@ public class AuthController {
 
         return ResponseEntity.status(status)
                 .body(ApiResponse.success(response, message));
+    }
+
+    @GetMapping("/csrf")
+    public ResponseEntity<Void> csrf(org.springframework.security.web.csrf.CsrfToken csrfToken) {
+        // Resolving the token forces the deferred CSRF cookie to be emitted.
+        csrfToken.getToken();
+        return ResponseEntity.noContent().build();
+    }
+
+    private ResponseEntity<ApiResponse<AuthResponse>> loginRateLimited(long blockedForMillis) {
+        long retryAfterSeconds = Math.max(1L, (blockedForMillis + 999L) / 1000L);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", Long.toString(retryAfterSeconds))
+                .body(ApiResponse.error(
+                        "Too many failed login attempts. This IP is temporarily blocked."));
     }
 
     @PostMapping("/email/verify")
