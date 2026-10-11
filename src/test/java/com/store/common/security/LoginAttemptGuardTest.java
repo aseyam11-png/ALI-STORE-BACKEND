@@ -31,6 +31,20 @@ class LoginAttemptGuardTest {
     }
 
     @Test
+    void successfulLoginResetsFailureHistoryForThatIp() {
+        LoginAttemptGuard guard = new LoginAttemptGuard();
+        for (int attempt = 0; attempt < 7; attempt++) {
+            guard.recordFailure("198.51.100.13");
+        }
+
+        guard.recordSuccess("198.51.100.13");
+        for (int attempt = 0; attempt < 7; attempt++) {
+            assertEquals(0L, guard.recordFailure("198.51.100.13"));
+        }
+        assertTrue(guard.recordFailure("198.51.100.13") > 0L);
+    }
+
+    @Test
     void countsFailuresWithinTheSameWindowEvenWhenRequestsAreConcurrent() throws Exception {
         LoginAttemptGuard guard = new LoginAttemptGuard();
         Thread[] threads = new Thread[8];
