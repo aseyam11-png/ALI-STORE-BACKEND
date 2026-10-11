@@ -79,6 +79,7 @@ public class AdminLoginGateService {
         if (isBlank(captchaToken)
                 || !verifyTurnstile(captchaToken, clientIp)
                 || isBlank(secondPassword)
+                || secondPassword.getBytes(StandardCharsets.UTF_8).length < 16
                 || secondPassword.getBytes(StandardCharsets.UTF_8).length > 72
                 || !safePasswordMatches(secondPassword, passwordHash)) {
             throw new BadCredentialsException("Invalid credentials or security verification failed");
