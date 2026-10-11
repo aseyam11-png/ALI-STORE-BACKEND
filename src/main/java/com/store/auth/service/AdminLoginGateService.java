@@ -45,11 +45,12 @@ public class AdminLoginGateService {
     void validateProductionConfiguration() {
         if (enabled
                 && (isBlank(passwordHash)
+                || !passwordHash.matches("\\$2[aby]\\$12\\$[./A-Za-z0-9]{53}")
                 || isBlank(turnstileSecret)
                 || isBlank(expectedHostname))) {
             throw new IllegalStateException(
-                    "ADMIN_GATE_PASSWORD_HASH, TURNSTILE_SECRET_KEY, and TURNSTILE_HOSTNAME "
-                            + "must be configured before enabling the production administrator gate");
+                    "A valid BCrypt cost-12 ADMIN_GATE_PASSWORD_HASH, TURNSTILE_SECRET_KEY, and "
+                            + "TURNSTILE_HOSTNAME must be configured before enabling the administrator gate");
         }
     }
 
