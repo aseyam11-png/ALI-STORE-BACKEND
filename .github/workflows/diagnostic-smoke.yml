@@ -1,0 +1,16 @@
+name: Actions Runner Smoke Test
+on:
+  push:
+    branches:
+      - diagnostics/actions-smoke-20261011
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Print success marker
+        run: echo "ACTIONS_SMOKE_OK"
