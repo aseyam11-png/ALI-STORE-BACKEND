@@ -47,6 +47,37 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             jwt = extractCookieToken(request);
         }
 
+        var currentAuthentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean currentUserIsAdmin = currentAuthentication != null
+                && currentAuthentication.isAuthenticated()
+                && currentAuthentication.getAuthorities().stream()
+                        .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+
+        if (adminGateEnabled && currentUserIsAdmin) {
+            boolean matchingAdminGateProof = false;
+            if (jwt != null) {
+                try {
+                    matchingAdminGateProof = jwtService.isAdminGateVerified(jwt)
+                            && currentAuthentication.getName().equalsIgnoreCase(
+                                    jwtService.extractUsername(jwt));
+                } catch (RuntimeException ignored) {
+                    matchingAdminGateProof = false;
+                }
+            }
+
+            if (!matchingAdminGateProof) {
+                var reducedAuthorities = currentAuthentication.getAuthorities().stream()
+                        .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                        .toList();
+                var reducedAuthentication = new UsernamePasswordAuthenticationToken(
+                        currentAuthentication.getPrincipal(),
+                        currentAuthentication.getCredentials(),
+                        reducedAuthorities);
+                reducedAuthentication.setDetails(currentAuthentication.getDetails());
+                SecurityContextHolder.getContext().setAuthentication(reducedAuthentication);
+            }
+        }
+
         if (jwt != null) {
             try {
                 if (tokenRevocationService.isRevoked(jwt)) {
