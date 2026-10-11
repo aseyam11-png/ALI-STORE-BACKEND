@@ -57,7 +57,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             boolean matchingAdminGateProof = false;
             if (jwt != null) {
                 try {
-                    matchingAdminGateProof = jwtService.isAdminGateVerified(jwt)
+                    matchingAdminGateProof = !tokenRevocationService.isRevoked(jwt)
+                            && jwtService.isAdminGateVerified(jwt)
                             && currentAuthentication.getName().equalsIgnoreCase(
                                     jwtService.extractUsername(jwt));
                 } catch (RuntimeException ignored) {
