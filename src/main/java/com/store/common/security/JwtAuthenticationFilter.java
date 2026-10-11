@@ -33,6 +33,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final AuthSessionCookieService cookieService;
     private final TokenRevocationService tokenRevocationService;
 
+    @org.springframework.beans.factory.annotation.Value("${app.security.admin-gate.enabled:false}")
+    private boolean adminGateEnabled;
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -60,7 +63,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         var grantedAuthorities = userDetails.getAuthorities();
                         boolean isAdmin = grantedAuthorities.stream()
                                 .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
-                        if (isAdmin && !jwtService.isAdminGateVerified(jwt)) {
+                        if (adminGateEnabled && isAdmin && !jwtService.isAdminGateVerified(jwt)) {
                             // Keep the session authenticated but remove the administrative
                             // authority. This blocks legacy and OAuth-issued admin tokens
                             // from bypassing the new second gate until a gated login occurs.
