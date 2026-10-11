@@ -125,12 +125,17 @@ public class SecurityConfig {
 
     @Bean
     public CsrfTokenRepository csrfTokenRepository(
-            @Value("${app.auth.cookie-secure:false}") boolean secureCookie) {
+            @Value("${app.auth.cookie-secure:false}") boolean secureCookie,
+            @Value("${app.auth.cookie-same-site:Strict}") String sameSite) {
         CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         repository.setCookiePath("/");
+        String effectiveSameSite = sameSite == null || sameSite.isBlank() ? "Strict" : sameSite.trim();
+        if ("None".equalsIgnoreCase(effectiveSameSite) && !secureCookie) {
+            throw new IllegalStateException("SameSite=None requires Secure CSRF cookies");
+        }
         repository.setCookieCustomizer(cookie -> cookie
                 .secure(secureCookie)
-                .sameSite("Strict")
+                .sameSite(effectiveSameSite)
                 .path("/"));
         return repository;
     }
