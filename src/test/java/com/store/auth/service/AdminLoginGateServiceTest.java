@@ -10,7 +10,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AdminLoginGateServiceTest {
 
@@ -44,13 +43,13 @@ class AdminLoginGateServiceTest {
     }
 
     @Test
-    void nonProductionAdminLoginStillWorksWhenGateIsExplicitlyDisabled() {
+    void disabledGateDoesNotCreateGateVerificationProof() {
         ReflectionTestUtils.setField(gate, "enabled", false);
         User user = User.builder()
                 .email("admin@example.invalid")
                 .role(Role.builder().name("ROLE_ADMIN").build())
                 .build();
 
-        assertTrue(gate.verifyIfAdmin(user, new LoginRequest(), "198.51.100.20"));
+        assertFalse(gate.verifyIfAdmin(user, new LoginRequest(), "198.51.100.20"));
     }
 }
