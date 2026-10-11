@@ -66,11 +66,20 @@ class JwtAuthenticationFilterTest {
     @Test
     void keepsAdminAuthorityWhenGateProofIsValidForTheSameUserAndTokenIsNotRevoked() throws Exception {
         existingAdminSession();
-        when(requestWithBearer()).thenReturn(null);
-    }
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
+        when(request.getHeader("Authorization")).thenReturn("Bearer gate-token");
+        when(request.getCookies()).thenReturn(null);
+        when(revocations.isRevoked("gate-token")).thenReturn(false);
+        when(jwtService.isAdminGateVerified("gate-token")).thenReturn(true);
+        when(jwtService.extractUsername("gate-token")).thenReturn("admin@example.invalid");
 
-    private HttpServletRequest requestWithBearer() {
-        return mock(HttpServletRequest.class);
+        filter(true).doFilterInternal(request, response, chain);
+
+        assertTrue(SecurityContextHolder.getContext().getAuthentication().getAuthorities()
+                .stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority())));
+        verify(chain).doFilter(request, response);
     }
 
     @Test
