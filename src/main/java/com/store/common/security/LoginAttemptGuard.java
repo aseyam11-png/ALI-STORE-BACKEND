@@ -67,6 +67,17 @@ public class LoginAttemptGuard {
         }
     }
 
+    /** Clear the failed-attempt history only after the complete login flow succeeds. */
+    public void recordSuccess(String clientIp) {
+        State state = states.get(normalizeKey(clientIp));
+        if (state == null) return;
+        synchronized (state) {
+            state.failures.clear();
+            state.blockedUntil = 0L;
+            state.lastTouchedAt = System.currentTimeMillis();
+        }
+    }
+
     private void removeExpiredFailures(State state, long now) {
         while (!state.failures.isEmpty()
                 && now - state.failures.peekFirst() > FAILURE_WINDOW_MILLIS) {
