@@ -55,6 +55,7 @@ public class AuthController {
             @Valid @RequestBody RegisterRequest request,
             HttpServletResponse servletResponse) {
         AuthResponse response = authService.register(request);
+        loginAttemptGuard.recordSuccess(clientIp);
         writeSessionCookieIfAuthenticated(servletResponse, response);
 
         HttpStatus status = response.isRequiresEmailVerification()
