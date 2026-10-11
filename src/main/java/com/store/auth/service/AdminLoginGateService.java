@@ -63,8 +63,9 @@ public class AdminLoginGateService {
         }
 
         if (!enabled) {
-            // Production profile enables the gate by default. This keeps local development usable.
-            return true;
+            // No secondary proof was completed when the gate is disabled.
+            // Local development authorization is handled by JwtAuthenticationFilter's same flag.
+            return false;
         }
 
         if (isBlank(passwordHash) || isBlank(turnstileSecret) || isBlank(expectedHostname)) {
