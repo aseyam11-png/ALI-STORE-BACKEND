@@ -12,6 +12,6 @@ public class EmailOtpChallengeResponse {
     private boolean requiresEmailVerification;
     private String challengeId;
     private String maskedEmail;
-    private long expiresInSeconds;
+    private Long expiresInSeconds;
     private EmailOtpPurpose purpose;
 }
