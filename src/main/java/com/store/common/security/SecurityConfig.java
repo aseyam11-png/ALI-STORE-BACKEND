@@ -56,6 +56,12 @@ public class SecurityConfig {
             "/api/v1/auth/email/resend"
     );
 
+    // Password recovery can trigger outbound email even for anonymous callers, so it
+    // must prove a same-origin browser request even when no auth/session cookie exists.
+    private static final Set<String> CSRF_REQUIRED_PUBLIC_PATHS = Set.of(
+            "/api/v1/auth/password/forgot"
+    );
+
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final CustomUserDetailsService userDetailsService;
     private final RateLimiter rateLimiter;
@@ -179,6 +185,9 @@ public class SecurityConfig {
         }
 
         String path = request.getRequestURI();
+        if (CSRF_REQUIRED_PUBLIC_PATHS.contains(path)) {
+            return true;
+        }
         if (AUTH_CSRF_EXEMPT_PATHS.contains(path)) {
             return false;
         }
