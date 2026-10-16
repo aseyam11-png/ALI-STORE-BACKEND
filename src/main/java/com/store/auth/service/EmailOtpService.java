@@ -169,7 +169,7 @@ public class EmailOtpService {
                 .requiresEmailVerification(true)
                 .challengeId(challengeId.toString())
                 .maskedEmail(maskEmail(user.getEmail()))
-                .expiresInSeconds(expirationSeconds)
+                .expiresInSeconds((long) expirationSeconds)
                 .purpose(purpose)
                 .build();
     }
