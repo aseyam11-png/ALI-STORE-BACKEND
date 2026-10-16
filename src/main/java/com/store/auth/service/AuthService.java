@@ -208,7 +208,7 @@ public class AuthService {
      */
     @Transactional(noRollbackFor = BusinessException.class)
     public void resetPassword(String challengeId, String code, String newPassword) {
-        UUID parsedChallengeId = parseChallengeId(challengeId);
+        UUID parsedChallengeId = parseChallengeId(challengeId, EmailOtpPurpose.PASSWORD_RESET);
         EmailOtpChallenge challenge = emailOtpService.verifyChallenge(
                 parsedChallengeId, code, EmailOtpPurpose.PASSWORD_RESET);
         User user = challenge.getUser();
@@ -250,10 +250,16 @@ public class AuthService {
     }
 
     private UUID parseChallengeId(String challengeId) {
+        return parseChallengeId(challengeId, null);
+    }
+
+    private UUID parseChallengeId(String challengeId, EmailOtpPurpose purpose) {
         try {
             return UUID.fromString(challengeId);
         } catch (RuntimeException ex) {
-            throw new BusinessException("Invalid or expired verification challenge");
+            throw new BusinessException(purpose == EmailOtpPurpose.PASSWORD_RESET
+                    ? "Invalid or expired password reset request"
+                    : "Invalid or expired verification challenge");
         }
     }
 
