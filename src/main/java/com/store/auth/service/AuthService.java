@@ -165,7 +165,6 @@ public class AuthService {
         return authenticatedResponse(user);
     }
 
-    @Transactional
     public EmailOtpChallengeResponse resendEmailCode(String challengeId) {
         UUID parsedChallengeId = parseChallengeId(challengeId);
         return emailOtpService.resend(parsedChallengeId);
