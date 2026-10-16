@@ -129,6 +129,8 @@ class AuthSecurityRegressionIntegrationTest {
                 unknown.path("data").path("challengeId").asText());
         assertNotEquals("", known.path("data").path("maskedEmail").asText());
         assertNotEquals("", unknown.path("data").path("maskedEmail").asText());
+        assertTrue(known.path("data").path("expiresInSeconds").isNull());
+        assertTrue(unknown.path("data").path("expiresInSeconds").isNull());
 
         verify(emailOtpSender, times(1)).send(
                 eq(existing.getEmail()),
