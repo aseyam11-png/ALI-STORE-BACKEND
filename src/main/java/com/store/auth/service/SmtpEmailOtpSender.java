@@ -3,6 +3,7 @@ package com.store.auth.service;
 import com.store.auth.entity.EmailOtpPurpose;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.core.env.Environment;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -18,6 +19,7 @@ public class SmtpEmailOtpSender implements EmailOtpSender {
     private final JavaMailSender mailSender;
     private final Environment environment;
 
+    @Async("authEmailExecutor")
     @Override
     public void send(String recipient, String code, EmailOtpPurpose purpose, Duration validFor) {
         String from = environment.getProperty("app.mail.from", "");
