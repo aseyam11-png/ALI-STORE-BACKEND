@@ -115,11 +115,12 @@ public class AuthController {
     }
 
     @PostMapping("/password/forgot")
-    public ResponseEntity<ApiResponse<Void>> requestPasswordReset(
+    public ResponseEntity<ApiResponse<EmailOtpChallengeResponse>> requestPasswordReset(
             @Valid @RequestBody PasswordResetRequest request) {
-        authService.requestPasswordReset(request.getEmail());
+        EmailOtpChallengeResponse challenge =
+                authService.requestPasswordReset(request.getEmail());
         return ResponseEntity.accepted().body(ApiResponse.success(
-                null,
+                challenge,
                 "If an account exists for this email, password reset instructions will be sent."));
     }
 
