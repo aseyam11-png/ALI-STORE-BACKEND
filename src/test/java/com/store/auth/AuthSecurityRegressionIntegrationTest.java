@@ -260,7 +260,7 @@ class AuthSecurityRegressionIntegrationTest {
                 "email", email,
                 "password", "Password123");
 
-        String duplicateResponse = mockMvc.perform(post("/api/v1/auth/register")
+        String duplicateResponse = mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isAccepted())
@@ -273,7 +273,7 @@ class AuthSecurityRegressionIntegrationTest {
                 "email", newEmail,
                 "password", "Password123");
 
-        String newResponse = mockMvc.perform(post("/api/v1/auth/register")
+        String newResponse = mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(newRequest)))
                 .andExpect(status().isAccepted())
