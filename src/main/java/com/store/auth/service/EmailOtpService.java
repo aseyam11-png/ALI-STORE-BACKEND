@@ -226,28 +226,34 @@ public class EmailOtpService {
 
     private EmailOtpChallenge verifyChallengeInternal(
             UUID challengeId, String code, EmailOtpPurpose... allowedPurposes) {
+        boolean passwordResetFlow = allowedPurposes != null
+                && Arrays.stream(allowedPurposes).anyMatch(purpose -> purpose == EmailOtpPurpose.PASSWORD_RESET);
         if (code == null || !code.matches("\\d{6}")) {
-            throw new BusinessException("Invalid verification code");
+            throw invalidChallengeException(passwordResetFlow);
         }
 
         EmailOtpChallenge challenge = challengeRepository.findForVerification(challengeId)
-                .orElseThrow(() -> new BusinessException("Invalid or expired verification challenge"));
+                .orElseThrow(() -> invalidChallengeException(passwordResetFlow));
 
         Instant now = Instant.now();
         if (challenge.getRevokedAt() != null
                 || challenge.getConsumedAt() != null
                 || !now.isBefore(challenge.getExpiresAt())) {
-            throw new BusinessException("Invalid or expired verification challenge");
+            throw invalidChallengeException(passwordResetFlow
+                    || challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
         }
 
         if (allowedPurposes != null && allowedPurposes.length > 0
                 && Arrays.stream(allowedPurposes).noneMatch(purpose -> purpose == challenge.getPurpose())) {
-            throw new BusinessException("Invalid or expired verification challenge");
+            throw invalidChallengeException(passwordResetFlow);
         }
 
         if (challenge.getAttemptCount() >= maxAttempts) {
             challenge.setRevokedAt(now);
             challengeRepository.save(challenge);
+            if (challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET) {
+                throw invalidChallengeException(true);
+            }
             throw new BusinessException("Too many invalid verification attempts");
         }
 
@@ -262,7 +268,7 @@ public class EmailOtpService {
                 challenge.setRevokedAt(now);
             }
             challengeRepository.save(challenge);
-            throw new BusinessException("Invalid verification code");
+            throw invalidChallengeException(challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
         }
 
         challenge.setConsumedAt(now);
@@ -292,6 +298,12 @@ public class EmailOtpService {
         }
 
         return issueChallenge(current.getUser(), current.getPurpose());
+    }
+
+    private BusinessException invalidChallengeException(boolean passwordResetFlow) {
+        return new BusinessException(passwordResetFlow
+                ? "Invalid or expired password reset request"
+                : "Invalid or expired verification challenge");
     }
 
     private String generateCode() {
