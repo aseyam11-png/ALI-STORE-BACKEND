@@ -136,6 +136,10 @@ public class EmailOtpService {
                         user.getId(), purpose)
                 .filter(challenge -> challenge.getExpiresAt() != null
                         && now.isBefore(challenge.getExpiresAt()))
+                .filter(challenge -> purpose != EmailOtpPurpose.PASSWORD_RESET
+                        || (challenge.getCreatedAt() != null
+                        && now.isBefore(challenge.getCreatedAt().toInstant(java.time.ZoneOffset.UTC)
+                        .plusSeconds(resendCooldownSeconds))))
                 .map(challenge -> EmailOtpChallengeResponse.builder()
                         .requiresEmailVerification(true)
                         .challengeId(challenge.getChallengeId().toString())
