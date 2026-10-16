@@ -194,7 +194,10 @@ public class AuthService {
         try {
             // Return the challenge ID to the browser regardless of whether the email exists.
             // The code itself is delivered only to the account's address.
-            return emailOtpService.issueChallenge(user, EmailOtpPurpose.PASSWORD_RESET);
+            EmailOtpChallengeResponse response =
+                    emailOtpService.issueChallenge(user, EmailOtpPurpose.PASSWORD_RESET);
+            response.setExpiresInSeconds(null);
+            return response;
         } catch (RuntimeException ex) {
             // Keep the response shape the same on provider failure. The decoy ID cannot
             // validate and no account-existence signal is returned in the response body.
