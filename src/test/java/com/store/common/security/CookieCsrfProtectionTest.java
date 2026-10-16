@@ -54,6 +54,16 @@ class CookieCsrfProtectionTest {
     }
 
     @Test
+    void anonymousPasswordResetRequestWithoutCsrfTokenIsRejected() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"victim@example.com"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void matchingCookieAndHeaderPassCsrfFilterBeforeAuthentication() throws Exception {
         MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
                 .andExpect(status().isNoContent())
