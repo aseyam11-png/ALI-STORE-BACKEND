@@ -85,24 +85,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     && authentication.isAuthenticated()
                     && !(authentication instanceof AnonymousAuthenticationToken)) {
                 Object principal = authentication.getPrincipal();
-                String username = authentication.getName();
-                if (principal instanceof OidcUser oidcUser
-                        && oidcUser.getEmail() != null
-                        && !oidcUser.getEmail().isBlank()) {
-                    username = oidcUser.getEmail();
-                }
-
-                try {
-                    UserDetails current = userDetailsService.loadUserByUsername(username);
-                    boolean enabled = current.isEnabled();
-                    boolean versionMatches = !(principal instanceof AccountVersionAware previous)
-                            || !(current instanceof AccountVersionAware latest)
-                            || previous.getAuthVersion() == latest.getAuthVersion();
-                    if (!enabled || !versionMatches) {
+                // Google OAuth success deliberately creates an encrypted JWT cookie and
+                // invalidates the servlet session. A surviving OIDC-only context has no
+                // account-version claim, so it cannot prove it predates a password reset;
+                // clear it and require the database-checked JWT session instead.
+                if (principal instanceof OidcUser) {
+                    SecurityContextHolder.clearContext();
+                } else {
+                    try {
+                        UserDetails current = userDetailsService.loadUserByUsername(authentication.getName());
+                        boolean enabled = current.isEnabled();
+                        boolean versionMatches = !(principal instanceof AccountVersionAware previous)
+                                || !(current instanceof AccountVersionAware latest)
+                                || previous.getAuthVersion() == latest.getAuthVersion();
+                        if (!enabled || !versionMatches) {
+                            SecurityContextHolder.clearContext();
+                        }
+                    } catch (UsernameNotFoundException ex) {
                         SecurityContextHolder.clearContext();
                     }
-                } catch (UsernameNotFoundException ex) {
-                    SecurityContextHolder.clearContext();
                 }
             }
         }
