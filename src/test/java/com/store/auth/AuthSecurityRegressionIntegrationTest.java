@@ -135,11 +135,36 @@ class AuthSecurityRegressionIntegrationTest {
         assertTrue(known.path("data").path("expiresInSeconds").isNull());
         assertTrue(unknown.path("data").path("expiresInSeconds").isNull());
 
+        ArgumentCaptor<String> issuedCode = ArgumentCaptor.forClass(String.class);
         verify(emailOtpSender, times(1)).send(
                 eq(existing.getEmail()),
-                anyString(),
+                issuedCode.capture(),
                 eq(EmailOtpPurpose.PASSWORD_RESET),
                 any());
+        String wrongCode = "000000".equals(issuedCode.getValue()) ? "000001" : "000000";
+
+        String knownAccountError = mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", known.path("data").path("challengeId").asText(),
+                                "code", wrongCode,
+                                "newPassword", "ChangedPassword123"))))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        String unknownAccountError = mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", unknown.path("data").path("challengeId").asText(),
+                                "code", wrongCode,
+                                "newPassword", "ChangedPassword123"))))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        assertEquals(
+                objectMapper.readTree(knownAccountError).path("message").asText(),
+                objectMapper.readTree(unknownAccountError).path("message").asText(),
+                "Wrong OTP and decoy challenge failures must not reveal whether the account exists");
     }
 
     @Test
