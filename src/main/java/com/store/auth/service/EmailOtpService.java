@@ -223,10 +223,7 @@ public class EmailOtpService {
         if (challenge.getAttemptCount() >= maxAttempts) {
             challenge.setRevokedAt(now);
             challengeRepository.save(challenge);
-            if (challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET) {
-                throw invalidChallengeException(true);
-            }
-            throw new BusinessException("Too many invalid verification attempts");
+            throw invalidChallengeException(challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
         }
 
         boolean valid = MessageDigest.isEqual(
