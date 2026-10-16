@@ -2,6 +2,7 @@ package com.store.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.Cookie;
 import com.store.auth.dto.LoginRequest;
 import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
@@ -25,6 +26,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.Collections;
 import java.util.Map;
@@ -35,7 +38,6 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -284,6 +286,17 @@ class AuthSecurityRegressionIntegrationTest {
                         .email(user.getEmail())
                         .password("Password123")
                         .build()));
+    }
+
+    private MockHttpServletRequestBuilder csrfPost(String path) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        Cookie tokenCookie = result.getResponse().getCookie("XSRF-TOKEN");
+        assertNotNull(tokenCookie, "CSRF bootstrap must issue XSRF-TOKEN");
+        return post(path)
+                .cookie(tokenCookie)
+                .header("X-XSRF-TOKEN", tokenCookie.getValue());
     }
 
     private User createUser(String email) {
