@@ -245,7 +245,6 @@ public class EmailOtpService {
         return challenge;
     }
 
-    @Transactional(noRollbackFor = BusinessException.class)
     public EmailOtpChallengeResponse resend(UUID challengeId) {
         // Do not expose whether a submitted handle belongs to a real email/account.
         // Unknown, expired, consumed, revoked, and cooldown-limited challenges share
