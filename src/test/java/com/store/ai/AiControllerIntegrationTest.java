@@ -11,9 +11,13 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import jakarta.servlet.http.Cookie;
 
 import java.util.Map;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -34,11 +38,20 @@ class AiControllerIntegrationTest {
     @MockBean
     private AiProviderClient aiProviderClient;
 
+    private MockHttpServletRequestBuilder csrfPost(String path) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        Cookie tokenCookie = result.getResponse().getCookie("XSRF-TOKEN");
+        org.junit.jupiter.api.Assertions.assertNotNull(tokenCookie, "CSRF bootstrap must issue XSRF-TOKEN");
+        return post(path).cookie(tokenCookie).header("X-XSRF-TOKEN", tokenCookie.getValue());
+    }
+
     @Test
     void askIsPublicButUnavailableUntilConfigured() throws Exception {
         properties.setEnabled(false);
 
-        mockMvc.perform(post("/api/v1/ai/ask")
+        mockMvc.perform(csrfPost("/api/v1/ai/ask")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("prompt", "هاتف مناسب"))))
                 .andExpect(status().isServiceUnavailable());
@@ -48,7 +61,7 @@ class AiControllerIntegrationTest {
     void askRejectsOversizedPromptAtBoundary() throws Exception {
         String prompt = "x".repeat(1201);
 
-        mockMvc.perform(post("/api/v1/ai/ask")
+        mockMvc.perform(csrfPost("/api/v1/ai/ask")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("prompt", prompt))))
                 .andExpect(status().isBadRequest());
