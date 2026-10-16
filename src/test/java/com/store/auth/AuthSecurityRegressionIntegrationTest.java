@@ -99,6 +99,45 @@ class AuthSecurityRegressionIntegrationTest {
     }
 
     @Test
+    void passwordResetRequestReturnsSamePublicShapeForExistingAndUnknownEmails() throws Exception {
+        User existing = createUser(uniqueEmail("reset-enumeration"));
+        clearInvocations(emailOtpSender);
+
+        String existingJson = mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", existing.getEmail()))))
+                .andExpect(status().isAccepted())
+                .andReturn().getResponse().getContentAsString();
+
+        String unknownEmail = uniqueEmail("missing-reset");
+        String unknownJson = mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", unknownEmail))))
+                .andExpect(status().isAccepted())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode known = objectMapper.readTree(existingJson);
+        JsonNode unknown = objectMapper.readTree(unknownJson);
+        assertEquals(known.path("message").asText(), unknown.path("message").asText());
+        assertEquals(known.path("data").path("requiresEmailVerification").asBoolean(),
+                unknown.path("data").path("requiresEmailVerification").asBoolean());
+        assertEquals("PASSWORD_RESET", known.path("data").path("purpose").asText());
+        assertEquals("PASSWORD_RESET", unknown.path("data").path("purpose").asText());
+        assertTrue(known.path("data").path("challengeId").isTextual());
+        assertTrue(unknown.path("data").path("challengeId").isTextual());
+        assertNotEquals(known.path("data").path("challengeId").asText(),
+                unknown.path("data").path("challengeId").asText());
+        assertNotEquals("", known.path("data").path("maskedEmail").asText());
+        assertNotEquals("", unknown.path("data").path("maskedEmail").asText());
+
+        verify(emailOtpSender, times(1)).send(
+                eq(existing.getEmail()),
+                anyString(),
+                eq(EmailOtpPurpose.PASSWORD_RESET),
+                any());
+    }
+
+    @Test
     void passwordResetConsumesOtpChangesPasswordAndInvalidatesExistingJwt() throws Exception {
         User user = createUser(uniqueEmail("password-reset"));
         String token = tokenFor(user);
