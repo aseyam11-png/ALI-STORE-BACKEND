@@ -183,13 +183,21 @@ public class AuthService {
             return emailOtpService.decoyChallenge(email, EmailOtpPurpose.PASSWORD_RESET);
         }
 
+        // Within the resend cooldown, reuse the still-live challenge handle rather
+        // than returning an unusable decoy to a legitimate account owner.
+        var activeChallenge = emailOtpService.activeChallengeResponse(
+                user, EmailOtpPurpose.PASSWORD_RESET);
+        if (activeChallenge.isPresent()) {
+            return activeChallenge.get();
+        }
+
         try {
             // Return the challenge ID to the browser regardless of whether the email exists.
-            // The code itself is delivered only to the verified account's address.
+            // The code itself is delivered only to the account's address.
             return emailOtpService.issueChallenge(user, EmailOtpPurpose.PASSWORD_RESET);
         } catch (RuntimeException ex) {
-            // Keep the response shape the same on cooldown/provider failure. The decoy ID
-            // cannot validate and no account-existence signal is returned in the body.
+            // Keep the response shape the same on provider failure. The decoy ID cannot
+            // validate and no account-existence signal is returned in the response body.
             log.warn("Password reset could not be issued for an eligible account", ex);
             return emailOtpService.decoyChallenge(email, EmailOtpPurpose.PASSWORD_RESET);
         }
