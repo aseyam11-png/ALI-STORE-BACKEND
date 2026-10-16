@@ -44,6 +44,10 @@ public class AuthService {
     @Transactional
     public AuthResponse register(com.store.auth.dto.RegisterRequest request) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        // Match the expensive password-hashing work for existing and new addresses so
+        // duplicate-registration responses are less distinguishable by request timing.
+        String encodedPassword = passwordEncoder.encode(request.getPassword());
+
         if (userRepository.existsByEmailIgnoreCase(email)) {
             if (emailOtpService.isVerificationEnabled()) {
                 // Use a decoy challenge to keep status, message, and response shape the
@@ -63,7 +67,7 @@ public class AuthService {
                 .firstName(request.getFirstName().trim())
                 .lastName(request.getLastName().trim())
                 .email(email)
-                .password(passwordEncoder.encode(request.getPassword()))
+                .password(encodedPassword)
                 .phoneNumber(request.getPhoneNumber() == null ? null : request.getPhoneNumber().trim())
                 .role(userRole)
                 .isEnabled(true)
