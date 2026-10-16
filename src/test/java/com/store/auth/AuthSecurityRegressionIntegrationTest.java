@@ -85,7 +85,7 @@ class AuthSecurityRegressionIntegrationTest {
         String correctCode = codeCaptor.getValue();
         String wrongCode = "000000".equals(correctCode) ? "000001" : "000000";
 
-        mockMvc.perform(post("/api/v1/auth/password/reset")
+        mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", challenge.getChallengeId().toString(),
@@ -143,7 +143,7 @@ class AuthSecurityRegressionIntegrationTest {
                 any());
         String wrongCode = "000000".equals(issuedCode.getValue()) ? "000001" : "000000";
 
-        String knownAccountError = mockMvc.perform(post("/api/v1/auth/password/reset")
+        String knownAccountError = mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", known.path("data").path("challengeId").asText(),
@@ -152,7 +152,7 @@ class AuthSecurityRegressionIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
 
-        String unknownAccountError = mockMvc.perform(post("/api/v1/auth/password/reset")
+        String unknownAccountError = mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", unknown.path("data").path("challengeId").asText(),
@@ -190,7 +190,7 @@ class AuthSecurityRegressionIntegrationTest {
                         user.getId(), EmailOtpPurpose.PASSWORD_RESET)
                 .orElseThrow();
 
-        mockMvc.perform(post("/api/v1/auth/password/reset")
+        mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", challenge.getChallengeId().toString(),
