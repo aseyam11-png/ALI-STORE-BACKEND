@@ -118,7 +118,7 @@ public class EmailOtpService {
                 .requiresEmailVerification(true)
                 .challengeId(UUID.randomUUID().toString())
                 .maskedEmail(maskEmail(email))
-                .expiresInSeconds(expirationSeconds)
+                .expiresInSeconds(purpose == EmailOtpPurpose.PASSWORD_RESET ? null : (long) expirationSeconds)
                 .purpose(purpose)
                 .build();
     }
@@ -140,8 +140,9 @@ public class EmailOtpService {
                         .requiresEmailVerification(true)
                         .challengeId(challenge.getChallengeId().toString())
                         .maskedEmail(maskEmail(user.getEmail()))
-                        .expiresInSeconds(Math.max(0, challenge.getExpiresAt().getEpochSecond()
-                                - now.getEpochSecond()))
+                        .expiresInSeconds(purpose == EmailOtpPurpose.PASSWORD_RESET
+                                ? null
+                                : Math.max(0, challenge.getExpiresAt().getEpochSecond() - now.getEpochSecond()))
                         .purpose(purpose)
                         .build());
     }
