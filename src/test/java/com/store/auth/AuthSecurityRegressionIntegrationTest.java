@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import com.store.auth.dto.LoginRequest;
+import com.store.auth.dto.EmailOtpChallengeResponse;
 import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.auth.service.AccountUserDetails;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.EmailOtpSender;
+import com.store.auth.service.EmailOtpService;
 import com.store.auth.service.JwtService;
 import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.Role;
@@ -51,6 +53,7 @@ class AuthSecurityRegressionIntegrationTest {
     @Autowired private RoleRepository roleRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private EmailOtpChallengeRepository challengeRepository;
+    @Autowired private EmailOtpService emailOtpService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtService jwtService;
     @Autowired private AuthService authService;
@@ -211,6 +214,37 @@ class AuthSecurityRegressionIntegrationTest {
     }
 
     @Test
+    void invalidLoginOtpAttemptPersistsAfterApiReturnsBadRequest() throws Exception {
+        User user = createUser(uniqueEmail("login-otp-counter"));
+        clearInvocations(emailOtpSender);
+
+        EmailOtpChallengeResponse issued =
+                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(
+                eq(user.getEmail()),
+                codeCaptor.capture(),
+                eq(EmailOtpPurpose.LOGIN),
+                any());
+
+        String actualCode = codeCaptor.getValue();
+        String wrongCode = "000000".equals(actualCode) ? "000001" : "000000";
+
+        mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", issued.getChallengeId(),
+                                "code", wrongCode))))
+                .andExpect(status().isBadRequest());
+
+        EmailOtpChallenge persisted = challengeRepository
+                .findForVerification(UUID.fromString(issued.getChallengeId()))
+                .orElseThrow();
+        assertEquals(1, persisted.getAttemptCount(),
+                "An invalid login OTP must commit attempt_count despite returning an error response");
+    }
+
+    @Test
     void disabledAccountCannotReuseAnUnexpiredJwt() throws Exception {
         User user = createUser(uniqueEmail("disabled-session"));
         String token = tokenFor(user);
@@ -317,6 +351,25 @@ class AuthSecurityRegressionIntegrationTest {
                 objectMapper.readTree(duplicateChallengeError).path("message").asText(),
                 objectMapper.readTree(realChallengeError).path("message").asText(),
                 "A decoy registration challenge and a real challenge with a wrong OTP must fail identically");
+
+        String decoyResendError = mockMvc.perform(csrfPost("/api/v1/auth/email/resend")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", duplicate.path("data").path("challengeId").asText()))))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        String realResendError = mockMvc.perform(csrfPost("/api/v1/auth/email/resend")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", newlyRegistered.path("data").path("challengeId").asText()))))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        assertEquals(
+                objectMapper.readTree(decoyResendError).path("message").asText(),
+                objectMapper.readTree(realResendError).path("message").asText(),
+                "Resend cooldown errors must not disclose whether the challenge identifier exists");
     }
 
     @Test
