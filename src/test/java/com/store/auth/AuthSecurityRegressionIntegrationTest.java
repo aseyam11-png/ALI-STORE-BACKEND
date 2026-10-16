@@ -61,7 +61,7 @@ class AuthSecurityRegressionIntegrationTest {
         User user = createUser(uniqueEmail("otp-counter"));
         clearInvocations(emailOtpSender);
 
-        mockMvc.perform(post("/api/v1/auth/password/forgot")
+        mockMvc.perform(post("/api/v1/auth/password/forgot").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
                 .andExpect(status().isAccepted())
@@ -104,14 +104,14 @@ class AuthSecurityRegressionIntegrationTest {
         User existing = createUser(uniqueEmail("reset-enumeration"));
         clearInvocations(emailOtpSender);
 
-        String existingJson = mockMvc.perform(post("/api/v1/auth/password/forgot")
+        String existingJson = mockMvc.perform(post("/api/v1/auth/password/forgot").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", existing.getEmail()))))
                 .andExpect(status().isAccepted())
                 .andReturn().getResponse().getContentAsString();
 
         String unknownEmail = uniqueEmail("missing-reset");
-        String unknownJson = mockMvc.perform(post("/api/v1/auth/password/forgot")
+        String unknownJson = mockMvc.perform(post("/api/v1/auth/password/forgot").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", unknownEmail))))
                 .andExpect(status().isAccepted())
@@ -146,7 +146,7 @@ class AuthSecurityRegressionIntegrationTest {
         String token = tokenFor(user);
         clearInvocations(emailOtpSender);
 
-        mockMvc.perform(post("/api/v1/auth/password/forgot")
+        mockMvc.perform(post("/api/v1/auth/password/forgot").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
                 .andExpect(status().isAccepted());
