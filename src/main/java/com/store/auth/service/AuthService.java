@@ -172,22 +172,26 @@ public class AuthService {
      * The response body must not disclose whether the address is registered,
      * disabled, or currently inside the resend cooldown.
      */
-    public void requestPasswordReset(String rawEmail) {
-        if (rawEmail == null || rawEmail.isBlank()) {
-            return;
+    public EmailOtpChallengeResponse requestPasswordReset(String rawEmail) {
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase(Locale.ROOT);
+        if (email.isBlank()) {
+            return emailOtpService.decoyChallenge("user@example.com", EmailOtpPurpose.PASSWORD_RESET);
         }
 
-        String email = rawEmail.trim().toLowerCase(Locale.ROOT);
         User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
         if (user == null || !Boolean.TRUE.equals(user.getIsEnabled())) {
-            return;
+            return emailOtpService.decoyChallenge(email, EmailOtpPurpose.PASSWORD_RESET);
         }
 
         try {
-            emailOtpService.issueChallenge(user, EmailOtpPurpose.PASSWORD_RESET);
+            // Return the challenge ID to the browser regardless of whether the email exists.
+            // The code itself is delivered only to the verified account's address.
+            return emailOtpService.issueChallenge(user, EmailOtpPurpose.PASSWORD_RESET);
         } catch (RuntimeException ex) {
-            // Never turn provider failure/cooldown into an account-existence oracle.
+            // Keep the response shape the same on cooldown/provider failure. The decoy ID
+            // cannot validate and no account-existence signal is returned in the body.
             log.warn("Password reset could not be issued for an eligible account", ex);
+            return emailOtpService.decoyChallenge(email, EmailOtpPurpose.PASSWORD_RESET);
         }
     }
 
