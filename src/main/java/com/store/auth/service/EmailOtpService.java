@@ -123,34 +123,6 @@ public class EmailOtpService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
-    public java.util.Optional<EmailOtpChallengeResponse> activeChallengeResponse(
-            User user, EmailOtpPurpose purpose) {
-        if (user == null || user.getId() == null) {
-            return java.util.Optional.empty();
-        }
-
-        Instant now = Instant.now();
-        return challengeRepository
-                .findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
-                        user.getId(), purpose)
-                .filter(challenge -> challenge.getExpiresAt() != null
-                        && now.isBefore(challenge.getExpiresAt()))
-                .filter(challenge -> purpose != EmailOtpPurpose.PASSWORD_RESET
-                        || (challenge.getCreatedAt() != null
-                        && now.isBefore(challenge.getCreatedAt().toInstant(java.time.ZoneOffset.UTC)
-                        .plusSeconds(resendCooldownSeconds))))
-                .map(challenge -> EmailOtpChallengeResponse.builder()
-                        .requiresEmailVerification(true)
-                        .challengeId(challenge.getChallengeId().toString())
-                        .maskedEmail(maskEmail(user.getEmail()))
-                        .expiresInSeconds(purpose == EmailOtpPurpose.PASSWORD_RESET
-                                ? null
-                                : Math.max(0, challenge.getExpiresAt().getEpochSecond() - now.getEpochSecond()))
-                        .purpose(purpose)
-                        .build());
-    }
-
     @Transactional
     public EmailOtpChallengeResponse issueChallenge(User user, EmailOtpPurpose purpose) {
         Instant now = Instant.now();
