@@ -288,6 +288,35 @@ class AuthSecurityRegressionIntegrationTest {
                 newlyRegistered.path("data").path("purpose").asText());
         assertNotEquals(duplicate.path("data").path("challengeId").asText(),
                 newlyRegistered.path("data").path("challengeId").asText());
+
+        ArgumentCaptor<String> issuedCode = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(
+                eq(newEmail),
+                issuedCode.capture(),
+                eq(EmailOtpPurpose.EMAIL_VERIFICATION),
+                any());
+        String wrongCode = "000000".equals(issuedCode.getValue()) ? "000001" : "000000";
+
+        String duplicateChallengeError = mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", duplicate.path("data").path("challengeId").asText(),
+                                "code", wrongCode))))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        String realChallengeError = mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", newlyRegistered.path("data").path("challengeId").asText(),
+                                "code", wrongCode))))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        assertEquals(
+                objectMapper.readTree(duplicateChallengeError).path("message").asText(),
+                objectMapper.readTree(realChallengeError).path("message").asText(),
+                "A decoy registration challenge and a real challenge with a wrong OTP must fail identically");
     }
 
     @Test
