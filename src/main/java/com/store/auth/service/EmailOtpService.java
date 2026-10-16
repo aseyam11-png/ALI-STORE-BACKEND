@@ -6,17 +6,18 @@ import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
 import com.store.user.entity.User;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
@@ -69,6 +70,11 @@ public class EmailOtpService {
                         String.valueOf(DEFAULT_RESEND_COOLDOWN_SECONDS)),
                 DEFAULT_RESEND_COOLDOWN_SECONDS);
 
+        if (isProd() && !verificationEnabled) {
+            throw new IllegalStateException(
+                    "AUTH_EMAIL_VERIFICATION_ENABLED must be true in production to protect registration");
+        }
+
         String configuredSecret = environment.getProperty("AUTH_OTP_HASH_SECRET", "");
         if (!hasText(configuredSecret) && isProd()) {
             throw new IllegalStateException(
@@ -100,6 +106,21 @@ public class EmailOtpService {
 
     public boolean isLoginOtpEnabled() {
         return loginOtpEnabled;
+    }
+
+    /**
+     * Creates the same public response shape used for a real registration challenge,
+     * but does not persist a challenge or send a message. This prevents duplicate
+     * registrations from returning a visibly different status or error.
+     */
+    public EmailOtpChallengeResponse decoyChallenge(String email, EmailOtpPurpose purpose) {
+        return EmailOtpChallengeResponse.builder()
+                .requiresEmailVerification(true)
+                .challengeId(UUID.randomUUID().toString())
+                .maskedEmail(maskEmail(email))
+                .expiresInSeconds(expirationSeconds)
+                .purpose(purpose)
+                .build();
     }
 
     @Transactional
@@ -153,9 +174,31 @@ public class EmailOtpService {
                 .build();
     }
 
-    @Transactional
+    /**
+     * Used by the ordinary email verification/login OTP endpoint. The transaction
+     * deliberately commits BusinessException outcomes because a failed code updates
+     * attempt_count (and can revoke the challenge) immediately before throwing.
+     * There must be no surrounding AuthService transaction that can roll this back.
+     */
+    @Transactional(noRollbackFor = BusinessException.class)
     public EmailOtpChallenge verifyChallenge(UUID challengeId, String code) {
-        if (!code.matches("\\d{6}")) {
+        return verifyChallengeInternal(
+                challengeId, code, EmailOtpPurpose.EMAIL_VERIFICATION, EmailOtpPurpose.LOGIN);
+    }
+
+    /**
+     * Verifies a code for a specific purpose, so e.g. a PASSWORD_RESET code cannot
+     * be consumed by the email-verification endpoint to create a login session.
+     */
+    @Transactional(noRollbackFor = BusinessException.class)
+    public EmailOtpChallenge verifyChallenge(
+            UUID challengeId, String code, EmailOtpPurpose... allowedPurposes) {
+        return verifyChallengeInternal(challengeId, code, allowedPurposes);
+    }
+
+    private EmailOtpChallenge verifyChallengeInternal(
+            UUID challengeId, String code, EmailOtpPurpose... allowedPurposes) {
+        if (code == null || !code.matches("\\d{6}")) {
             throw new BusinessException("Invalid verification code");
         }
 
@@ -166,6 +209,11 @@ public class EmailOtpService {
         if (challenge.getRevokedAt() != null
                 || challenge.getConsumedAt() != null
                 || !now.isBefore(challenge.getExpiresAt())) {
+            throw new BusinessException("Invalid or expired verification challenge");
+        }
+
+        if (allowedPurposes != null && allowedPurposes.length > 0
+                && Arrays.stream(allowedPurposes).noneMatch(purpose -> purpose == challenge.getPurpose())) {
             throw new BusinessException("Invalid or expired verification challenge");
         }
 
@@ -202,6 +250,10 @@ public class EmailOtpService {
         Instant now = Instant.now();
         if (current.getConsumedAt() != null) {
             throw new BusinessException("Verification challenge has already been completed");
+        }
+
+        if (current.getRevokedAt() != null || !now.isBefore(current.getExpiresAt())) {
+            throw new BusinessException("Invalid or expired verification challenge");
         }
 
         if (current.getCreatedAt() != null
@@ -262,7 +314,7 @@ public class EmailOtpService {
     }
 
     private boolean isProd() {
-        return java.util.Arrays.stream(environment.getActiveProfiles())
+        return Arrays.stream(environment.getActiveProfiles())
                 .anyMatch(profile -> "prod".equalsIgnoreCase(profile));
     }
 }

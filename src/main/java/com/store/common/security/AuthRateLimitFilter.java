@@ -15,13 +15,9 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * Request-abuse defense on a small, fixed set of sensitive endpoints. It covers authentication
- * and visual-search traffic without applying a global per-request limit. It is keyed on the raw
- * remote address (never a
- * client-supplied X-Forwarded-* header, which would let an attacker spoof past the limit
- * or frame another client - see SecurityConfig for the equivalent no-trust-forwarded-headers
- * stance). Behind a reverse proxy this keys on the proxy's address unless the deployment
- * configures a trusted forwarding setup; documented as a known limitation.
+ * IP-scoped request-abuse defense for public and sensitive endpoints. Login also has
+ * a database-backed per-account failed-attempt lockout in LoginAttemptService; these
+ * controls are deliberately complementary.
  */
 @RequiredArgsConstructor
 public class AuthRateLimitFilter extends OncePerRequestFilter {
@@ -31,6 +27,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             "/api/v1/auth/register", 10,
             "/api/v1/auth/email/verify", 5,
             "/api/v1/auth/email/resend", 3,
+            "/api/v1/auth/password/forgot", 3,
+            "/api/v1/auth/password/reset",
+            "/api/v1/auth/password/change", 5,
             "/api/v1/visual-search", 5,
             "/api/v1/search/suggestions", 60,
             "/api/v1/ai/ask", 8,

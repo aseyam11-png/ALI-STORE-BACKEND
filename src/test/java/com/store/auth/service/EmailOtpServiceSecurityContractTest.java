@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.transaction.annotation.Transactional;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
@@ -126,10 +128,15 @@ class EmailOtpServiceSecurityContractTest {
         when(challengeRepository.findForVerification(challengeId))
                 .thenReturn(Optional.of(challenge));
 
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(anyString(), codeCaptor.capture(), any(), any());
+        String issuedCode = codeCaptor.getValue();
+        String wrongCode = "000000".equals(issuedCode) ? "000001" : "000000";
+
         for (int attempt = 1; attempt <= 5; attempt++) {
             assertThrows(
                     BusinessException.class,
-                    () -> service.verifyChallenge(challengeId, "000000"));
+                    () -> service.verifyChallenge(challengeId, wrongCode));
         }
 
         assertEquals(5, challenge.getAttemptCount());
@@ -137,7 +144,7 @@ class EmailOtpServiceSecurityContractTest {
 
         assertThrows(
                 BusinessException.class,
-                () -> service.verifyChallenge(challengeId, "000000"));
+                () -> service.verifyChallenge(challengeId, wrongCode));
     }
 
     @Test
@@ -149,9 +156,43 @@ class EmailOtpServiceSecurityContractTest {
         when(challengeRepository.findForVerification(challengeId))
                 .thenReturn(Optional.of(challenge));
 
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(anyString(), codeCaptor.capture(), any(), any());
+        String issuedCode = codeCaptor.getValue();
+        String wrongCode = "123456".equals(issuedCode) ? "123457" : "123456";
+
         assertThrows(
                 BusinessException.class,
-                () -> service.verifyChallenge(challengeId, "123456"));
+                () -> service.verifyChallenge(challengeId, wrongCode));
+    }
+
+    @Test
+    void verifyChallenge_rejectsWrongPurposeWithoutCreatingSession() {
+        UUID challengeId = issueChallengeForVerification();
+        EmailOtpChallenge challenge = capturePersistedChallenge();
+        when(challengeRepository.findForVerification(challengeId))
+                .thenReturn(Optional.of(challenge));
+
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(anyString(), codeCaptor.capture(), any(), any());
+        assertThrows(BusinessException.class, () -> service.verifyChallenge(
+                challengeId, codeCaptor.getValue(), EmailOtpPurpose.PASSWORD_RESET));
+        assertNull(challenge.getConsumedAt());
+    }
+
+    @Test
+    void failedCodeCounterUsesNoRollbackAndAuthServiceHasNoOuterVerificationTransaction() throws Exception {
+        Transactional annotation = EmailOtpService.class
+                .getMethod("verifyChallenge", UUID.class, String.class)
+                .getAnnotation(Transactional.class);
+        assertNotNull(annotation);
+        assertTrue(Arrays.asList(annotation.noRollbackFor()).contains(BusinessException.class));
+
+        Transactional authAnnotation = AuthService.class
+                .getMethod("verifyEmailCode", String.class, String.class)
+                .getAnnotation(Transactional.class);
+        assertNotNull(authAnnotation);
+        assertTrue(Arrays.asList(authAnnotation.noRollbackFor()).contains(BusinessException.class));
     }
 
     @Test

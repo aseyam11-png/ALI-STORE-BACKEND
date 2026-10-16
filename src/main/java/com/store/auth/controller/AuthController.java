@@ -5,6 +5,9 @@ import com.store.auth.dto.EmailOtpChallengeResponse;
 import com.store.auth.dto.EmailOtpResendRequest;
 import com.store.auth.dto.EmailOtpVerificationRequest;
 import com.store.auth.dto.LoginRequest;
+import com.store.auth.dto.PasswordChangeRequest;
+import com.store.auth.dto.PasswordResetConfirmRequest;
+import com.store.auth.dto.PasswordResetRequest;
 import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.AuthSessionCookieService;
@@ -26,6 +29,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Locale;
@@ -56,7 +60,7 @@ public class AuthController {
                 ? HttpStatus.ACCEPTED
                 : HttpStatus.OK;
         String message = response.isRequiresEmailVerification()
-                ? "Verification code sent to your email"
+                ? "If this address can be registered, verification instructions will be sent. Existing accounts can sign in or reset their password."
                 : "User registered successfully";
 
         return ResponseEntity.status(status)
@@ -101,6 +105,54 @@ public class AuthController {
 
         return ResponseEntity.ok(ApiResponse.success(
                 response, "A new verification code was sent to your email"));
+    }
+
+    @GetMapping("/csrf")
+    public ResponseEntity<Void> csrf(CsrfToken csrfToken) {
+        // Materialize the deferred token so CookieCsrfTokenRepository sends XSRF-TOKEN.
+        csrfToken.getToken();
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/password/forgot")
+    public ResponseEntity<ApiResponse<Void>> requestPasswordReset(
+            @Valid @RequestBody PasswordResetRequest request) {
+        authService.requestPasswordReset(request.getEmail());
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                null,
+                "If an account exists for this email, password reset instructions will be sent."));
+    }
+
+    @PostMapping("/password/reset")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @Valid @RequestBody PasswordResetConfirmRequest request,
+            HttpServletResponse servletResponse) {
+        authService.resetPassword(
+                request.getChallengeId(),
+                request.getCode(),
+                request.getNewPassword());
+        servletResponse.addHeader("Set-Cookie", cookieService.clearCookie().toString());
+        return ResponseEntity.ok(ApiResponse.success(
+                null, "Password reset successfully. Please sign in again."));
+    }
+
+    @PostMapping("/password/change")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody PasswordChangeRequest request,
+            HttpServletResponse servletResponse) {
+        if (userDetails == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("Authentication is required"));
+        }
+
+        authService.changePassword(
+                userDetails.getUsername(),
+                request.getCurrentPassword(),
+                request.getNewPassword());
+        servletResponse.addHeader("Set-Cookie", cookieService.clearCookie().toString());
+        return ResponseEntity.ok(ApiResponse.success(
+                null, "Password changed successfully. Please sign in again."));
     }
 
     @GetMapping("/google")

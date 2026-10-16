@@ -26,13 +26,17 @@ public class SmtpEmailOtpSender implements EmailOtpSender {
                     "MAIL_FROM must be configured before sending authentication email");
         }
 
-        String subject = purpose == EmailOtpPurpose.LOGIN
-                ? "ALI STORE - رمز تسجيل الدخول"
-                : "ALI STORE - تأكيد البريد الإلكتروني";
+        String subject = switch (purpose) {
+            case LOGIN -> "ALI STORE - رمز تسجيل الدخول";
+            case PASSWORD_RESET -> "ALI STORE - إعادة تعيين كلمة المرور";
+            case EMAIL_VERIFICATION -> "ALI STORE - تأكيد البريد الإلكتروني";
+        };
 
-        String action = purpose == EmailOtpPurpose.LOGIN
-                ? "إكمال تسجيل الدخول"
-                : "تأكيد البريد الإلكتروني";
+        String action = switch (purpose) {
+            case LOGIN -> "إكمال تسجيل الدخول";
+            case PASSWORD_RESET -> "إعادة تعيين كلمة المرور";
+            case EMAIL_VERIFICATION -> "تأكيد البريد الإلكتروني";
+        };
 
         String text = """
                 مرحبًا،
