@@ -29,7 +29,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.mock.web.MockMultipartFile;
+import jakarta.servlet.http.Cookie;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
@@ -97,6 +100,19 @@ class FoundationIntegrationTest {
                 .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
     }
 
+    private MockHttpServletRequestBuilder withCsrf(MockHttpServletRequestBuilder builder) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        Cookie tokenCookie = result.getResponse().getCookie("XSRF-TOKEN");
+        Assertions.assertNotNull(tokenCookie, "CSRF bootstrap must issue XSRF-TOKEN");
+        return builder.cookie(tokenCookie).header("X-XSRF-TOKEN", tokenCookie.getValue());
+    }
+
+    private MockHttpServletRequestBuilder csrfPost(String path) throws Exception {
+        return withCsrf(post(path));
+    }
+
     private User createUser(String email, Role role) {
         User user = User.builder()
                 .firstName("Test")
@@ -126,7 +142,7 @@ class FoundationIntegrationTest {
 
         ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
 
-        String registrationJson = mockMvc.perform(post("/api/v1/auth/register")
+        String registrationJson = mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(registerBody)))
                 .andExpect(status().isAccepted())
@@ -144,7 +160,7 @@ class FoundationIntegrationTest {
                 org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.EMAIL_VERIFICATION),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
 
-        mockMvc.perform(post("/api/v1/auth/email/verify")
+        mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", challengeId,
@@ -157,7 +173,7 @@ class FoundationIntegrationTest {
         Map<String, String> loginBody = Map.of(
                 "email", "ali@example.com", "password", "Password123");
 
-        String loginJson = mockMvc.perform(post("/api/v1/auth/login")
+        String loginJson = mockMvc.perform(csrfPost("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginBody)))
                 .andExpect(status().isAccepted())
@@ -178,7 +194,7 @@ class FoundationIntegrationTest {
                 org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.LOGIN),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
 
-        mockMvc.perform(post("/api/v1/auth/email/verify")
+        mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", loginChallengeId,
@@ -211,7 +227,7 @@ class FoundationIntegrationTest {
                 "firstName", "Ali", "lastName", "Store", "email", "shortpw@example.com",
                 "password", "Short1", "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register")
+        mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -228,7 +244,7 @@ class FoundationIntegrationTest {
                 "firstName", "Ali", "lastName", "Store", "email", "unicodepw@example.com",
                 "password", password, "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register")
+        mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -240,7 +256,7 @@ class FoundationIntegrationTest {
                 "firstName", "Ali", "lastName", "Store", "email", "validbytepw@example.com",
                 "password", "Password123", "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register")
+        mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isAccepted());
@@ -273,7 +289,7 @@ class FoundationIntegrationTest {
         MockMultipartFile image = new MockMultipartFile(
                 "image", "query.png", "image/png", new byte[]{1, 2, 3});
 
-        mockMvc.perform(multipart("/api/v1/visual-search").file(image))
+        mockMvc.perform(withCsrf(multipart("/api/v1/visual-search")).file(image))
                 .andExpect(status().isUnauthorized());
     }
 
