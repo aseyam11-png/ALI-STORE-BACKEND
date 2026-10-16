@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.auth.service.CustomUserDetailsService;
 import com.store.auth.service.GoogleOAuth2FailureHandler;
 import com.store.auth.service.GoogleOAuth2SuccessHandler;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -37,7 +36,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -66,9 +64,6 @@ public class SecurityConfig {
 
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
-
-    @Value("${app.auth.cookie-name:ali_store_session}")
-    private String authCookieName;
 
     @Value("${app.auth.cookie-secure:false}")
     private boolean csrfCookieSecure;
