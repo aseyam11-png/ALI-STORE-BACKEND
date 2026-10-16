@@ -245,28 +245,31 @@ public class EmailOtpService {
         return challenge;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = BusinessException.class)
     public EmailOtpChallengeResponse resend(UUID challengeId) {
+        // Do not expose whether a submitted handle belongs to a real email/account.
+        // Unknown, expired, consumed, revoked, and cooldown-limited challenges share
+        // the same public error; a genuinely resendable challenge returns a new handle.
         EmailOtpChallenge current = challengeRepository.findForVerification(challengeId)
-                .orElseThrow(() -> new BusinessException("Invalid verification challenge"));
+                .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
 
         Instant now = Instant.now();
-        if (current.getConsumedAt() != null) {
-            throw new BusinessException("Verification challenge has already been completed");
-        }
-
-        if (current.getRevokedAt() != null || !now.isBefore(current.getExpiresAt())) {
-            throw new BusinessException("Invalid or expired verification challenge");
-        }
-
-        if (current.getCreatedAt() != null
+        if (current.getConsumedAt() != null
+                || current.getRevokedAt() != null
+                || !now.isBefore(current.getExpiresAt())
+                || (current.getCreatedAt() != null
                 && now.isBefore(current.getCreatedAt().toInstant(java.time.ZoneOffset.UTC)
-                .plusSeconds(resendCooldownSeconds))) {
-            throw new BusinessException(
-                    "A verification code was already sent. Please wait before requesting another code.");
+                .plusSeconds(resendCooldownSeconds)))) {
+            throw new BusinessException("Verification request is invalid or cannot be resent yet");
         }
 
-        return issueChallenge(current.getUser(), current.getPurpose());
+        try {
+            return issueChallenge(current.getUser(), current.getPurpose());
+        } catch (RuntimeException ex) {
+            // Normalize cooldown/provider failures so the endpoint cannot become an
+            // account-existence oracle when a user submits a decoy challenge handle.
+            throw new BusinessException("Verification request is invalid or cannot be resent yet");
+        }
     }
 
     private BusinessException invalidChallengeException(boolean passwordResetFlow) {
