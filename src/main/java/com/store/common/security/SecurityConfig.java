@@ -49,17 +49,11 @@ import java.util.function.Supplier;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private static final Set<String> AUTH_CSRF_EXEMPT_PATHS = Set.of(
-            "/api/v1/auth/login",
-            "/api/v1/auth/register",
-            "/api/v1/auth/email/verify",
-            "/api/v1/auth/email/resend"
-    );
-
-    // Password recovery can trigger outbound email even for anonymous callers, so it
-    // must prove a same-origin browser request even when no auth/session cookie exists.
-    private static final Set<String> CSRF_REQUIRED_PUBLIC_PATHS = Set.of(
-            "/api/v1/auth/password/forgot"
+    // This machine-to-machine webhook authenticates with its dedicated supplier secret.
+    // All browser-originated unsafe requests, including anonymous login/register/reset flows,
+    // require the XSRF cookie/header pair; non-browser Bearer clients are exempt in the matcher.
+    private static final Set<String> CSRF_EXEMPT_PATHS = Set.of(
+            "/api/v1/integrations/suppliers/shipments/update"
     );
 
     private final JwtAuthenticationFilter jwtAuthFilter;
@@ -169,11 +163,10 @@ public class SecurityConfig {
     }
 
     /**
-     * Protect unsafe requests authenticated by the browser session cookie. Bearer-token
-     * API clients do not rely on ambient browser cookies and do not need CSRF tokens.
-     * These four public auth endpoints intentionally remain exempt to preserve the
-     * frontend's current login/registration flow; cookie-authenticated account mutations
-     * such as logout, cart and order operations require a valid XSRF cookie/header pair.
+     * Require CSRF for every unsafe browser request, not just requests carrying an
+     * existing session cookie. This also prevents login-CSRF and anonymous password-reset
+     * email triggers. Server-to-server Bearer clients and the secret-authenticated supplier
+     * webhook are exempt from browser CSRF tokens.
      */
     private boolean requiresCsrfProtection(HttpServletRequest request) {
         String method = request.getMethod();
@@ -184,11 +177,7 @@ public class SecurityConfig {
             return false;
         }
 
-        String path = request.getRequestURI();
-        if (CSRF_REQUIRED_PUBLIC_PATHS.contains(path)) {
-            return true;
-        }
-        if (AUTH_CSRF_EXEMPT_PATHS.contains(path)) {
+        if (CSRF_EXEMPT_PATHS.contains(request.getRequestURI())) {
             return false;
         }
 
@@ -198,14 +187,7 @@ public class SecurityConfig {
             return false;
         }
 
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return false;
-        }
-        return Arrays.stream(cookies)
-                .anyMatch(cookie -> (authCookieName.equals(cookie.getName())
-                        || "JSESSIONID".equals(cookie.getName()))
-                        && StringUtils.hasText(cookie.getValue()));
+        return true;
     }
 
     @Bean
