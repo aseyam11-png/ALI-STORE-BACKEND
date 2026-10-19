@@ -126,7 +126,8 @@ public class AskAliService {
                 continue;
             }
 
-            if (CURRENCY_WORDS.contains(normalized) || STOP_WORDS.contains(normalized) || normalized.equals("في")) continue;
+            if (CURRENCY_WORDS.contains(normalized) || STOP_WORDS.contains(normalized) || normalized.equals("في")
+                    || MAX_WORDS.contains(normalized) || MIN_WORDS.contains(normalized)) continue;
             if (isPriceConnector(normalized) || normalized.equals("المخزون") || normalized.equals("stock")) continue;
             queryTokens.add(normalized);
         }
