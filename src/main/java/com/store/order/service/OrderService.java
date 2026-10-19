@@ -221,7 +221,7 @@ public class OrderService {
     public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        Page<OrderResponse> page = orderRepository.findByUserId(user.getId(), pageable).map(this::mapToResponse);
+        Page<OrderResponse> page = mapOrderPage(orderRepository.findByUserId(user.getId(), pageable));
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
@@ -243,7 +243,7 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public PageResponse<OrderResponse> getAllOrdersForAdmin(Pageable pageable) {
-        Page<OrderResponse> page = orderRepository.findAll(pageable).map(this::mapToResponse);
+        Page<OrderResponse> page = mapOrderPage(orderRepository.findAll(pageable));
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
@@ -324,7 +324,26 @@ public class OrderService {
         order.getItems().forEach(item -> inventoryService.releaseReservedStock(item.getId()));
     }
 
+    private Page<OrderResponse> mapOrderPage(Page<Order> orders) {
+        List<Long> orderIds = orders.getContent().stream().map(Order::getId).toList();
+        if (orderIds.isEmpty()) return orders.map(order -> mapToResponse(order, List.of()));
+
+        Map<Long, List<ShipmentSummaryResponse>> shipmentsByOrder = shipmentRepository
+                .findByOrderIdInOrderByOrderIdAscIdAsc(orderIds).stream()
+                .map(shipment -> Map.entry(shipment.getOrderId(), mapShipment(shipment)))
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        return orders.map(order -> mapToResponse(order,
+                shipmentsByOrder.getOrDefault(order.getId(), List.of())));
+    }
+
     private OrderResponse mapToResponse(Order order) {
+        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
+                .stream().map(this::mapShipment).collect(Collectors.toList());
+        return mapToResponse(order, shipmentResponses);
+    }
+
+    private OrderResponse mapToResponse(Order order, List<ShipmentSummaryResponse> shipmentResponses) {
         List<OrderItemResponse> itemResponses = order.getItems().stream().map(item ->
                 OrderItemResponse.builder()
                         .id(item.getId())
@@ -335,10 +354,6 @@ public class OrderService {
                         .subTotal(item.getSubtotal())
                         .build()
         ).collect(Collectors.toList());
-
-        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
-                .stream().map(this::mapShipment)
-                .collect(Collectors.toList());
 
         return OrderResponse.builder()
                 .id(order.getId())
