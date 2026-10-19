@@ -113,8 +113,7 @@ public class FulfillmentTaskProcessor {
         order.getItems().stream()
                 .filter(item -> item.getSupplier() != null
                         && item.getSupplier().getId().equals(shipment.getSupplier().getId()))
-                .forEach(item -> inventoryService.commitReservedStock(
-                        item.getProduct().getId(), item.getQuantity()));
+                .forEach(item -> inventoryService.commitReservedStock(item.getId()));
 
         task.setStatus(FulfillmentTaskStatus.SUCCEEDED);
         task.setLastError(null);
