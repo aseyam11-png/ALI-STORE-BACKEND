@@ -56,6 +56,7 @@ public class Order extends BaseEntity {
     @Column(name = "reservation_expires_at")
     private java.time.LocalDateTime reservationExpiresAt;
 
+    @BatchSize(size = 32)
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
