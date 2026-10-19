@@ -19,6 +19,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -46,6 +50,27 @@ public class InventoryService {
         Inventory inventory = inventoryRepository.findByProductId(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product id: " + productId));
         return mapToResponse(inventory);
+    }
+
+    public java.util.Optional<Inventory> findInventoryEntity(Long productId) {
+        return inventoryRepository.findByProductId(productId);
+    }
+
+    public Map<Long, Inventory> getInventoriesByProductIds(Collection<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) return Map.of();
+        return inventoryRepository.findAllByProductIdIn(productIds).stream()
+                .collect(Collectors.toMap(inv -> inv.getProduct().getId(), Function.identity(), (left, right) -> left));
+    }
+
+    public PublicAvailability getPublicAvailability(Inventory inventory) {
+        if (inventory == null || !isKnown(inventory)) return PublicAvailability.UNKNOWN;
+        return inventory.getQuantity() - inventory.getReservedQuantity() > 0
+                ? PublicAvailability.IN_STOCK : PublicAvailability.OUT_OF_STOCK;
+    }
+
+    public int getAvailableQuantity(Inventory inventory) {
+        if (inventory == null || !isKnown(inventory)) return 0;
+        return Math.max(0, inventory.getQuantity() - inventory.getReservedQuantity());
     }
 
     public int getAvailableQuantity(Long productId) {
