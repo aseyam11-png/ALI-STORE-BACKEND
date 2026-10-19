@@ -13,7 +13,7 @@ class VisualSearchServiceTest {
                 repository,
                 Mockito.mock(VisualImageHashService.class),
                 Mockito.mock(SecureImageFetcher.class),
-                new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024));
+                new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024,60));
 
         MockMultipartFile file=new MockMultipartFile(
                 "image","payload.svg","image/svg+xml","<svg/>".getBytes());
@@ -28,7 +28,7 @@ class VisualSearchServiceTest {
                 repository,
                 Mockito.mock(VisualImageHashService.class),
                 Mockito.mock(SecureImageFetcher.class),
-                new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024));
+                new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024,60));
 
         byte[] payload=new byte[10*1024*1024+1];
         MockMultipartFile file=new MockMultipartFile("image","large.jpg","image/jpeg",payload);
