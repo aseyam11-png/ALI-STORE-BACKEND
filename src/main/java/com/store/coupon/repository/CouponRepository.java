@@ -34,7 +34,7 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
             "WHERE c.id = :id AND (c.usageLimit IS NULL OR c.timesUsed < c.usageLimit)")
     int tryRedeem(Long id);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying(clearAutomatically = false, flushAutomatically = true)
     @Query("UPDATE Coupon c SET c.timesUsed = c.timesUsed - 1 WHERE c.id = :id AND c.timesUsed > 0")
     int releaseRedemption(Long id);
 }
