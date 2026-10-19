@@ -65,6 +65,11 @@ public class FulfillmentService {
     }
 
     @Transactional
+    public void cancelPendingTasksForOrder(Long orderId) {
+        taskRepository.cancelPendingForOrder(orderId);
+    }
+
+    @Transactional
     public void recoverStaleProcessingTasks() {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(15);
         List<FulfillmentTask> tasks = taskRepository
