@@ -4,5 +4,7 @@ public enum FulfillmentTaskStatus {
     PENDING,
     PROCESSING,
     SUCCEEDED,
-    FAILED
+    FAILED,
+    CANCELLED,
+    RECONCILIATION_REQUIRED
 }
