@@ -10,6 +10,7 @@ import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.PageResponse;
 import com.store.common.util.SlugUtils;
 import com.store.inventory.enums.PublicAvailability;
+import com.store.inventory.entity.Inventory;
 import com.store.inventory.service.InventoryService;
 import com.store.product.dto.ProductAdminResponse;
 import com.store.product.dto.ProductRequest;
@@ -141,7 +142,11 @@ public class ProductService {
         }
 
         Pageable pageable = PageRequest.of(page, pageSize, resolveSort(sort));
-        Page<ProductResponse> results = productRepository.findAll(spec, pageable).map(this::mapToResponse);
+        Page<Product> productPage = productRepository.findAll(spec, pageable);
+        java.util.Map<Long, Inventory> inventoryByProductId = inventoryService.getInventoriesByProductIds(
+                productPage.getContent().stream().map(Product::getId).toList());
+        Page<ProductResponse> results = productPage.map(product ->
+                mapToResponse(product, inventoryByProductId.get(product.getId())));
         return toPageResponse(results);
     }
 
@@ -252,13 +257,17 @@ public class ProductService {
     }
 
     private ProductResponse mapToResponse(Product product) {
+        return mapToResponse(product, inventoryService.findInventoryEntity(product.getId()).orElse(null));
+    }
+
+    private ProductResponse mapToResponse(Product product, Inventory inventory) {
         List<String> imageUrls = product.getImages().stream().sorted(Comparator.comparing(ProductImage::getSortOrder)).map(ProductImage::getUrl).collect(Collectors.toList());
         String primaryImageUrl = product.getImages().stream().filter(ProductImage::getIsPrimary).map(ProductImage::getUrl).findFirst().orElse(imageUrls.isEmpty() ? null : imageUrls.get(0));
         return ProductResponse.builder()
                 .id(product.getId()).name(product.getName()).slug(product.getSlug()).description(product.getDescription())
                 .price(product.getPrice()).currency(product.getCurrency()).sku(product.getSku()).status(product.getStatus())
-                .availability(inventoryService.getPublicAvailability(product.getId()))
-                .availableQuantity(inventoryService.getAvailableQuantity(product.getId()))
+                .availability(inventoryService.getPublicAvailability(inventory))
+                .availableQuantity(inventoryService.getAvailableQuantity(inventory))
                 .categoryId(product.getCategory().getId()).categoryName(product.getCategory().getName())
                 .categorySlug(product.getCategory().getSlug())
                 .brandId(product.getBrand() != null ? product.getBrand().getId() : null)
