@@ -20,6 +20,21 @@ CREATE TABLE IF NOT EXISTS inventory_reservations (
 CREATE INDEX IF NOT EXISTS idx_inventory_reservations_product_status
     ON inventory_reservations(product_id, status);
 
+-- Preserve ownership for active orders that predate this reservation ledger.
+INSERT INTO inventory_reservations(order_item_id, product_id, quantity, status)
+SELECT oi.id, oi.product_id, oi.quantity, 'RESERVED'
+FROM order_items oi
+JOIN orders o ON o.id = oi.order_id
+WHERE o.status IN ('PENDING', 'PROCESSING')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM shipments s
+      JOIN fulfillment_tasks t ON t.shipment_id = s.id
+      WHERE s.order_id = o.id
+        AND s.supplier_id = oi.supplier_id
+        AND t.status = 'SUCCEEDED'
+  );
+
 CREATE INDEX IF NOT EXISTS idx_orders_pending_reservation_expiry
     ON orders(status, reservation_expires_at)
     WHERE status = 'PENDING';
