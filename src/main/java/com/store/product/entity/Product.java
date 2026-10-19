@@ -7,12 +7,14 @@ import com.store.product.enums.ProductStatus;
 import com.store.supplier.entity.Supplier;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@BatchSize(size = 32)
 @Table(name = "products")
 @Getter
 @Setter
@@ -62,6 +64,7 @@ public class Product extends BaseEntity {
     @Column(name = "supplier_cost", precision = 10, scale = 2)
     private BigDecimal supplierCost;
 
+    @BatchSize(size = 32)
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<ProductImage> images = new ArrayList<>();
