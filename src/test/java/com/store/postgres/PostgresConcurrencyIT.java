@@ -15,6 +15,8 @@ import com.store.supplier.entity.Supplier;
 import com.store.supplier.repository.SupplierRepository;
 import com.store.inventory.enums.InventorySource;
 import com.store.order.repository.OrderRepository;
+import com.store.order.entity.OrderStatus;
+import com.store.order.service.OrderService;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -105,6 +107,7 @@ class PostgresConcurrencyIT {
     @Autowired private InventoryRepository inventoryRepository;
     @Autowired private CouponRepository couponRepository;
     @Autowired private OrderRepository orderRepository;
+    @Autowired private OrderService orderService;
 
     private Role userRole() {
         return roleRepository.findByName("ROLE_USER")
@@ -145,6 +148,48 @@ class PostgresConcurrencyIT {
         // is itself the verification. Confirms real PostgreSQL syntax compatibility (this
         // repo's migrations were previously only exercised via H2's PostgreSQL-compat mode).
         Assertions.assertTrue(postgres.isRunning());
+    }
+
+    @Test
+    void cancellationAgainstRealPostgres_releasesOnlyTheOwningOrderLineReservation() throws Exception {
+        User first = createUser("reservation-owner-a-pg@example.com");
+        User second = createUser("reservation-owner-b-pg@example.com");
+        Product product = productWithStock("OWNED-PG-RES-1", 10);
+
+        for (var entry : List.of(
+                new java.util.AbstractMap.SimpleEntry<>(first, 3),
+                new java.util.AbstractMap.SimpleEntry<>(second, 4))) {
+            mockMvc.perform(post("/api/v1/cart/items")
+                            .header("Authorization", "Bearer " + tokenFor(entry.getKey()))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "productId", product.getId(), "quantity", entry.getValue()))))
+                    .andExpect(status().isOk());
+        }
+
+        String firstJson = mockMvc.perform(post("/api/v1/orders")
+                        .header("Authorization", "Bearer " + tokenFor(first))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Address A"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String secondJson = mockMvc.perform(post("/api/v1/orders")
+                        .header("Authorization", "Bearer " + tokenFor(second))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Address B"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        long firstOrderId = objectMapper.readTree(firstJson).path("data").path("id").asLong();
+        long secondOrderId = objectMapper.readTree(secondJson).path("data").path("id").asLong();
+        Assertions.assertEquals(7, inventoryRepository.findByProductId(product.getId()).orElseThrow().getReservedQuantity());
+
+        orderService.updateOrderStatus(firstOrderId, OrderStatus.CANCELLED);
+
+        Assertions.assertEquals(4,
+                inventoryRepository.findByProductId(product.getId()).orElseThrow().getReservedQuantity(),
+                "cancelling one order must not release another order's reserved quantity");
+        Assertions.assertEquals(OrderStatus.PENDING, orderRepository.findById(secondOrderId).orElseThrow().getStatus());
     }
 
     @Test
