@@ -156,7 +156,6 @@ public class OrderService {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
 
-            inventoryService.reserveStock(product.getId(), cartItem.getQuantity());
 
             BigDecimal unitPrice = product.getPrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
@@ -175,6 +174,9 @@ public class OrderService {
 
         order.setItems(orderItems);
         Order savedOrder = orderRepository.save(order);
+        for (OrderItem item : savedOrder.getItems()) {
+            inventoryService.reserveStock(item.getProduct().getId(), item.getQuantity(), item.getId());
+        }
         cartItemRepository.deleteAll(cartItems);
         return mapToResponse(savedOrder);
     }
@@ -209,6 +211,8 @@ public class OrderService {
 
     private void expireOrderReservation(Order order) {
         releaseOrderReservations(order);
+        fulfillmentService.cancelPendingTasksForOrder(order.getId());
+        couponService.releaseRedemption(order.getCouponCode());
         order.setStatus(OrderStatus.CANCELLED);
         orderRepository.save(order);
     }
@@ -284,6 +288,8 @@ public class OrderService {
 
         if (newStatus == OrderStatus.CANCELLED) {
             releaseOrderReservations(order);
+            fulfillmentService.cancelPendingTasksForOrder(orderId);
+            couponService.releaseRedemption(order.getCouponCode());
         }
 
         order.setStatus(newStatus);
@@ -307,20 +313,12 @@ public class OrderService {
 
     @Transactional
     public void commitOrderReservations(Order order) {
-        order.getItems().forEach(item ->
-                inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity()));
+        order.getItems().forEach(item -> inventoryService.commitReservedStock(item.getId()));
     }
 
     @Transactional
     public void releaseOrderReservations(Order order) {
-        order.getItems().forEach(item -> {
-            try {
-                inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
-            } catch (BusinessException ignored) {
-                // Reservation may already have been committed after supplier acceptance.
-                // Cancellation must not corrupt inventory a second time.
-            }
-        });
+        order.getItems().forEach(item -> inventoryService.releaseReservedStock(item.getId()));
     }
 
     private OrderResponse mapToResponse(Order order) {
