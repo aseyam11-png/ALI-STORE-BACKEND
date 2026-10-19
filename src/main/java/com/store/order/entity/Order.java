@@ -4,12 +4,14 @@ import com.store.common.entity.BaseEntity;
 import com.store.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@BatchSize(size = 32)
 @Table(name = "orders", uniqueConstraints = {
         @UniqueConstraint(name = "uk_orders_user_idempotency_key", columnNames = {"user_id", "idempotency_key"})
 })
