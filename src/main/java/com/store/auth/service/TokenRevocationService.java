@@ -2,6 +2,7 @@ package com.store.auth.service;
 
 import com.store.auth.entity.RevokedToken;
 import com.store.auth.repository.RevokedTokenRepository;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -23,22 +24,24 @@ public class TokenRevocationService {
     public void revoke(String token) {
         if (token == null || token.isBlank()) return;
 
+        final LocalDateTime expiresAt;
         try {
-            LocalDateTime expiresAt = jwtService.extractExpiration(token)
+            expiresAt = jwtService.extractExpiration(token)
                     .toInstant().atZone(ZoneOffset.UTC).toLocalDateTime();
-            LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-            if (!expiresAt.isAfter(now)) return;
+        } catch (JwtException | IllegalArgumentException ignored) {
+            return;
+        }
 
-            String hash = sha256(token);
-            if (!repository.existsByTokenHashAndExpiresAtAfter(hash, now)) {
-                repository.save(RevokedToken.builder()
-                        .tokenHash(hash)
-                        .expiresAt(expiresAt)
-                        .revokedAt(now)
-                        .build());
-            }
-        } catch (RuntimeException ignored) {
-            // Logout remains idempotent even when the supplied token is already invalid.
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        if (!expiresAt.isAfter(now)) return;
+        String hash = sha256(token);
+        if (!repository.existsByTokenHashAndExpiresAtAfter(hash, now)) {
+            // A persistence failure must not be disguised as successful logout.
+            repository.save(RevokedToken.builder()
+                    .tokenHash(hash)
+                    .expiresAt(expiresAt)
+                    .revokedAt(now)
+                    .build());
         }
     }
 
