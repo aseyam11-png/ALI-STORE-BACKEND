@@ -20,6 +20,10 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+import jakarta.servlet.http.Cookie;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -49,10 +53,32 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
 
+    @Value("${app.auth.cookie-name:ali_store_session}")
+    private String authCookieName;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder) throws Exception {
+        RequestMatcher csrfMatcher = request -> {
+            String method = request.getMethod();
+            if ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method)
+                    || "TRACE".equalsIgnoreCase(method) || "OPTIONS".equalsIgnoreCase(method)) {
+                return false;
+            }
+            if (request.getRequestURI().startsWith("/api/v1/auth/")) return true;
+            Cookie[] cookies = request.getCookies();
+            if (cookies != null) {
+                for (Cookie cookie : cookies) {
+                    if (authCookieName.equals(cookie.getName())) return true;
+                }
+            }
+            return false;
+        };
+
         http
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        .requireCsrfProtectionMatcher(csrfMatcher))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(exceptions -> exceptions
                         .defaultAuthenticationEntryPointFor(
@@ -63,6 +89,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/logout",
+                                "/api/v1/auth/csrf",
                                 "/api/v1/auth/email/verify",
                                 "/api/v1/auth/email/resend",
                                 "/api/v1/auth/google",
@@ -110,7 +137,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-XSRF-TOKEN"));
         configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(List.of("Retry-After"));
         configuration.setMaxAge(3600L);
