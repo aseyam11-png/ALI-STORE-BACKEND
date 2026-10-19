@@ -217,6 +217,7 @@ public class OrderService {
         orderRepository.save(order);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -225,6 +226,7 @@ public class OrderService {
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
 
+    @Transactional(readOnly = true)
     public OrderResponse getOrderById(String email, Long orderId) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -239,6 +241,7 @@ public class OrderService {
         return mapToResponse(order);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<OrderResponse> getAllOrdersForAdmin(Pageable pageable) {
         Page<OrderResponse> page = orderRepository.findAll(pageable).map(this::mapToResponse);
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
