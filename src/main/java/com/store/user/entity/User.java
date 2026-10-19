@@ -36,6 +36,13 @@ public class User extends BaseEntity {
     @Builder.Default
     private Boolean emailVerified = true;
 
+    @Column(name = "failed_login_attempts", nullable = false)
+    @Builder.Default
+    private Integer failedLoginAttempts = 0;
+
+    @Column(name = "locked_until")
+    private java.time.LocalDateTime lockedUntil;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
