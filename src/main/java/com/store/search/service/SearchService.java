@@ -184,9 +184,18 @@ public class SearchService {
 
     private String normalize(String value) {
         if (value == null) return "";
-        return value.trim()
-                .replaceAll("\\s+", " ")
-                .toLowerCase(Locale.ROOT);
+        String input = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < input.length(); i++) {
+            char ch = input.charAt(i);
+            if (ch >= '\\u0660' && ch <= '\\u0669') ch = (char) ('0' + (ch - '\\u0660'));
+            else if (ch >= '\\u06F0' && ch <= '\\u06F9') ch = (char) ('0' + (ch - '\\u06F0'));
+            if (ch == '\\u0640' || (ch >= '\\u064B' && ch <= '\\u065F')) continue;
+            if (ch == 'أ' || ch == 'إ' || ch == 'آ' || ch == 'ٱ') ch = 'ا';
+            else if (ch == 'ى') ch = 'ي';
+            out.append(ch);
+        }
+        return out.toString().trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private String join(String left, String right) {
