@@ -28,6 +28,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
@@ -121,8 +122,9 @@ class FoundationIntegrationTest {
 
     @Test
     void registerThenLogin_requiresEmailOtpBeforeIssuingSession() throws Exception {
+        String testEmail = "otp-flow-" + java.util.UUID.randomUUID() + "@example.com";
         Map<String, String> registerBody = Map.of(
-                "firstName", "Ali", "lastName", "Store", "email", "ali@example.com",
+                "firstName", "Ali", "lastName", "Store", "email", testEmail,
                 "password", "Password123", "phoneNumber", "0599000000");
 
         ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
@@ -140,10 +142,15 @@ class FoundationIntegrationTest {
                 .path("data").path("challengeId").asText();
 
         verify(emailOtpSender).send(
-                org.mockito.ArgumentMatchers.eq("ali@example.com"),
+                org.mockito.ArgumentMatchers.eq(testEmail),
                 codeCaptor.capture(),
                 org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.EMAIL_VERIFICATION),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
+
+        // The verification service uses REQUIRES_NEW to commit invalid-attempt counters.
+        // Commit the registration transaction first so the independent transaction can see it.
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
 
         mockMvc.perform(post("/api/v1/auth/email/verify").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -156,7 +163,7 @@ class FoundationIntegrationTest {
         clearInvocations(emailOtpSender);
 
         Map<String, String> loginBody = Map.of(
-                "email", "ali@example.com", "password", "Password123");
+                "email", testEmail, "password", "Password123");
 
         String loginJson = mockMvc.perform(post("/api/v1/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
