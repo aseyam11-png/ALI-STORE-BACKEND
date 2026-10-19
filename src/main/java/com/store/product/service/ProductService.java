@@ -118,6 +118,7 @@ public class ProductService {
         return mapToAdminResponse(saved);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<ProductResponse> searchProducts(String q, Long categoryId, Long brandId,
                                                          BigDecimal minPrice, BigDecimal maxPrice,
                                                          PublicAvailability availability, String sort,
@@ -154,6 +155,7 @@ public class ProductService {
         };
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
         return productRepository.findById(id)
                 .filter(p -> p.getStatus() == ProductStatus.ACTIVE)
@@ -161,16 +163,19 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
     }
 
+    @Transactional(readOnly = true)
     public ProductResponse getProductBySlug(String slug) {
         return productRepository.findBySlugAndStatusIn(slug, List.of(ProductStatus.ACTIVE))
                 .map(this::mapToResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with slug: " + slug));
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<ProductAdminResponse> getAllForAdmin(Pageable pageable) {
         return toAdminPageResponse(productRepository.findAll(pageable).map(this::mapToAdminResponse));
     }
 
+    @Transactional(readOnly = true)
     public ProductAdminResponse getForAdmin(Long id) {
         return mapToAdminResponse(productRepository.findById(id).orElseThrow(() ->
                 new ResourceNotFoundException("Product not found with id: " + id)));
