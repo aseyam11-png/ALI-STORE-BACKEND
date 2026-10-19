@@ -12,6 +12,7 @@ import java.util.Optional;
 @Repository
 public interface InventoryRepository extends JpaRepository<Inventory, Long> {
     Optional<Inventory> findByProductId(Long productId);
+    java.util.List<Inventory> findAllByProductIdIn(java.util.Collection<Long> productIds);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from Inventory i join fetch i.product where i.product.id = :productId")
