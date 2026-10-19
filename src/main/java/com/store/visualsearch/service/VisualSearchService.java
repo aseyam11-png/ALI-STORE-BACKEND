@@ -11,6 +11,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.*;
@@ -23,6 +24,7 @@ public class VisualSearchService {
     private static final long SUCCESS_CACHE_TTL_MS = 6 * 60 * 60 * 1000L;
     private static final long FAILURE_CACHE_TTL_MS = 2 * 60 * 1000L;
     private final ProductRepository productRepository;
+    private final VisualSearchCandidateService candidateService;
     private final VisualImageHashService imageHashService;
     private final SecureImageFetcher imageFetcher;
     private final VisualSearchProperties properties;
@@ -30,8 +32,16 @@ public class VisualSearchService {
 
     public VisualSearchService(ProductRepository productRepository,VisualImageHashService imageHashService,
                                SecureImageFetcher imageFetcher,VisualSearchProperties properties){
-        this.productRepository=productRepository;this.imageHashService=imageHashService;
+        this.productRepository=productRepository;this.candidateService=null;this.imageHashService=imageHashService;
         this.imageFetcher=imageFetcher;this.properties=properties;
+    }
+
+    @Autowired
+    public VisualSearchService(ProductRepository productRepository,VisualSearchCandidateService candidateService,
+                               VisualImageHashService imageHashService,SecureImageFetcher imageFetcher,
+                               VisualSearchProperties properties){
+        this.productRepository=productRepository;this.candidateService=candidateService;
+        this.imageHashService=imageHashService;this.imageFetcher=imageFetcher;this.properties=properties;
     }
 
     public List<VisualSearchResult> search(MultipartFile image){
