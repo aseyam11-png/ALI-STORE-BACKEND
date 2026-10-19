@@ -16,6 +16,8 @@ import com.store.user.dto.MeResponse;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
+import org.springframework.security.web.csrf.CsrfToken;
+import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -44,6 +46,15 @@ public class AuthController {
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
+
+    @GetMapping("/csrf")
+    public ResponseEntity<ApiResponse<Map<String, String>>> csrf(CsrfToken csrfToken) {
+        Map<String, String> data = Map.of(
+                "headerName", csrfToken.getHeaderName(),
+                "parameterName", csrfToken.getParameterName(),
+                "token", csrfToken.getToken());
+        return ResponseEntity.ok(ApiResponse.success(data, "CSRF token issued"));
+    }
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
