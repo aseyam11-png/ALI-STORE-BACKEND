@@ -30,10 +30,10 @@ public class AskAliService {
             "ارغب", "حاب", "عايز", "want", "need", "show", "find", "me", "please", "for", "و", "مع"
     );
     private static final List<String> MAX_WORDS = List.of(
-            "أقل", "تحت", "حتى", "بحد", "قصى", "أقصى", "max", "under", "below", "less"
+            "اقل", "تحت", "حتى", "بحد", "قصى", "اقصى", "max", "under", "below", "less"
     );
     private static final List<String> MIN_WORDS = List.of(
-            "أكثر", "فوق", "أعلى", "الأقل", "min", "above", "over", "more"
+            "اكثر", "فوق", "اعلى", "الاقل", "min", "above", "over", "more"
     );
     private static final List<String> CURRENCY_WORDS = List.of("$", "دولار", "دولارات", "usd", "شيكل", "ils", "€", "eur");
 
@@ -88,7 +88,7 @@ public class AskAliService {
     }
 
     private QueryIntent parseIntent(String prompt) {
-        List<String> tokens = Arrays.stream(prompt.split(" ")).filter(token -> !token.isBlank()).toList();
+        List<String> tokens = Arrays.stream(prompt.split("\\s+")).filter(token -> !token.isBlank()).toList();
         List<String> queryTokens = new ArrayList<>();
         BigDecimal minPrice = null;
         BigDecimal maxPrice = null;
@@ -96,12 +96,13 @@ public class AskAliService {
 
         for (int i = 0; i < tokens.size(); i++) {
             String raw = tokens.get(i);
-            String normalized = raw.toLowerCase(Locale.ROOT).trim();
+            String normalized = normalizeArabic(raw).toLowerCase(Locale.ROOT).trim();
             if (normalized.equals("متوفر") || normalized.equals("المتوفر")) {
                 inStock = true;
                 continue;
             }
-            if (normalized.equals("in") && i + 1 < tokens.size() && tokens.get(i + 1).equalsIgnoreCase("stock")) {
+            if (normalized.equals("in") && i + 1 < tokens.size()
+                    && normalizeArabic(tokens.get(i + 1)).equalsIgnoreCase("stock")) {
                 inStock = true;
                 continue;
             }
@@ -110,25 +111,51 @@ public class AskAliService {
             if (number != null) {
                 boolean minimum = hasNearbyWord(tokens, i, MIN_WORDS);
                 boolean maximum = hasNearbyWord(tokens, i, MAX_WORDS);
+                boolean currencyNearby = hasCurrencyNearby(tokens, i)
+                        || raw.contains("$") || raw.contains("€")
+                        || normalizeArabic(raw).contains("شيكل") || normalizeArabic(raw).toLowerCase(Locale.ROOT).contains("sar");
+                boolean priceCue = hasPriceCue(tokens, i);
                 if (minimum) minPrice = number;
                 else if (maximum) maxPrice = number;
+                else if (currencyNearby || priceCue) {
+                    minPrice = number;
+                    maxPrice = number;
+                } else {
+                    queryTokens.add(raw);
+                }
                 continue;
             }
 
             if (CURRENCY_WORDS.contains(normalized) || STOP_WORDS.contains(normalized) || normalized.equals("في")) continue;
-            if (isPriceConnector(normalized) || normalized.equals("متوفر") || normalized.equals("المتوفر")
-                    || normalized.equals("المخزون") || normalized.equals("stock")) continue;
-            queryTokens.add(raw);
+            if (isPriceConnector(normalized) || normalized.equals("المخزون") || normalized.equals("stock")) continue;
+            queryTokens.add(normalized);
         }
+        return new QueryIntent(String.join(" ", queryTokens).trim(), minPrice, maxPrice, inStock);
+    }
 
-        String query = String.join(" ", queryTokens).trim();
-        return new QueryIntent(query, minPrice, maxPrice, inStock);
+    private boolean hasCurrencyNearby(List<String> tokens, int index) {
+        int from = Math.max(0, index - 2);
+        int to = Math.min(tokens.size() - 1, index + 2);
+        for (int i = from; i <= to; i++) {
+            String token = normalizeArabic(tokens.get(i)).toLowerCase(Locale.ROOT);
+            if (CURRENCY_WORDS.contains(token)) return true;
+        }
+        return false;
+    }
+
+    private boolean hasPriceCue(List<String> tokens, int index) {
+        int from = Math.max(0, index - 3);
+        for (int i = from; i < index; i++) {
+            String token = normalizeArabic(tokens.get(i)).toLowerCase(Locale.ROOT);
+            if (List.of("سعر", "السعر", "بسعر", "ثمن", "بحد", "تحت", "فوق", "اعلى", "اقل", "اقصى").contains(token)) return true;
+        }
+        return false;
     }
 
     private boolean hasNearbyWord(List<String> tokens, int index, List<String> candidates) {
         int start = Math.max(0, index - 3);
         for (int i = start; i < index; i++) {
-            String token = tokens.get(i).toLowerCase(Locale.ROOT);
+            String token = normalizeArabic(tokens.get(i)).toLowerCase(Locale.ROOT);
             if (candidates.contains(token)) return true;
         }
         return false;
@@ -140,15 +167,43 @@ public class AskAliService {
     }
 
     private BigDecimal parseNumber(String token) {
-        String cleaned = token.replace("$", "").replace("€", "").replace("usd", "")
-                .replace("eur", "").replace("شيكل", "").replace("ils", "");
+        String cleaned = normalizeArabic(token).replace("$", "").replace("€", "")
+                .replace("usd", "").replace("eur", "").replace("شيكل", "").replace("ils", "")
+                .replace("ر.س", "").replace("sar", "").trim();
         if (cleaned.isBlank()) return null;
+        cleaned = cleaned.replace("٬", "").replace("٫", ".");
+        if (cleaned.matches("\\d{1,3}(,\\d{3})+(\\.\\d+)?")) {
+            cleaned = cleaned.replace(",", "");
+        } else if (cleaned.contains(",") && cleaned.contains(".")) {
+            if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+                cleaned = cleaned.replace(".", "").replace(',', '.');
+            } else {
+                cleaned = cleaned.replace(",", "");
+            }
+        } else if (cleaned.contains(",")) {
+            cleaned = cleaned.replace(',', '.');
+        }
         try {
-            BigDecimal value = new BigDecimal(cleaned.replace(",", "."));
+            BigDecimal value = new BigDecimal(cleaned);
             return value.signum() >= 0 ? value : null;
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private String normalizeArabic(String value) {
+        if (value == null) return "";
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch >= '\u0660' && ch <= '\u0669') ch = (char) ('0' + (ch - '\u0660'));
+            else if (ch >= '\u06F0' && ch <= '\u06F9') ch = (char) ('0' + (ch - '\u06F0'));
+            if (ch == '\u0640' || (ch >= '\u064B' && ch <= '\u065F')) continue;
+            if (ch == 'أ' || ch == 'إ' || ch == 'آ' || ch == 'ٱ') ch = 'ا';
+            else if (ch == 'ى') ch = 'ي';
+            out.append(ch);
+        }
+        return out.toString();
     }
 
     private String assistantSystemPrompt() {
