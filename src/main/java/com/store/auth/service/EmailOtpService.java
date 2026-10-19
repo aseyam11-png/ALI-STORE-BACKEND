@@ -153,7 +153,9 @@ public class EmailOtpService {
                 .build();
     }
 
-    @Transactional
+    @Transactional(
+            propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW,
+            noRollbackFor = BusinessException.class)
     public EmailOtpChallenge verifyChallenge(UUID challengeId, String code) {
         if (!code.matches("\\d{6}")) {
             throw new BusinessException("Invalid verification code");
