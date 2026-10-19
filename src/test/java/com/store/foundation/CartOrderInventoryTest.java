@@ -7,6 +7,8 @@ import com.store.category.repository.CategoryRepository;
 import com.store.coupon.entity.Coupon;
 import com.store.coupon.repository.CouponRepository;
 import com.store.inventory.entity.Inventory;
+import com.store.order.service.OrderService;
+import com.store.order.entity.OrderStatus;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
@@ -63,6 +65,7 @@ class CartOrderInventoryTest {
     @Autowired private SupplierRepository supplierRepository;
     @Autowired private InventoryRepository inventoryRepository;
     @Autowired private CouponRepository couponRepository;
+    @Autowired private OrderService orderService;
 
     private Role userRole;
     private Role adminRole;
@@ -188,6 +191,43 @@ class CartOrderInventoryTest {
 
         mockMvc.perform(get("/api/v1/orders/" + orderId).header("Authorization", "Bearer " + tokenFor(intruder)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void cancellingOneOrderReleasesOnlyItsOwnedInventoryReservation() throws Exception {
+        User first = createUser("reservation-owner-a@example.com");
+        User second = createUser("reservation-owner-b@example.com");
+        Product product = productWithStock("OWNED-RESERVATION-1", 10);
+
+        for (var entry : Map.of(first, 3, second, 4).entrySet()) {
+            mockMvc.perform(post("/api/v1/cart/items").header("Authorization", "Bearer " + tokenFor(entry.getKey()))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "productId", product.getId(), "quantity", entry.getValue()))))
+                    .andExpect(status().isOk());
+        }
+
+        String firstJson = mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(first))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Address A"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String secondJson = mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(second))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Address B"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        long firstOrderId = objectMapper.readTree(firstJson).path("data").path("id").asLong();
+        long secondOrderId = objectMapper.readTree(secondJson).path("data").path("id").asLong();
+        Assertions.assertEquals(7, inventoryRepository.findByProductId(product.getId()).orElseThrow().getReservedQuantity());
+
+        orderService.updateOrderStatus(firstOrderId, OrderStatus.CANCELLED);
+
+        Inventory afterFirstCancellation = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        Assertions.assertEquals(4, afterFirstCancellation.getReservedQuantity(),
+                "cancelling the first order must release its own 3 units, not decrement the second order's 4 units");
+        Assertions.assertEquals(OrderStatus.PENDING, orderService.getOrderById(second.getEmail(), secondOrderId).getStatus());
     }
 
     @Test
