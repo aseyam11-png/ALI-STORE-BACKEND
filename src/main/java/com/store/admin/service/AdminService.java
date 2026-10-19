@@ -3,6 +3,7 @@ package com.store.admin.service;
 import com.store.admin.dto.UpdateUserRoleRequest;
 import com.store.admin.dto.UserResponse;
 import com.store.common.exception.ResourceNotFoundException;
+import com.store.common.exception.BusinessException;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -35,6 +36,9 @@ public class AdminService {
         Role role = roleRepository.findByName(request.getRoleName())
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + request.getRoleName()));
 
+        if (isEnabledAdmin(user) && !"ROLE_ADMIN".equals(role.getName())) {
+            ensureAnotherEnabledAdminRemains();
+        }
         user.setRole(role);
         User updatedUser = userRepository.save(user);
 
@@ -46,10 +50,25 @@ public class AdminService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
+        if (isEnabledAdmin(user)) {
+            ensureAnotherEnabledAdminRemains();
+        }
         user.setIsEnabled(!user.getIsEnabled());
         User updatedUser = userRepository.save(user);
 
         return mapToUserResponse(updatedUser);
+    }
+
+    private boolean isEnabledAdmin(User user) {
+        return Boolean.TRUE.equals(user.getIsEnabled())
+                && user.getRole() != null
+                && "ROLE_ADMIN".equals(user.getRole().getName());
+    }
+
+    private void ensureAnotherEnabledAdminRemains() {
+        if (userRepository.findEnabledAdminsForUpdate().size() <= 1) {
+            throw new BusinessException("Cannot disable or demote the last enabled administrator");
+        }
     }
 
     private UserResponse mapToUserResponse(User user) {
