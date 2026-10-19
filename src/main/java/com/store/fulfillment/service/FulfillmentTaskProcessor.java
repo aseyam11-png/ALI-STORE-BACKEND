@@ -65,6 +65,14 @@ public class FulfillmentTaskProcessor {
         Order order = orderRepository.findById(shipment.getOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
 
+        if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+            task.setStatus(order.getStatus() == com.store.order.entity.OrderStatus.CANCELLED
+                    ? FulfillmentTaskStatus.CANCELLED : FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
+            task.setLastError("Order is not in PROCESSING state; supplier submission was not started");
+            taskRepository.save(task);
+            return null;
+        }
+
         List<SupplierFulfillmentRequest.Item> items = order.getItems().stream()
                 .filter(item -> item.getSupplier() != null
                         && item.getSupplier().getId().equals(shipment.getSupplier().getId()))
