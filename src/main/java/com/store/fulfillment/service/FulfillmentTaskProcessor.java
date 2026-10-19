@@ -146,6 +146,15 @@ public class FulfillmentTaskProcessor {
         taskRepository.save(task);
     }
 
+    private void markReconciliationRequired(Long taskId, RuntimeException ex) {
+        FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
+        if (task.getStatus() != FulfillmentTaskStatus.PROCESSING) return;
+        task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
+        task.setLastError("Supplier submission returned successfully but local persistence failed: " + safeMessage(ex));
+        taskRepository.save(task);
+    }
+
     private SupplierFulfillmentRequest.Item mapItem(OrderItem item) {
         return SupplierFulfillmentRequest.Item.builder()
                 .supplierSku(item.getSupplierSku())
