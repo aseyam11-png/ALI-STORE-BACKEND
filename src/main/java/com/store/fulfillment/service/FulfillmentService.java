@@ -3,6 +3,8 @@ package com.store.fulfillment.service;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.fulfillment.entity.FulfillmentTask;
 import com.store.fulfillment.entity.FulfillmentTaskStatus;
+import com.store.fulfillment.dto.FulfillmentTaskAttentionResponse;
+import com.store.common.exception.BusinessException;
 import com.store.fulfillment.repository.FulfillmentTaskRepository;
 import com.store.order.entity.Order;
 import com.store.order.repository.OrderRepository;
@@ -82,6 +84,83 @@ public class FulfillmentService {
                     task.setNextAttemptAt(LocalDateTime.now());
                     taskRepository.save(task);
                 });
+    }
+
+    @Transactional(readOnly = true)
+    public List<FulfillmentTaskAttentionResponse> getTasksNeedingAttention() {
+        return taskRepository.findTop20ByStatusInOrderByUpdatedAtAsc(List.of(
+                        FulfillmentTaskStatus.FAILED, FulfillmentTaskStatus.RECONCILIATION_REQUIRED))
+                .stream()
+                .map(task -> {
+                    Shipment shipment = task.getShipment();
+                    return new FulfillmentTaskAttentionResponse(
+                            task.getId(), task.getStatus(), task.getAttempts(),
+                            shipment.getOrderId(), shipment.getId(),
+                            shipment.getSupplier().getExternalCode(), task.getLastError(), task.getUpdatedAt());
+                })
+                .toList();
+    }
+
+    @Transactional
+    public void requeueAfterManualConfirmation(Long taskId, String confirmation, String operatorNote) {
+        if (!"SUPPLIER_CONFIRMED_NOT_ACCEPTED".equals(confirmation)) {
+            throw new BusinessException("Manual retry requires explicit supplier confirmation that no order was accepted");
+        }
+        FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
+        if (task.getStatus() != FulfillmentTaskStatus.FAILED
+                && task.getStatus() != FulfillmentTaskStatus.RECONCILIATION_REQUIRED) {
+            throw new BusinessException("Only failed or reconciliation-required tasks can be manually requeued");
+        }
+        Shipment shipment = task.getShipment();
+        if (shipment.getSupplierOrderId() != null && !shipment.getSupplierOrderId().isBlank()) {
+            throw new BusinessException("Supplier order id already exists; task cannot be requeued");
+        }
+        Order order = orderRepository.findById(shipment.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+        if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+            throw new BusinessException("Only processing orders can be requeued");
+        }
+        task.setStatus(FulfillmentTaskStatus.PENDING);
+        task.setAttempts(0);
+        task.setNextAttemptAt(LocalDateTime.now());
+        task.setLastError("Manual retry approved after supplier confirmed no accepted order. "
+                + (operatorNote == null ? "" : operatorNote.trim()));
+        taskRepository.save(task);
+    }
+
+    @Transactional
+    public void confirmSupplierAccepted(Long taskId, String supplierOrderId, String carrier, String trackingNumber) {
+        if (supplierOrderId == null || supplierOrderId.isBlank()) {
+            throw new BusinessException("Supplier order id is required for reconciliation");
+        }
+        FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
+        if (task.getStatus() != FulfillmentTaskStatus.FAILED
+                && task.getStatus() != FulfillmentTaskStatus.RECONCILIATION_REQUIRED) {
+            throw new BusinessException("Task is not awaiting reconciliation");
+        }
+        Shipment shipment = task.getShipment();
+        Order order = orderRepository.findById(shipment.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+        if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+            throw new BusinessException("Cancelled or non-processing orders require separate supplier and financial reconciliation");
+        }
+
+        shipment.setSupplierOrderId(supplierOrderId.trim());
+        shipment.setCarrier(carrier == null ? null : carrier.trim());
+        shipment.setTrackingNumber(trackingNumber == null ? null : trackingNumber.trim());
+        shipment.setStatus(ShipmentStatus.PROCESSING);
+        shipmentRepository.save(shipment);
+
+        order.getItems().stream()
+                .filter(item -> item.getSupplier() != null
+                        && item.getSupplier().getId().equals(shipment.getSupplier().getId()))
+                .forEach(item -> inventoryService.commitReservedStock(item.getId()));
+
+        task.setStatus(FulfillmentTaskStatus.SUCCEEDED);
+        task.setLastError(null);
+        taskRepository.save(task);
     }
 
     public void processDueTasks() {
