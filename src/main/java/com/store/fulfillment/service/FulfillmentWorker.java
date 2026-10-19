@@ -14,6 +14,13 @@ public class FulfillmentWorker {
     @Value("${app.fulfillment.enabled:false}")
     private boolean enabled;
 
+    @Scheduled(fixedDelayString = "${app.fulfillment.alert-poll-ms:300000}")
+    public void alertAttention() {
+        if (enabled) {
+            fulfillmentService.logOperationalAlerts();
+        }
+    }
+
     @Scheduled(fixedDelayString = "${app.fulfillment.poll-ms:10000}")
     public void poll() {
         if (!enabled) {
