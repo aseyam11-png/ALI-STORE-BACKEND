@@ -13,6 +13,8 @@ import com.store.shipping.entity.ShipmentStatus;
 import com.store.shipping.repository.ShipmentRepository;
 import com.store.supplier.entity.Supplier;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class FulfillmentService {
+
+    private static final Logger log = LoggerFactory.getLogger(FulfillmentService.class);
 
     private final OrderRepository orderRepository;
     private final ShipmentRepository shipmentRepository;
@@ -84,6 +88,14 @@ public class FulfillmentService {
                     task.setNextAttemptAt(LocalDateTime.now());
                     taskRepository.save(task);
                 });
+    }
+
+    @Transactional(readOnly = true)
+    public void logOperationalAlerts() {
+        List<FulfillmentTaskAttentionResponse> alerts = getTasksNeedingAttention();
+        if (!alerts.isEmpty()) {
+            log.warn("Fulfillment tasks require manual attention (up to 20 shown): {}", alerts);
+        }
     }
 
     @Transactional(readOnly = true)
