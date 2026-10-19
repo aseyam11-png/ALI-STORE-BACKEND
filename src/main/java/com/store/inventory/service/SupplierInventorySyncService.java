@@ -48,9 +48,7 @@ public class SupplierInventorySyncService {
         SupplierInventoryResponse payload = supplierInventoryClient.fetchInventory(supplier);
         LocalDateTime syncedAt = LocalDateTime.now();
 
-        // Apply the snapshot in a short database transaction.
-        return new TransactionTemplate(transactionManager).execute(status ->
-                applyPayload(supplierId, payload, syncedAt));
+        return applyPayload(supplierId, payload, syncedAt);
     }
 
     private SupplierInventorySyncReport applyPayload(
