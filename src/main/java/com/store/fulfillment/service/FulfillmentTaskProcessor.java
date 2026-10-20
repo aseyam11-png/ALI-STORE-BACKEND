@@ -178,9 +178,20 @@ public class FulfillmentTaskProcessor {
 
     private void markReconciliationRequired(
             Long taskId, SupplierFulfillmentResponse response, RuntimeException ex) {
+        // Apply the same order -> task lock order as completion/cancellation.
+        FulfillmentTask observed = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
+        Shipment shipment = observed.getShipment();
+        orderRepository.findByIdForUpdate(shipment.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
-        if (task.getStatus() != FulfillmentTaskStatus.PROCESSING) return;
+        if (task.getStatus() == FulfillmentTaskStatus.SUCCEEDED) return;
+
+        // The prior local transaction may have rolled back entirely, and a concurrent
+        // cancellation may have changed the task status. Preserve the supplier acceptance
+        // response instead of silently leaving a cancelled/pending row with no supplier ID.
+        persistSupplierAcceptance(shipment, response);
         task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
         String supplierOrderId = response.getSupplierOrderId();
         task.setLastError("Supplier submission returned successfully"
