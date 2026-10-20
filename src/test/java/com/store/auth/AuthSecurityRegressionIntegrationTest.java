@@ -328,6 +328,8 @@ class AuthSecurityRegressionIntegrationTest {
         String token = tokenFor(user);
         EmailOtpChallengeResponse pendingLogin =
                 emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+        EmailOtpChallengeResponse pendingPasswordReset =
+                authService.requestPasswordReset(user.getEmail());
 
         mockMvc.perform(post("/api/v1/auth/password/change")
                         .header("Authorization", "Bearer " + token)
@@ -343,6 +345,9 @@ class AuthSecurityRegressionIntegrationTest {
         assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingLogin.getChallengeId()))
                 .orElseThrow().getRevokedAt(),
                 "Password change must revoke pending login OTPs issued against the previous password");
+        assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingPasswordReset.getChallengeId()))
+                .orElseThrow().getRevokedAt(),
+                "Password change must revoke pending reset OTPs so they cannot overwrite the new password");
 
         mockMvc.perform(get("/api/v1/auth/session")
                         .header("Authorization", "Bearer " + token))
