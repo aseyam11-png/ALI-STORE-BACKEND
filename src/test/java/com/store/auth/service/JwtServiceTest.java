@@ -62,6 +62,35 @@ class JwtServiceTest {
     }
 
     @Test
+    void accountLockoutDoesNotRevokeAnAlreadyIssuedJwt() {
+        String secret = Base64.getEncoder().encodeToString("c".repeat(32).getBytes());
+        JwtService service = newService(secret);
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        AccountUserDetails unlocked = new AccountUserDetails(
+                "user@example.com", "hash", true, true, authorities, 0L);
+        AccountUserDetails locked = new AccountUserDetails(
+                "user@example.com", "hash", true, false, authorities, 0L);
+
+        String token = service.generateToken(unlocked);
+
+        assertTrue(service.isTokenValid(token, locked),
+                "Login lockout is a control against new password authentication, not JWT revocation");
+    }
+
+    @Test
+    void invalidTokenInputsDoNotCauseNullPointerExceptions() {
+        String secret = Base64.getEncoder().encodeToString("d".repeat(32).getBytes());
+        JwtService service = newService(secret);
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        AccountUserDetails user = new AccountUserDetails(
+                "user@example.com", "hash", true, true, authorities, 0L);
+
+        assertFalse(service.isTokenValid(null, user));
+        assertFalse(service.isTokenValid("  ", user));
+        assertFalse(service.isTokenValid("not-parsed-because-user-details-is-null", null));
+    }
+
+    @Test
     void rejectsJwtWhenPasswordChangeAdvancesAccountVersion() {
         String secret = Base64.getEncoder().encodeToString("b".repeat(32).getBytes());
         JwtService service = newService(secret);
