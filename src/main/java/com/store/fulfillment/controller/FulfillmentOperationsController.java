@@ -3,6 +3,7 @@ package com.store.fulfillment.controller;
 import com.store.common.response.ApiResponse;
 import com.store.fulfillment.dto.FulfillmentManualRetryRequest;
 import com.store.fulfillment.dto.FulfillmentTaskAttentionResponse;
+import com.store.fulfillment.dto.FulfillmentSupplierAcceptedRequest;
 import com.store.fulfillment.service.FulfillmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,5 +35,15 @@ public class FulfillmentOperationsController {
         fulfillmentService.requeueAfterManualConfirmation(
                 taskId, request.confirmation(), request.operatorNote());
         return ResponseEntity.ok(ApiResponse.success(null, "Fulfillment task requeued after manual confirmation"));
+    }
+
+    @PostMapping("/{taskId}/supplier-accepted")
+    public ResponseEntity<ApiResponse<Void>> confirmSupplierAccepted(
+            @PathVariable Long taskId,
+            @Valid @RequestBody FulfillmentSupplierAcceptedRequest request) {
+        fulfillmentService.confirmSupplierAccepted(
+                taskId, request.supplierOrderId(), request.carrier(), request.trackingNumber());
+        return ResponseEntity.ok(ApiResponse.success(
+                null, "Supplier acceptance recorded; check fulfillment reconciliation state"));
     }
 }
