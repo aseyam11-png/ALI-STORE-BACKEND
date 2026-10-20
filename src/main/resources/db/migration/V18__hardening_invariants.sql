@@ -30,10 +30,6 @@ WHERE o.status IN ('PENDING', 'PROCESSING')
         AND t.status = 'SUCCEEDED'
   );
 
-CREATE INDEX IF NOT EXISTS idx_orders_pending_reservation_expiry
-    ON orders(status, reservation_expires_at)
-    WHERE status = 'PENDING';
-
 CREATE INDEX IF NOT EXISTS idx_order_items_product_id
     ON order_items(product_id);
 
@@ -43,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_products_status_category_id
 CREATE INDEX IF NOT EXISTS idx_products_status_brand_price
     ON products(status, brand_id, price);
 
-CREATE INDEX IF NOT EXISTS idx_email_otp_user_purpose_created
+CREATE INDEX IF NOT EXISTS idx_email_otp_user_purpose_created_desc
     ON email_otp_challenges(user_id, purpose, created_at DESC);
 
 ALTER TABLE fulfillment_tasks
