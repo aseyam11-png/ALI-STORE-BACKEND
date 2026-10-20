@@ -79,8 +79,14 @@ public class JwtService {
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
+        if (token == null || token.isBlank() || userDetails == null) {
+            return false;
+        }
+
         final String username = extractUsername(token);
-        if (!username.equals(userDetails.getUsername()) || isTokenExpired(token)) {
+        if (username == null
+                || !username.equals(userDetails.getUsername())
+                || isTokenExpired(token)) {
             return false;
         }
 
@@ -93,8 +99,11 @@ public class JwtService {
         }
 
         if (userDetails instanceof AccountVersionAware versionAware) {
-            Number tokenVersion = extractClaim(token, claims -> (Number) claims.get("av"));
-            long version = tokenVersion == null ? 0L : tokenVersion.longValue();
+            Object versionClaim = extractClaim(token, claims -> claims.get("av"));
+            if (versionClaim != null && !(versionClaim instanceof Number)) {
+                return false;
+            }
+            long version = versionClaim == null ? 0L : ((Number) versionClaim).longValue();
             return version == versionAware.getAuthVersion();
         }
 
