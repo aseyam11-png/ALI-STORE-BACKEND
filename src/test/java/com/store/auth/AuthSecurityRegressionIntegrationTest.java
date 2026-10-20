@@ -220,6 +220,25 @@ class AuthSecurityRegressionIntegrationTest {
     }
 
     @Test
+    void resendAfterCooldownPersistsNewChallengeAndRevokesOldOne() {
+        User user = createUser(uniqueEmail("otp-resend"));
+        clearInvocations(emailOtpSender);
+
+        EmailOtpChallengeResponse original = emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+        UUID originalId = UUID.fromString(original.getChallengeId());
+        EmailOtpChallenge oldChallenge = challengeRepository.findForVerification(originalId).orElseThrow();
+        oldChallenge.setCreatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(61));
+        challengeRepository.saveAndFlush(oldChallenge);
+
+        EmailOtpChallengeResponse resent = emailOtpService.resend(originalId);
+
+        assertNotEquals(original.getChallengeId(), resent.getChallengeId());
+        assertNotNull(challengeRepository.findForVerification(originalId).orElseThrow().getRevokedAt());
+        verify(emailOtpSender, times(2)).send(
+                eq(user.getEmail()), anyString(), eq(EmailOtpPurpose.LOGIN), any());
+    }
+
+    @Test
     void invalidLoginOtpAttemptPersistsAfterApiReturnsBadRequest() throws Exception {
         User user = createUser(uniqueEmail("login-otp-counter"));
         clearInvocations(emailOtpSender);
