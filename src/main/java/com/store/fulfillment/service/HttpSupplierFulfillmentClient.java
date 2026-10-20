@@ -10,6 +10,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 @Component
 public class HttpSupplierFulfillmentClient implements SupplierFulfillmentClient {
@@ -62,12 +63,22 @@ public class HttpSupplierFulfillmentClient implements SupplierFulfillmentClient 
 
             if (response == null || !Boolean.TRUE.equals(response.getAccepted())
                     || response.getSupplierOrderId() == null || response.getSupplierOrderId().isBlank()) {
-                throw new IllegalStateException("Supplier rejected or returned an invalid fulfillment response");
+                throw new SupplierOutcomeUnknownException(
+                        "Supplier returned an unusable acceptance response; external order outcome cannot be determined");
             }
 
             return response;
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().is4xxClientError()) {
+                throw new IllegalStateException(
+                        "Supplier rejected fulfillment request with HTTP " + ex.getStatusCode().value(), ex);
+            }
+            throw new SupplierOutcomeUnknownException(
+                    "Supplier returned HTTP " + ex.getStatusCode().value()
+                            + "; acceptance outcome is unknown", ex);
         } catch (RestClientException ex) {
-            throw new IllegalStateException("Supplier fulfillment request failed", ex);
+            throw new SupplierOutcomeUnknownException(
+                    "Supplier transport failed; acceptance outcome is unknown", ex);
         }
     }
 }

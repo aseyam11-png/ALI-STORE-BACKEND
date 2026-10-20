@@ -47,8 +47,13 @@ public class FulfillmentTaskProcessor {
         try {
             response = supplierFulfillmentClient.submit(
                     claim.shipment().getSupplier(), claim.request());
+        } catch (SupplierOutcomeUnknownException outcomeUnknown) {
+            // A timeout/5xx or unusable response does not prove that the supplier
+            // rejected the order. Stop automatic replay until an operator reconciles it.
+            tx.executeWithoutResult(status -> markSupplierOutcomeUnknown(taskId, outcomeUnknown));
+            return;
         } catch (RuntimeException supplierFailure) {
-            // Only failures from the supplier submission enter the retry policy.
+            // Definite local configuration/rejection failures use the bounded retry policy.
             tx.executeWithoutResult(status -> fail(taskId, supplierFailure));
             return;
         }
@@ -171,20 +176,43 @@ public class FulfillmentTaskProcessor {
     }
 
     private void fail(Long taskId, RuntimeException ex) {
+        Long orderId = taskRepository.findOrderIdByTaskId(taskId);
+        if (orderId == null) throw new ResourceNotFoundException("Fulfillment task not found");
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
 
-        if (task.getStatus() != FulfillmentTaskStatus.PROCESSING) {
-            return;
-        }
+        if (task.getStatus() != FulfillmentTaskStatus.PROCESSING) return;
 
         task.setLastError(safeMessage(ex));
-        if (task.getAttempts() >= MAX_ATTEMPTS) {
+        if (order.getStatus() == com.store.order.entity.OrderStatus.CANCELLED) {
+            task.setStatus(FulfillmentTaskStatus.CANCELLED);
+        } else if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+            task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
+            task.setLastError("Supplier submission failed after local order status changed to "
+                    + order.getStatus() + ": " + safeMessage(ex));
+        } else if (task.getAttempts() >= MAX_ATTEMPTS) {
             task.setStatus(FulfillmentTaskStatus.FAILED);
         } else {
             task.setStatus(FulfillmentTaskStatus.PENDING);
             task.setNextAttemptAt(LocalDateTime.now().plusMinutes(Math.min(30, task.getAttempts() * 2L)));
         }
+        taskRepository.save(task);
+    }
+
+    private void markSupplierOutcomeUnknown(Long taskId, SupplierOutcomeUnknownException ex) {
+        Long orderId = taskRepository.findOrderIdByTaskId(taskId);
+        if (orderId == null) throw new ResourceNotFoundException("Fulfillment task not found");
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+        FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
+        if (task.getStatus() == FulfillmentTaskStatus.SUCCEEDED) return;
+
+        task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
+        task.setLastError("Supplier order outcome is unknown; verify the supplier system before retrying. "
+                + "Local order status: " + order.getStatus() + ". " + safeMessage(ex));
         taskRepository.save(task);
     }
 
