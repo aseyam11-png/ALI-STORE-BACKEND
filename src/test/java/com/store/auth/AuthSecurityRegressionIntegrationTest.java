@@ -220,6 +220,65 @@ class AuthSecurityRegressionIntegrationTest {
     }
 
     @Test
+    void passwordLoginOtpVerificationCreatesHttpOnlyCookieSessionWithoutExposingJwt() throws Exception {
+        User user = createUser(uniqueEmail("successful-login"));
+        user.setFailedLoginAttempts(2);
+        user.setLastFailedLoginAt(java.time.Instant.now().minusSeconds(10));
+        userRepository.saveAndFlush(user);
+        clearInvocations(emailOtpSender);
+
+        MvcResult loginResult = mockMvc.perform(csrfPost("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "email", user.getEmail(),
+                                "password", "Password123"))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
+                .andExpect(jsonPath("$.data.purpose").value("LOGIN"))
+                .andReturn();
+
+        JsonNode loginJson = objectMapper.readTree(loginResult.getResponse().getContentAsString());
+        String challengeId = loginJson.path("data").path("challengeId").asText();
+        assertFalse(challengeId.isBlank());
+        assertFalse(loginJson.path("data").has("token"));
+
+        User resetAttempts = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+        assertEquals(0, resetAttempts.getFailedLoginAttempts());
+        assertNull(resetAttempts.getLoginLockedUntil());
+
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(
+                eq(user.getEmail()), codeCaptor.capture(), eq(EmailOtpPurpose.LOGIN), any());
+
+        MvcResult verificationResult = mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", challengeId,
+                                "code", codeCaptor.getValue()))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String verificationJson = verificationResult.getResponse().getContentAsString();
+        assertFalse(objectMapper.readTree(verificationJson).path("data").has("token"),
+                "The bearer token must not be serialized into the response body");
+
+        String sessionCookieHeader = verificationResult.getResponse().getHeaders("Set-Cookie").stream()
+                .filter(value -> value.startsWith("ali_store_session="))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Login completion must set the session cookie"));
+        assertTrue(sessionCookieHeader.toLowerCase().contains("httponly"));
+        assertTrue(sessionCookieHeader.contains("Path=/"));
+        assertTrue(sessionCookieHeader.contains("SameSite=Strict"));
+
+        String cookieValue = sessionCookieHeader.substring(
+                "ali_store_session=".length(), sessionCookieHeader.indexOf(';'));
+        mockMvc.perform(get("/api/v1/auth/session")
+                        .cookie(new Cookie("ali_store_session", cookieValue)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.email").value(user.getEmail()));
+    }
+
+    @Test
     void resendAfterCooldownPersistsNewChallengeAndRevokesOldOne() {
         User user = createUser(uniqueEmail("otp-resend"));
         clearInvocations(emailOtpSender);
