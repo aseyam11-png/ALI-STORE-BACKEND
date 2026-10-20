@@ -6,6 +6,7 @@ import com.store.fulfillment.entity.FulfillmentTaskStatus;
 import com.store.fulfillment.dto.FulfillmentTaskAttentionResponse;
 import com.store.common.exception.BusinessException;
 import com.store.fulfillment.repository.FulfillmentTaskRepository;
+import com.store.inventory.service.InventoryService;
 import com.store.order.entity.Order;
 import com.store.order.repository.OrderRepository;
 import com.store.shipping.entity.Shipment;
@@ -32,6 +33,7 @@ public class FulfillmentService {
     private final ShipmentRepository shipmentRepository;
     private final FulfillmentTaskRepository taskRepository;
     private final FulfillmentTaskProcessor taskProcessor;
+    private final InventoryService inventoryService;
 
     /**
      * Creates durable per-supplier fulfillment work. The actual supplier HTTP
