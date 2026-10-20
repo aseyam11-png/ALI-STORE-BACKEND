@@ -120,7 +120,8 @@ public class FulfillmentTaskProcessor {
         }
 
         Shipment shipment = task.getShipment();
-        Order order = orderRepository.findById(shipment.getOrderId())
+        // Serialize supplier acceptance persistence with cancellation/status transitions.
+        Order order = orderRepository.findByIdForUpdate(shipment.getOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
 
         if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
