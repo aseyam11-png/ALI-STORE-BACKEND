@@ -65,6 +65,17 @@ class EmailOtpServiceSecurityContractTest {
     }
 
     @Test
+    void decoyChallengeHandlesNullEmailWithoutThrowing() {
+        EmailOtpChallengeResponse response =
+                service.decoyChallenge(null, EmailOtpPurpose.PASSWORD_RESET);
+
+        assertNotNull(response.getChallengeId());
+        assertEquals("***", response.getMaskedEmail());
+        assertNull(response.getExpiresInSeconds());
+        assertEquals(EmailOtpPurpose.PASSWORD_RESET, response.getPurpose());
+    }
+
+    @Test
     void issueChallenge_persistsOnlyHmacDerivedCodeAndsendsSixDigits() {
         when(challengeRepository
                 .findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
