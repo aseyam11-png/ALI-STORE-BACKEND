@@ -40,6 +40,10 @@ class CookieCsrfProtectionTest {
         String setCookie = result.getResponse().getHeader("Set-Cookie");
         assertNotNull(setCookie, "CSRF endpoint must issue the XSRF-TOKEN cookie");
         assertTrue(setCookie.contains("XSRF-TOKEN="));
+        assertTrue(setCookie.contains("Path=/"),
+                "The SPA must be able to read the CSRF cookie on application routes");
+        assertTrue(setCookie.contains("SameSite=Strict"),
+                "The default same-site setting must remain explicit for the local test profile");
         assertFalse(setCookie.toLowerCase().contains("httponly"),
                 "JavaScript-readable CSRF cookies must not be HttpOnly");
     }
