@@ -19,6 +19,7 @@ import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
 import com.store.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -242,6 +243,61 @@ class AuthSecurityRegressionIntegrationTest {
                 .orElseThrow();
         assertEquals(1, persisted.getAttemptCount(),
                 "An invalid login OTP must commit attempt_count despite returning an error response");
+    }
+
+    @Test
+    void pendingLoginOtpCannotMintSessionDuringAccountLockoutAndCanBeRetriedAfterUnlock() {
+        User user = createUser(uniqueEmail("locked-pending-otp"));
+        EmailOtpChallengeResponse issued =
+                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(
+                eq(user.getEmail()),
+                codeCaptor.capture(),
+                eq(EmailOtpPurpose.LOGIN),
+                any());
+        String code = codeCaptor.getValue();
+
+        user.setFailedLoginAttempts(5);
+        user.setLastFailedLoginAt(java.time.Instant.now());
+        user.setLoginLockedUntil(java.time.Instant.now().plusSeconds(900));
+        userRepository.saveAndFlush(user);
+
+        assertThrows(UnauthorizedException.class,
+                () -> authService.verifyEmailCode(issued.getChallengeId(), code));
+
+        EmailOtpChallenge challengeAfterRejectedLogin = challengeRepository
+                .findForVerification(UUID.fromString(issued.getChallengeId()))
+                .orElseThrow();
+        assertNull(challengeAfterRejectedLogin.getConsumedAt(),
+                "A lockout rejection must roll back OTP consumption so the account can retry after unlock");
+
+        User unlocked = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+        unlocked.setFailedLoginAttempts(0);
+        unlocked.setLastFailedLoginAt(null);
+        unlocked.setLoginLockedUntil(null);
+        userRepository.saveAndFlush(unlocked);
+
+        var authResponse = authService.verifyEmailCode(issued.getChallengeId(), code);
+        assertNotNull(authResponse.getToken(), "The valid OTP can complete login after lockout expires");
+        assertNotNull(challengeRepository.findForVerification(UUID.fromString(issued.getChallengeId()))
+                .orElseThrow().getConsumedAt());
+    }
+
+    @Test
+    void jwtIssuedBeforeAccountLockoutRemainsValidByPolicy() throws Exception {
+        User user = createUser(uniqueEmail("session-during-lockout"));
+        String token = tokenFor(user);
+
+        user.setFailedLoginAttempts(5);
+        user.setLastFailedLoginAt(java.time.Instant.now());
+        user.setLoginLockedUntil(java.time.Instant.now().plusSeconds(900));
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(get("/api/v1/auth/session")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
     }
 
     @Test
