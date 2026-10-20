@@ -122,6 +122,11 @@ public class FulfillmentTaskProcessor {
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
 
+        if (task.getStatus() == FulfillmentTaskStatus.SUCCEEDED) {
+            // Idempotent duplicate completion: never regress a successful task.
+            return;
+        }
+
         if (task.getStatus() != FulfillmentTaskStatus.PROCESSING
                 || order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
             // The external supplier has already accepted the request even if cancellation
