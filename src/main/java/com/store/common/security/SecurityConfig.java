@@ -20,6 +20,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -49,10 +50,30 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
 
+    @Value("${app.security.csrf-enabled:true}")
+    private boolean csrfEnabled;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder) throws Exception {
+        if (csrfEnabled) {
+            http.csrf(csrf -> csrf
+                    .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                    .ignoringRequestMatchers(
+                            new AntPathRequestMatcher("/api/v1/auth/login", "POST"),
+                            new AntPathRequestMatcher("/api/v1/auth/register", "POST"),
+                            new AntPathRequestMatcher("/api/v1/auth/email/verify", "POST"),
+                            new AntPathRequestMatcher("/api/v1/auth/email/resend", "POST"),
+                            request -> {
+                                String authorization = request.getHeader("Authorization");
+                                return authorization != null && authorization.startsWith("Bearer ");
+                            }));
+        } else {
+            // Test profile opts out for legacy suite compatibility. CSRF tests explicitly
+            // enable this filter chain and exercise the cookie/header contract.
+            http.csrf(AbstractHttpConfigurer::disable);
+        }
+
         http
-                .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(exceptions -> exceptions
                         .defaultAuthenticationEntryPointFor(
@@ -63,6 +84,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/logout",
+                                "/api/v1/auth/csrf",
                                 "/api/v1/auth/email/verify",
                                 "/api/v1/auth/email/resend",
                                 "/api/v1/auth/google",
@@ -110,7 +132,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-XSRF-TOKEN"));
         configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(List.of("Retry-After"));
         configuration.setMaxAge(3600L);

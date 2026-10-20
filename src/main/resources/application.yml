@@ -14,6 +14,7 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        default_batch_fetch_size: 50
 
   flyway:
     enabled: true
@@ -57,6 +58,8 @@ jwt:
   expiration: ${JWT_EXPIRATION:86400000}
 
 app:
+  security:
+    csrf-enabled: ${APP_CSRF_ENABLED:true}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   ai:
@@ -67,12 +70,14 @@ app:
     timeout-ms: ${AI_TIMEOUT_MS:8000}
     max-input-chars: ${AI_MAX_INPUT_CHARS:1200}
     max-context-products: ${AI_MAX_CONTEXT_PRODUCTS:8}
+    max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:256}
   visual-search:
     max-file-bytes: ${VISUAL_SEARCH_MAX_FILE_BYTES:10485760}
     max-candidates: ${VISUAL_SEARCH_MAX_CANDIDATES:200}
     max-results: ${VISUAL_SEARCH_MAX_RESULTS:6}
     remote-timeout-ms: ${VISUAL_SEARCH_REMOTE_TIMEOUT_MS:2500}
     remote-max-bytes: ${VISUAL_SEARCH_REMOTE_MAX_BYTES:10485760}
+    min-similarity: ${VISUAL_SEARCH_MIN_SIMILARITY:55}
   mail:
     from: ${MAIL_FROM:}
   auth:
@@ -87,6 +92,8 @@ app:
     email-code-expiration-seconds: ${AUTH_EMAIL_CODE_EXPIRATION_SECONDS:600}
     email-code-max-attempts: ${AUTH_EMAIL_CODE_MAX_ATTEMPTS:5}
     email-code-resend-cooldown-seconds: ${AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS:60}
+    login-max-failed-attempts: ${AUTH_LOGIN_MAX_FAILED_ATTEMPTS:5}
+    login-lockout-minutes: ${AUTH_LOGIN_LOCKOUT_MINUTES:15}
   fulfillment:
     enabled: ${FULFILLMENT_ENABLED:false}
     api-path: ${SUPPLIER_FULFILLMENT_API_PATH:/v1/orders}

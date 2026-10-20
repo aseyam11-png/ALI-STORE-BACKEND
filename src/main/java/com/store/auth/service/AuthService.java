@@ -14,6 +14,8 @@ import com.store.user.repository.RoleRepository;
 import com.store.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final EmailOtpService emailOtpService;
+    private final LoginAttemptService loginAttemptService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -70,10 +73,16 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(email, request.getPassword())
-        );
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(email, request.getPassword()));
+        } catch (AuthenticationException ex) {
+            loginAttemptService.recordFailure(email);
+            // Do not disclose whether the account exists, is disabled, or is locked.
+            throw new BadCredentialsException("Invalid email or password");
+        }
 
+        loginAttemptService.recordSuccess(email);
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 

@@ -26,6 +26,8 @@ jwt:
   expiration: 3600000
 
 app:
+  security:
+    csrf-enabled: false
   cors:
     allowed-origins: http://localhost:3000
   auth:

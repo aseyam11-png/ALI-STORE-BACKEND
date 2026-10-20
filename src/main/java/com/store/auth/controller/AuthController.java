@@ -25,10 +25,12 @@ import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Locale;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -44,6 +46,13 @@ public class AuthController {
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
+
+    @GetMapping("/csrf")
+    public ResponseEntity<ApiResponse<Map<String, String>>> csrf(CsrfToken csrfToken) {
+        // Force creation of the deferred token and return it alongside the XSRF-TOKEN cookie.
+        return ResponseEntity.ok(ApiResponse.success(
+                Map.of("token", csrfToken.getToken()), "CSRF token issued"));
+    }
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
