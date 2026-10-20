@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class VisualSearchService {
-    private static final List<String> SUPPORTED_TYPES=List.of("image/jpeg","image/png");
+    private static final List<String> SUPPORTED_TYPES=List.of("image/jpeg","image/png","image/webp");
     private static final int MAX_CACHE_ENTRIES = 5000;
     private static final long SUCCESS_CACHE_TTL_MS = 6 * 60 * 60 * 1000L;
     private static final long FAILURE_CACHE_TTL_MS = 2 * 60 * 1000L;
@@ -77,7 +77,7 @@ public class VisualSearchService {
     private void validateUpload(MultipartFile image){
         if(image==null||image.isEmpty())throw new BusinessException("An image is required");
         if(image.getSize()>properties.maxFileBytes())throw new BusinessException("Image must be 10 MB or less");
-        if(!SUPPORTED_TYPES.contains(image.getContentType()))throw new BusinessException("Only JPG and PNG images are supported");
+        if(!SUPPORTED_TYPES.contains(image.getContentType()))throw new BusinessException("Only JPG, PNG, and WebP images are supported");
     }
 
     private long[] getOrComputeHash(String url){

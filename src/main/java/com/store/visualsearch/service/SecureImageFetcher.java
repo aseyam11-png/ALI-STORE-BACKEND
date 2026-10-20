@@ -24,7 +24,7 @@ public class SecureImageFetcher {
             HttpURLConnection connection=(HttpURLConnection)uri.toURL().openConnection();
             connection.setConnectTimeout(properties.timeoutMs()); connection.setReadTimeout(properties.timeoutMs());
             connection.setInstanceFollowRedirects(false); connection.setRequestMethod("GET");
-            connection.setRequestProperty("Accept","image/png,image/jpeg;q=0.9,*/*;q=0.1");
+            connection.setRequestProperty("Accept","image/webp,image/png,image/jpeg;q=0.9,*/*;q=0.1");
             connection.setRequestProperty("User-Agent","ALI-STORE-VisualSearch/1.0");
             try{
                 if(connection.getResponseCode()!=HttpURLConnection.HTTP_OK)return null;
