@@ -176,6 +176,8 @@ class AuthSecurityRegressionIntegrationTest {
         User user = createUser(uniqueEmail("password-reset"));
         String token = tokenFor(user);
         clearInvocations(emailOtpSender);
+        EmailOtpChallengeResponse pendingLogin =
+                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
 
         mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -208,6 +210,9 @@ class AuthSecurityRegressionIntegrationTest {
         assertEquals(1L, updated.getAuthVersion());
         assertNotNull(challengeRepository.findForVerification(challenge.getChallengeId())
                 .orElseThrow().getConsumedAt());
+        assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingLogin.getChallengeId()))
+                .orElseThrow().getRevokedAt(),
+                "Password reset must revoke pending login OTPs issued against the previous password");
 
         mockMvc.perform(get("/api/v1/auth/session")
                         .header("Authorization", "Bearer " + token))
@@ -321,6 +326,8 @@ class AuthSecurityRegressionIntegrationTest {
     void passwordChangeInvalidatesExistingJwtAndUpdatesPassword() throws Exception {
         User user = createUser(uniqueEmail("change-password"));
         String token = tokenFor(user);
+        EmailOtpChallengeResponse pendingLogin =
+                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
 
         mockMvc.perform(post("/api/v1/auth/password/change")
                         .header("Authorization", "Bearer " + token)
@@ -333,6 +340,9 @@ class AuthSecurityRegressionIntegrationTest {
         User updated = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
         assertTrue(passwordEncoder.matches("AnotherPassword456", updated.getPassword()));
         assertEquals(1L, updated.getAuthVersion());
+        assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingLogin.getChallengeId()))
+                .orElseThrow().getRevokedAt(),
+                "Password change must revoke pending login OTPs issued against the previous password");
 
         mockMvc.perform(get("/api/v1/auth/session")
                         .header("Authorization", "Bearer " + token))
