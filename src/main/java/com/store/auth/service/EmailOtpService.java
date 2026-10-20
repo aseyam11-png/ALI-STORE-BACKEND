@@ -308,7 +308,7 @@ public class EmailOtpService {
     }
 
     private String maskEmail(String email) {
-        String normalized = email.trim().toLowerCase(Locale.ROOT);
+        String normalized = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
         int at = normalized.indexOf('@');
         if (at <= 1) return "***" + (at >= 0 ? normalized.substring(at) : "");
         String local = normalized.substring(0, at);
