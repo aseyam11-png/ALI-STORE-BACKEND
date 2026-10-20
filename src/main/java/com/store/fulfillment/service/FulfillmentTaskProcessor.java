@@ -127,10 +127,11 @@ public class FulfillmentTaskProcessor {
             // The external supplier has already accepted the request even if cancellation
             // raced with the response. Persist the supplier's identifiers for operators;
             // never treat this as success or retry it blindly.
+            FulfillmentTaskStatus previousTaskStatus = task.getStatus();
             persistSupplierAcceptance(shipment, response);
             task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
             task.setLastError("Supplier accepted the order after local task/order state changed"
-                    + " (task=" + task.getStatus() + ", order=" + order.getStatus()
+                    + " (previousTask=" + previousTaskStatus + ", order=" + order.getStatus()
                     + "); supplier cancellation and inventory/financial reconciliation are required");
             taskRepository.save(task);
             return;

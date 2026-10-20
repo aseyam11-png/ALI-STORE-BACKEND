@@ -56,7 +56,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * get their own DB connections that cannot see the main thread's still-uncommitted setup
  * data - the race becomes unobservable rather than proven safe. This class has NO
  * @Transactional wrapper: setup data is committed via ordinary (auto-committing) repository
- * calls before each race is triggered, and Flyway runs its real V1-V3 migrations against a
+ * calls before each race is triggered, and Flyway runs the configured versioned migrations against a
  * genuine PostgreSQL instance (not H2's PostgreSQL-compatibility mode).
  *
  * Named "...IT" (not "...Test"/"...Tests") so Surefire's default include patterns skip it
@@ -143,7 +143,7 @@ class PostgresConcurrencyIT {
 
     @Test
     void flywayMigrations_applyCleanlyAgainstRealPostgres() {
-        // The Spring context only finishes starting if Flyway's V1/V2/V3 migrations all
+        // The Spring context only finishes starting if all configured Flyway migrations
         // applied without error against the real container - reaching this assertion at all
         // is itself the verification. Confirms real PostgreSQL syntax compatibility (this
         // repo's migrations were previously only exercised via H2's PostgreSQL-compat mode).
