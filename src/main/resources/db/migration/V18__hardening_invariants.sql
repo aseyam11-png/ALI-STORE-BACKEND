@@ -3,12 +3,13 @@
 
 CREATE TABLE IF NOT EXISTS inventory_reservations (
     id BIGSERIAL PRIMARY KEY,
-    order_item_id BIGINT NOT NULL UNIQUE REFERENCES order_items(id) ON DELETE CASCADE,
+    order_item_id BIGINT NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
     product_id BIGINT NOT NULL REFERENCES products(id),
     quantity INTEGER NOT NULL CHECK (quantity >= 1),
     status VARCHAR(24) NOT NULL CHECK (status IN ('RESERVED', 'COMMITTED', 'RELEASED')),
     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_inventory_reservations_order_item UNIQUE (order_item_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_reservations_product_status

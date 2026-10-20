@@ -65,6 +65,14 @@ public class FulfillmentTaskProcessor {
     }
 
     private Claim claim(Long taskId) {
+        // Discover the order ID without acquiring the task lock, then lock order -> task.
+        // Cancellation and completion use the same lock order to reduce deadlocks and
+        // ensure a stale order status cannot be used to claim supplier work.
+        FulfillmentTask observed = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
+        Long orderId = observed.getShipment().getOrderId();
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
 
@@ -74,8 +82,6 @@ public class FulfillmentTaskProcessor {
         }
 
         Shipment shipment = task.getShipment();
-        Order order = orderRepository.findById(shipment.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
 
         if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
             task.setStatus(order.getStatus() == com.store.order.entity.OrderStatus.CANCELLED

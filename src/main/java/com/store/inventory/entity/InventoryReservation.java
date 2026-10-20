@@ -18,7 +18,7 @@ import lombok.*;
 public class InventoryReservation extends BaseEntity {
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "order_item_id", nullable = false, unique = true)
+    @JoinColumn(name = "order_item_id", nullable = false)
     private OrderItem orderItem;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
