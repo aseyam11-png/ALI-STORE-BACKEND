@@ -61,10 +61,20 @@ public class HttpSupplierFulfillmentClient implements SupplierFulfillmentClient 
                     .retrieve()
                     .body(SupplierFulfillmentResponse.class);
 
-            if (response == null || !Boolean.TRUE.equals(response.getAccepted())
-                    || response.getSupplierOrderId() == null || response.getSupplierOrderId().isBlank()) {
+            if (response == null) {
                 throw new SupplierOutcomeUnknownException(
-                        "Supplier returned an unusable acceptance response; external order outcome cannot be determined");
+                        "Supplier returned no response; external order outcome cannot be determined");
+            }
+            if (Boolean.FALSE.equals(response.getAccepted())) {
+                throw new IllegalStateException("Supplier explicitly rejected the fulfillment request");
+            }
+            if (!Boolean.TRUE.equals(response.getAccepted())) {
+                throw new SupplierOutcomeUnknownException(
+                        "Supplier response did not provide a definitive acceptance decision");
+            }
+            if (response.getSupplierOrderId() == null || response.getSupplierOrderId().isBlank()) {
+                throw new SupplierOutcomeUnknownException(
+                        "Supplier accepted or may have accepted the order but returned no usable supplier order ID");
             }
 
             return response;
