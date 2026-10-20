@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockMultipartFile;
+import javax.imageio.ImageIO;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +36,9 @@ class VisualSearchServiceTest {
                 imageHashService,
                 fetcher,
                 new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024,60));
+
+        assertTrue(ImageIO.getImageReadersByMIMEType("image/webp").hasNext(),
+                "The WebP ImageIO provider must be present on the runtime classpath");
 
         byte[] payload=new byte[]{1,2,3,4};
         MockMultipartFile file=new MockMultipartFile(
