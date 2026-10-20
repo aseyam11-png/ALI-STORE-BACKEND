@@ -38,10 +38,17 @@ public class User extends BaseEntity {
 
     @Column(name = "failed_login_attempts", nullable = false)
     @Builder.Default
-    private Integer failedLoginAttempts = 0;
+    private int failedLoginAttempts = 0;
 
-    @Column(name = "locked_until")
-    private java.time.LocalDateTime lockedUntil;
+    @Column(name = "login_locked_until")
+    private java.time.Instant loginLockedUntil;
+
+    @Column(name = "last_failed_login_at")
+    private java.time.Instant lastFailedLoginAt;
+
+    @Column(name = "auth_version", nullable = false)
+    @Builder.Default
+    private long authVersion = 0L;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)

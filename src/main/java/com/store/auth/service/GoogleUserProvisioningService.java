@@ -73,14 +73,21 @@ public class GoogleUserProvisioningService {
                     .build();
 
             user = userRepository.save(user);
+        } else {
+            // Do not bind a verified Google identity to a local account whose email
+            // has not yet been verified. Otherwise a third party who pre-created the
+            // local account could make the real Google owner inherit the attacker's
+            // chosen local password/profile. The owner can recover the local account
+            // through the email-based password reset flow first.
+            if (!Boolean.TRUE.equals(user.getEmailVerified())) {
+                throw new BusinessException(
+                        "This account must verify its email or complete password recovery before linking Google");
+            }
         }
 
         if (!Boolean.TRUE.equals(user.getIsEnabled())) {
             throw new BusinessException("User account is disabled");
         }
-
-        user.setEmailVerified(true);
-        userRepository.save(user);
 
         if (userIdentityRepository.existsByUserIdAndProvider(user.getId(), AuthProvider.GOOGLE)) {
             throw new BusinessException(

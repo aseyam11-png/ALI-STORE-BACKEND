@@ -1,6 +1,7 @@
 package com.store.auth;
 
 import com.store.auth.service.GoogleUserProvisioningService;
+import com.store.common.exception.BusinessException;
 import com.store.user.entity.AuthProvider;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
@@ -79,8 +80,39 @@ class GoogleUserProvisioningServiceTest {
         when(oidcUser.getClaims()).thenReturn(Map.of("email_verified", false));
 
         assertThrows(
-                com.store.common.exception.BusinessException.class,
+                BusinessException.class,
                 () -> service.provision(oidcUser));
         verifyNoInteractions(userRepository, roleRepository, passwordEncoder);
+    }
+
+    @Test
+    void verifiedGoogleIdentityCannotLinkToPreexistingUnverifiedLocalAccount() {
+        GoogleUserProvisioningService service =
+                new GoogleUserProvisioningService(
+                        userRepository, identityRepository, roleRepository, passwordEncoder);
+        User preexisting = User.builder()
+                .firstName("Pre")
+                .lastName("Registered")
+                .email("user@example.com")
+                .password("attacker-controlled-hash")
+                .isEnabled(true)
+                .emailVerified(false)
+                .build();
+        preexisting.setId(77L);
+
+        when(oidcUser.getSubject()).thenReturn("legitimate-google-subject");
+        when(oidcUser.getEmail()).thenReturn("user@example.com");
+        when(oidcUser.getClaims()).thenReturn(Map.of("email_verified", true));
+        when(identityRepository.findByProviderAndProviderSubject(
+                AuthProvider.GOOGLE, "legitimate-google-subject"))
+                .thenReturn(Optional.empty());
+        when(userRepository.findByEmailIgnoreCase("user@example.com"))
+                .thenReturn(Optional.of(preexisting));
+
+        assertThrows(BusinessException.class, () -> service.provision(oidcUser));
+        assertFalse(preexisting.getEmailVerified());
+        verify(userRepository, never()).save(any(User.class));
+        verify(identityRepository, never()).save(any());
+        verifyNoInteractions(roleRepository, passwordEncoder);
     }
 }

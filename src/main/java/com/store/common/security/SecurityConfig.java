@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.auth.service.CustomUserDetailsService;
 import com.store.auth.service.GoogleOAuth2FailureHandler;
 import com.store.auth.service.GoogleOAuth2SuccessHandler;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -16,31 +18,41 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
-import org.springframework.security.web.util.matcher.RequestMatcher;
-import jakarta.servlet.http.Cookie;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
+import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.util.StringUtils;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
+
+    // This machine-to-machine webhook authenticates with its dedicated supplier secret.
+    // All browser-originated unsafe requests, including anonymous login/register/reset flows,
+    // require the XSRF cookie/header pair; non-browser Bearer clients are exempt in the matcher.
+    private static final Set<String> CSRF_EXEMPT_PATHS = Set.of(
+            "/api/v1/integrations/suppliers/shipments/update"
+    );
 
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final CustomUserDetailsService userDetailsService;
@@ -53,32 +65,22 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
 
-    @Value("${app.auth.cookie-name:ali_store_session}")
-    private String authCookieName;
+    @Value("${app.auth.cookie-secure:false}")
+    private boolean csrfCookieSecure;
+
+    @Value("${app.auth.cookie-same-site:}")
+    private String csrfCookieSameSite;
+
+    @Value("${app.auth.cookie-domain:}")
+    private String csrfCookieDomain;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder) throws Exception {
-        RequestMatcher csrfMatcher = request -> {
-            String method = request.getMethod();
-            if ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method)
-                    || "TRACE".equalsIgnoreCase(method) || "OPTIONS".equalsIgnoreCase(method)) {
-                return false;
-            }
-            if (request.getRequestURI().startsWith("/api/v1/auth/")) return true;
-            Cookie[] cookies = request.getCookies();
-            if (cookies != null) {
-                for (Cookie cookie : cookies) {
-                    if (authCookieName.equals(cookie.getName())) return true;
-                }
-            }
-            return false;
-        };
-
         http
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-                        .requireCsrfProtectionMatcher(csrfMatcher))
+                        .csrfTokenRepository(csrfTokenRepository())
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
+                        .requireCsrfProtectionMatcher(this::requiresCsrfProtection))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(exceptions -> exceptions
                         .defaultAuthenticationEntryPointFor(
@@ -92,6 +94,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/csrf",
                                 "/api/v1/auth/email/verify",
                                 "/api/v1/auth/email/resend",
+                                "/api/v1/auth/password/forgot",
+                                "/api/v1/auth/password/reset",
                                 "/api/v1/auth/google",
                                 "/oauth2/authorization/**",
                                 "/login/oauth2/code/**",
@@ -132,12 +136,62 @@ public class SecurityConfig {
         return http.build();
     }
 
+    private CookieCsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookieName("XSRF-TOKEN");
+        repository.setHeaderName("X-XSRF-TOKEN");
+        repository.setCookiePath("/");
+
+        String sameSite = csrfCookieSameSite == null || csrfCookieSameSite.isBlank()
+                ? "Strict"
+                : csrfCookieSameSite.trim();
+        repository.setCookieCustomizer(cookie -> {
+            cookie.path("/")
+                    .httpOnly(false)
+                    .secure(csrfCookieSecure)
+                    .sameSite(sameSite);
+            if (csrfCookieDomain != null && !csrfCookieDomain.isBlank()) {
+                cookie.domain(csrfCookieDomain.trim());
+            }
+        });
+        return repository;
+    }
+
+    /**
+     * Require CSRF for every unsafe browser request, not just requests carrying an
+     * existing session cookie. This also prevents login-CSRF and anonymous password-reset
+     * email triggers. Server-to-server Bearer clients and the secret-authenticated supplier
+     * webhook are exempt from browser CSRF tokens.
+     */
+    private boolean requiresCsrfProtection(HttpServletRequest request) {
+        String method = request.getMethod();
+        if ("GET".equalsIgnoreCase(method)
+                || "HEAD".equalsIgnoreCase(method)
+                || "TRACE".equalsIgnoreCase(method)
+                || "OPTIONS".equalsIgnoreCase(method)) {
+            return false;
+        }
+
+        if (CSRF_EXEMPT_PATHS.contains(request.getRequestURI())) {
+            return false;
+        }
+
+        String authorization = request.getHeader("Authorization");
+        if (authorization != null && authorization.startsWith("Bearer ")
+                && StringUtils.hasText(authorization.substring(7))) {
+            return false;
+        }
+
+        return true;
+    }
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-XSRF-TOKEN"));
+        configuration.setAllowedHeaders(List.of(
+                "Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-XSRF-TOKEN"));
         configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(List.of("Retry-After"));
         configuration.setMaxAge(3600L);
@@ -160,4 +214,27 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
+    private static final class SpaCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
+
+        private final CsrfTokenRequestHandler plain = new CsrfTokenRequestAttributeHandler();
+        private final CsrfTokenRequestHandler xor = new XorCsrfTokenRequestAttributeHandler();
+
+        @Override
+        public void handle(
+                HttpServletRequest request,
+                HttpServletResponse response,
+                Supplier<CsrfToken> csrfToken) {
+            this.xor.handle(request, response, csrfToken);
+            // Materialize the deferred token so CookieCsrfTokenRepository sends XSRF-TOKEN.
+            csrfToken.get();
+        }
+
+        @Override
+        public String resolveCsrfTokenValue(HttpServletRequest request, CsrfToken csrfToken) {
+            String headerValue = request.getHeader(csrfToken.getHeaderName());
+            return StringUtils.hasText(headerValue)
+                    ? this.plain.resolveCsrfTokenValue(request, csrfToken)
+                    : this.xor.resolveCsrfTokenValue(request, csrfToken);
+        }
+    }
 }

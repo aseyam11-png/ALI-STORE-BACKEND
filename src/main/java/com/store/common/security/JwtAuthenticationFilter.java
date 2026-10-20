@@ -14,10 +14,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -45,34 +48,63 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (jwt != null) {
+            // A presented token is authoritative: do not let an older session
+            // Authentication bypass database-backed enabled/version checks.
             try {
                 if (tokenRevocationService.isRevoked(jwt)) {
-                    filterChain.doFilter(request, response);
-                    return;
-                }
-
-                String userEmail = jwtService.extractUsername(jwt);
-
-                if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
-
-                    if (jwtService.isTokenValid(jwt, userDetails)
-                            && userDetails.isEnabled()
-                            && userDetails.isAccountNonLocked()
-                            && userDetails.isAccountNonExpired()
-                            && userDetails.isCredentialsNonExpired()) {
-                        UsernamePasswordAuthenticationToken authToken =
-                                new UsernamePasswordAuthenticationToken(
-                                        userDetails,
-                                        null,
-                                        userDetails.getAuthorities()
-                                );
-                        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                        SecurityContextHolder.getContext().setAuthentication(authToken);
+                    SecurityContextHolder.clearContext();
+                } else {
+                    String userEmail = jwtService.extractUsername(jwt);
+                    if (userEmail == null || userEmail.isBlank()) {
+                        SecurityContextHolder.clearContext();
+                    } else {
+                        UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+                        if (jwtService.isTokenValid(jwt, userDetails)) {
+                            UsernamePasswordAuthenticationToken authToken =
+                                    new UsernamePasswordAuthenticationToken(
+                                            userDetails,
+                                            null,
+                                            userDetails.getAuthorities()
+                                    );
+                            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                            SecurityContextHolder.getContext().setAuthentication(authToken);
+                        } else {
+                            SecurityContextHolder.clearContext();
+                        }
                     }
                 }
-            } catch (JwtException | UsernameNotFoundException | SecurityException ex) {
+            } catch (JwtException | IllegalArgumentException | UsernameNotFoundException | SecurityException ex) {
                 SecurityContextHolder.clearContext();
+            }
+        } else {
+            // OAuth2 can establish a server-side SecurityContext. Re-check local account
+            // state even when no JWT is presented, so disabling a local account also
+            // invalidates a surviving session instead of waiting for its original expiry.
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null
+                    && authentication.isAuthenticated()
+                    && !(authentication instanceof AnonymousAuthenticationToken)) {
+                Object principal = authentication.getPrincipal();
+                // Google OAuth success deliberately creates an encrypted JWT cookie and
+                // invalidates the servlet session. A surviving OIDC-only context has no
+                // account-version claim, so it cannot prove it predates a password reset;
+                // clear it and require the database-checked JWT session instead.
+                if (principal instanceof OidcUser) {
+                    SecurityContextHolder.clearContext();
+                } else {
+                    try {
+                        UserDetails current = userDetailsService.loadUserByUsername(authentication.getName());
+                        boolean enabled = current.isEnabled();
+                        boolean versionMatches = !(principal instanceof AccountVersionAware previous)
+                                || !(current instanceof AccountVersionAware latest)
+                                || previous.getAuthVersion() == latest.getAuthVersion();
+                        if (!enabled || !versionMatches) {
+                            SecurityContextHolder.clearContext();
+                        }
+                    } catch (UsernameNotFoundException ex) {
+                        SecurityContextHolder.clearContext();
+                    }
+                }
             }
         }
 

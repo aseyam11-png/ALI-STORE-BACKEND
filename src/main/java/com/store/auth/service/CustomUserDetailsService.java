@@ -9,9 +9,9 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.util.Collections;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -21,19 +21,19 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        User user = userRepository.findByEmailIgnoreCase(email.trim().toLowerCase(Locale.ROOT))
+                .orElseThrow(() -> new UsernameNotFoundException("Invalid email or password"));
 
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-        boolean accountNonLocked = user.getLockedUntil() == null || !user.getLockedUntil().isAfter(now);
-        return new org.springframework.security.core.userdetails.User(
+        Instant lockedUntil = user.getLoginLockedUntil();
+        boolean accountNonLocked = lockedUntil == null || !lockedUntil.isAfter(Instant.now());
+
+        return new AccountUserDetails(
                 user.getEmail(),
                 user.getPassword(),
                 Boolean.TRUE.equals(user.getIsEnabled()),
-                true,
-                true,
                 accountNonLocked,
-                Collections.singletonList(new SimpleGrantedAuthority(user.getRole().getName()))
+                Collections.singletonList(new SimpleGrantedAuthority(user.getRole().getName())),
+                user.getAuthVersion()
         );
     }
 }

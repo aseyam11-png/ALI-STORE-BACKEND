@@ -1,11 +1,5 @@
--- Persisted controls and supporting indexes; this migration is additive.
-ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP WITHOUT TIME ZONE;
-
-ALTER TABLE users
-    ADD CONSTRAINT chk_users_failed_login_attempts_nonnegative
-    CHECK (failed_login_attempts >= 0);
+-- Order, inventory reservation, fulfillment, and catalog invariants.
+-- Authentication and account-lockout columns are created by V17__authentication_lockout_and_version.sql.
 
 CREATE TABLE IF NOT EXISTS inventory_reservations (
     id BIGSERIAL PRIMARY KEY,
