@@ -40,8 +40,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
               and o.reservationExpiresAt <= :now
             order by o.reservationExpiresAt asc
             """)
-    List<Order> findTop20ExpiredPendingOrdersForUpdate(
-            @Param("now") java.time.LocalDateTime now);
+    List<Order> findExpiredPendingOrdersForUpdate(
+            @Param("now") java.time.LocalDateTime now,
+            Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")

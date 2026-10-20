@@ -33,6 +33,7 @@ import com.store.shipping.entity.Shipment;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -193,7 +194,7 @@ public class OrderService {
     @Scheduled(fixedDelayString = "${app.orders.reservation-expiry-poll-ms:60000}")
     @Transactional
     public void expirePendingOrderReservations() {
-        for (Order order : orderRepository.findTop20ExpiredPendingOrdersForUpdate(LocalDateTime.now())) {
+        for (Order order : orderRepository.findExpiredPendingOrdersForUpdate(LocalDateTime.now(), PageRequest.of(0, 20))) {
             expireOrderReservation(order);
         }
     }

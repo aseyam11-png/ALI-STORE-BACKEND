@@ -43,12 +43,24 @@ public class FulfillmentTaskProcessor {
             return;
         }
 
+        SupplierFulfillmentResponse response;
         try {
-            SupplierFulfillmentResponse response = supplierFulfillmentClient.submit(
+            response = supplierFulfillmentClient.submit(
                     claim.shipment().getSupplier(), claim.request());
+        } catch (RuntimeException supplierFailure) {
+            // Only failures from the supplier submission enter the retry policy.
+            tx.executeWithoutResult(status -> fail(taskId, supplierFailure));
+            return;
+        }
+
+        try {
             tx.executeWithoutResult(status -> complete(taskId, response));
-        } catch (RuntimeException ex) {
-            tx.executeWithoutResult(status -> fail(taskId, ex));
+        } catch (RuntimeException localPersistenceFailure) {
+            // The supplier has already returned success. Never blindly submit the same
+            // order again because the local transaction failed; manual reconciliation
+            // must inspect the supplier acceptance and local state.
+            tx.executeWithoutResult(status ->
+                    markReconciliationRequired(taskId, response, localPersistenceFailure));
         }
     }
 
@@ -111,6 +123,20 @@ public class FulfillmentTaskProcessor {
         Order order = orderRepository.findById(shipment.getOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
 
+        if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+            shipment.setSupplierOrderId(response.getSupplierOrderId());
+            shipment.setCarrier(response.getCarrier());
+            shipment.setTrackingNumber(response.getTrackingNumber());
+            shipment.setEstimatedDeliveryDate(response.getEstimatedDeliveryDate());
+            shipment.setStatus(ShipmentStatus.PROCESSING);
+            shipmentRepository.save(shipment);
+            task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
+            task.setLastError("Supplier accepted the order after local order status changed to "
+                    + order.getStatus() + "; supplier cancellation and financial reconciliation are required");
+            taskRepository.save(task);
+            return;
+        }
+
         shipment.setSupplierOrderId(response.getSupplierOrderId());
         shipment.setCarrier(response.getCarrier());
         shipment.setTrackingNumber(response.getTrackingNumber());
@@ -146,12 +172,17 @@ public class FulfillmentTaskProcessor {
         taskRepository.save(task);
     }
 
-    private void markReconciliationRequired(Long taskId, RuntimeException ex) {
+    private void markReconciliationRequired(
+            Long taskId, SupplierFulfillmentResponse response, RuntimeException ex) {
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
         if (task.getStatus() != FulfillmentTaskStatus.PROCESSING) return;
         task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
-        task.setLastError("Supplier submission returned successfully but local persistence failed: " + safeMessage(ex));
+        String supplierOrderId = response.getSupplierOrderId();
+        task.setLastError("Supplier submission returned successfully"
+                + (supplierOrderId == null || supplierOrderId.isBlank()
+                        ? "" : " with supplier order id " + supplierOrderId)
+                + " but local persistence failed: " + safeMessage(ex));
         taskRepository.save(task);
     }
 
