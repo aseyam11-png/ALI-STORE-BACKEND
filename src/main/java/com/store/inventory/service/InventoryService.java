@@ -12,6 +12,7 @@ import com.store.inventory.enums.InventorySource;
 import com.store.inventory.enums.PublicAvailability;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
+import com.store.order.entity.OrderItem;
 import lombok.RequiredArgsConstructor;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -102,6 +104,18 @@ public class InventoryService {
         if (quantity < 1) throw new BusinessException("Reservation quantity must be at least 1");
         if (orderItemId == null) throw new BusinessException("An order line is required to own a stock reservation");
 
+        OrderItem orderItem = entityManager.find(OrderItem.class, orderItemId);
+        if (orderItem == null) {
+            throw new BusinessException("Cannot reserve stock for a missing order line " + orderItemId);
+        }
+        if (orderItem.getProduct() == null
+                || !Objects.equals(orderItem.getProduct().getId(), productId)) {
+            throw new BusinessException("Reservation product does not match order line " + orderItemId);
+        }
+        if (!Objects.equals(orderItem.getQuantity(), quantity)) {
+            throw new BusinessException("Reservation quantity does not match order line " + orderItemId);
+        }
+
         InventoryReservation existing = reservationRepository.findByOrderItemIdForUpdate(orderItemId).orElse(null);
         if (existing != null) {
             if (existing.getProduct().getId().equals(productId)
@@ -121,7 +135,7 @@ public class InventoryService {
         refreshDiscrepancy(inventory);
         inventoryRepository.save(inventory);
         reservationRepository.save(InventoryReservation.builder()
-                .orderItem(entityManager.getReference(com.store.order.entity.OrderItem.class, orderItemId))
+                .orderItem(orderItem)
                 .product(inventory.getProduct())
                 .quantity(quantity)
                 .status(InventoryReservationStatus.RESERVED)
@@ -137,6 +151,7 @@ public class InventoryService {
             throw new BusinessException("Inventory reservation has already been released");
         }
 
+        assertReservationMatchesOrderLine(reservation, orderItemId);
         Long productId = reservation.getProduct().getId();
         int quantity = reservation.getQuantity();
         Inventory inventory = inventoryRepository.findByProductIdForUpdate(productId)
@@ -161,6 +176,7 @@ public class InventoryService {
         if (reservation == null || reservation.getStatus() == InventoryReservationStatus.RELEASED
                 || reservation.getStatus() == InventoryReservationStatus.COMMITTED) return;
 
+        assertReservationMatchesOrderLine(reservation, orderItemId);
         Long productId = reservation.getProduct().getId();
         int quantity = reservation.getQuantity();
         Inventory inventory = inventoryRepository.findByProductIdForUpdate(productId)
@@ -174,6 +190,17 @@ public class InventoryService {
         inventoryRepository.save(inventory);
         reservation.setStatus(InventoryReservationStatus.RELEASED);
         reservationRepository.save(reservation);
+    }
+
+    private void assertReservationMatchesOrderLine(InventoryReservation reservation, Long orderItemId) {
+        OrderItem orderItem = reservation.getOrderItem();
+        if (orderItem == null
+                || !Objects.equals(orderItem.getId(), orderItemId)
+                || orderItem.getProduct() == null
+                || !Objects.equals(orderItem.getProduct().getId(), reservation.getProduct().getId())
+                || !Objects.equals(orderItem.getQuantity(), reservation.getQuantity())) {
+            throw new BusinessException("Inventory reservation ownership does not match order line " + orderItemId);
+        }
     }
 
     @Transactional
