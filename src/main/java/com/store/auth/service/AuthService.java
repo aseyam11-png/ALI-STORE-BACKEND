@@ -223,6 +223,7 @@ public class AuthService {
             throw new BusinessException("Invalid or expired password reset request");
         }
 
+        emailOtpService.revokePendingAuthenticationChallenges(user.getId());
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setEmailVerified(true);
         user.setFailedLoginAttempts(0);
@@ -247,6 +248,7 @@ public class AuthService {
             throw new BusinessException("New password must be different from the current password");
         }
 
+        emailOtpService.revokePendingAuthenticationChallenges(user.getId());
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setFailedLoginAttempts(0);
         user.setLoginLockedUntil(null);
