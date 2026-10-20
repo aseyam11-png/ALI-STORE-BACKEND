@@ -175,15 +175,28 @@ public class FulfillmentService {
             throw new BusinessException("Task is not awaiting reconciliation");
         }
         Shipment shipment = task.getShipment();
-        if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
-            throw new BusinessException("Cancelled or non-processing orders require separate supplier and financial reconciliation");
+        String confirmedSupplierOrderId = supplierOrderId.trim();
+        String existingSupplierOrderId = shipment.getSupplierOrderId();
+        if (existingSupplierOrderId != null && !existingSupplierOrderId.isBlank()
+                && !existingSupplierOrderId.equals(confirmedSupplierOrderId)) {
+            throw new BusinessException("A different supplier order id is already recorded; manual reconciliation is required");
         }
 
-        shipment.setSupplierOrderId(supplierOrderId.trim());
+        shipment.setSupplierOrderId(confirmedSupplierOrderId);
         shipment.setCarrier(carrier == null ? null : carrier.trim());
         shipment.setTrackingNumber(trackingNumber == null ? null : trackingNumber.trim());
         shipment.setStatus(ShipmentStatus.PROCESSING);
         shipmentRepository.save(shipment);
+
+        if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+            // Record the accepted external order, but do not commit/release stock blindly
+            // or mark fulfillment successful after the local order has changed state.
+            task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
+            task.setLastError("Supplier acceptance confirmed for order status " + order.getStatus()
+                    + "; supplier cancellation, inventory, and financial reconciliation are required");
+            taskRepository.save(task);
+            return;
+        }
 
         order.getItems().stream()
                 .filter(item -> item.getSupplier() != null
