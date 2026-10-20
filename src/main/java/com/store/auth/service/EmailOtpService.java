@@ -273,8 +273,8 @@ public class EmailOtpService {
 
     /**
      * Revoke stale authentication proofs whenever credentials change. A pending LOGIN
-     * OTP was issued after checking the previous password; an EMAIL_VERIFICATION OTP
-     * may also mint a session, so neither may survive a password reset/change.
+     * or EMAIL_VERIFICATION OTP may mint a session, and a PASSWORD_RESET OTP can change
+     * the password again; none should survive a password reset/change.
      */
     @Transactional
     public void revokePendingAuthenticationChallenges(Long userId) {
@@ -284,6 +284,7 @@ public class EmailOtpService {
         Instant now = Instant.now();
         challengeRepository.revokeActiveChallenges(userId, EmailOtpPurpose.LOGIN, now);
         challengeRepository.revokeActiveChallenges(userId, EmailOtpPurpose.EMAIL_VERIFICATION, now);
+        challengeRepository.revokeActiveChallenges(userId, EmailOtpPurpose.PASSWORD_RESET, now);
     }
 
     private BusinessException invalidChallengeException(boolean passwordResetFlow) {
