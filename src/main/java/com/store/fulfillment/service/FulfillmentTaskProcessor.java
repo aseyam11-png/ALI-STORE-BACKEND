@@ -112,38 +112,31 @@ public class FulfillmentTaskProcessor {
     }
 
     private void complete(Long taskId, SupplierFulfillmentResponse response) {
+        // Lock in the same order used by order cancellation (order, then task) to
+        // avoid a task/order deadlock while a supplier request is in flight.
+        FulfillmentTask observed = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
+        Shipment shipment = observed.getShipment();
+        Order order = orderRepository.findByIdForUpdate(shipment.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
 
-        if (task.getStatus() != FulfillmentTaskStatus.PROCESSING) {
-            return;
-        }
-
-        Shipment shipment = task.getShipment();
-        // Serialize supplier acceptance persistence with cancellation/status transitions.
-        Order order = orderRepository.findByIdForUpdate(shipment.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + shipment.getOrderId()));
-
-        if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
-            shipment.setSupplierOrderId(response.getSupplierOrderId());
-            shipment.setCarrier(response.getCarrier());
-            shipment.setTrackingNumber(response.getTrackingNumber());
-            shipment.setEstimatedDeliveryDate(response.getEstimatedDeliveryDate());
-            shipment.setStatus(ShipmentStatus.PROCESSING);
-            shipmentRepository.save(shipment);
+        if (task.getStatus() != FulfillmentTaskStatus.PROCESSING
+                || order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+            // The external supplier has already accepted the request even if cancellation
+            // raced with the response. Persist the supplier's identifiers for operators;
+            // never treat this as success or retry it blindly.
+            persistSupplierAcceptance(shipment, response);
             task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
-            task.setLastError("Supplier accepted the order after local order status changed to "
-                    + order.getStatus() + "; supplier cancellation and financial reconciliation are required");
+            task.setLastError("Supplier accepted the order after local task/order state changed"
+                    + " (task=" + task.getStatus() + ", order=" + order.getStatus()
+                    + "); supplier cancellation and inventory/financial reconciliation are required");
             taskRepository.save(task);
             return;
         }
 
-        shipment.setSupplierOrderId(response.getSupplierOrderId());
-        shipment.setCarrier(response.getCarrier());
-        shipment.setTrackingNumber(response.getTrackingNumber());
-        shipment.setEstimatedDeliveryDate(response.getEstimatedDeliveryDate());
-        shipment.setStatus(ShipmentStatus.PROCESSING);
-        shipmentRepository.save(shipment);
+        persistSupplierAcceptance(shipment, response);
 
         order.getItems().stream()
                 .filter(item -> item.getSupplier() != null
@@ -153,6 +146,15 @@ public class FulfillmentTaskProcessor {
         task.setStatus(FulfillmentTaskStatus.SUCCEEDED);
         task.setLastError(null);
         taskRepository.save(task);
+    }
+
+    private void persistSupplierAcceptance(Shipment shipment, SupplierFulfillmentResponse response) {
+        shipment.setSupplierOrderId(response.getSupplierOrderId());
+        shipment.setCarrier(response.getCarrier());
+        shipment.setTrackingNumber(response.getTrackingNumber());
+        shipment.setEstimatedDeliveryDate(response.getEstimatedDeliveryDate());
+        shipment.setStatus(ShipmentStatus.PROCESSING);
+        shipmentRepository.save(shipment);
     }
 
     private void fail(Long taskId, RuntimeException ex) {
