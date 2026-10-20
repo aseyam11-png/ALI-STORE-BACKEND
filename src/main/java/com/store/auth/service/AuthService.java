@@ -156,6 +156,13 @@ public class AuthService {
             throw new BusinessException("User account is disabled");
         }
 
+        // A challenge may have been issued before concurrent failed password attempts
+        // locked the account. Do not let completing that pending challenge mint a new JWT
+        // while account lockout is active. This runtime exception rolls back OTP consumption.
+        if (loginAttemptService.isLocked(user.getEmail())) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
         if (challenge.getPurpose() == EmailOtpPurpose.EMAIL_VERIFICATION
                 && !Boolean.TRUE.equals(user.getEmailVerified())) {
             user.setEmailVerified(true);
