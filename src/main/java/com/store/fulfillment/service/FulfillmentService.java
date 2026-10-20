@@ -78,16 +78,32 @@ public class FulfillmentService {
     @Transactional
     public void recoverStaleProcessingTasks() {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(15);
-        List<FulfillmentTask> tasks = taskRepository
-                .findTop20ByStatusAndUpdatedAtBeforeOrderByIdAsc(FulfillmentTaskStatus.PROCESSING, cutoff);
+        List<Long> taskIds = taskRepository.findStaleProcessingTaskIds(
+                FulfillmentTaskStatus.PROCESSING, cutoff, org.springframework.data.domain.PageRequest.of(0, 20));
 
-        tasks.stream()
-                .filter(task -> task.getShipment().getSupplierOrderId() == null)
-                .forEach(task -> {
-                    task.setStatus(FulfillmentTaskStatus.PENDING);
-                    task.setNextAttemptAt(LocalDateTime.now());
-                    taskRepository.save(task);
-                });
+        for (Long taskId : taskIds) {
+            // Query scalar IDs first so no task row is locked before the order row.
+            Long orderId = taskRepository.findOrderIdByTaskId(taskId);
+            if (orderId == null) continue;
+
+            if (orderRepository.findByIdForUpdate(orderId).isEmpty()) continue;
+            FulfillmentTask task = taskRepository.findByIdForUpdate(taskId).orElse(null);
+            if (task == null
+                    || task.getStatus() != FulfillmentTaskStatus.PROCESSING
+                    || task.getUpdatedAt() == null
+                    || !task.getUpdatedAt().isBefore(cutoff)) {
+                continue;
+            }
+
+            // The supplier may have accepted the request before this worker stopped.
+            // Do not automatically replay an external order with an unknown outcome.
+            task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
+            task.setLastError("Fulfillment worker stopped while supplier outcome may be unknown; "
+                    + "verify supplier acceptance before retrying");
+            taskRepository.save(task);
+            log.warn("Fulfillment task {} requires reconciliation after stale PROCESSING state; order={}",
+                    task.getId(), orderId);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -118,6 +134,10 @@ public class FulfillmentService {
         if (!"SUPPLIER_CONFIRMED_NOT_ACCEPTED".equals(confirmation)) {
             throw new BusinessException("Manual retry requires explicit supplier confirmation that no order was accepted");
         }
+        Long orderId = taskRepository.findOrderIdByTaskId(taskId);
+        if (orderId == null) throw new ResourceNotFoundException("Fulfillment task not found");
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
         if (task.getStatus() != FulfillmentTaskStatus.FAILED
@@ -128,8 +148,6 @@ public class FulfillmentService {
         if (shipment.getSupplierOrderId() != null && !shipment.getSupplierOrderId().isBlank()) {
             throw new BusinessException("Supplier order id already exists; task cannot be requeued");
         }
-        Order order = orderRepository.findById(shipment.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
             throw new BusinessException("Only processing orders can be requeued");
         }
@@ -146,6 +164,10 @@ public class FulfillmentService {
         if (supplierOrderId == null || supplierOrderId.isBlank()) {
             throw new BusinessException("Supplier order id is required for reconciliation");
         }
+        Long orderId = taskRepository.findOrderIdByTaskId(taskId);
+        if (orderId == null) throw new ResourceNotFoundException("Fulfillment task not found");
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
         if (task.getStatus() != FulfillmentTaskStatus.FAILED
@@ -153,8 +175,6 @@ public class FulfillmentService {
             throw new BusinessException("Task is not awaiting reconciliation");
         }
         Shipment shipment = task.getShipment();
-        Order order = orderRepository.findById(shipment.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
             throw new BusinessException("Cancelled or non-processing orders require separate supplier and financial reconciliation");
         }
