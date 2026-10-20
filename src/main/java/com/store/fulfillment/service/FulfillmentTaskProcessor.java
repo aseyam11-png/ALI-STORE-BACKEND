@@ -68,9 +68,10 @@ public class FulfillmentTaskProcessor {
         // Discover the order ID without acquiring the task lock, then lock order -> task.
         // Cancellation and completion use the same lock order to reduce deadlocks and
         // ensure a stale order status cannot be used to claim supplier work.
-        FulfillmentTask observed = taskRepository.findById(taskId)
-                .orElseThrow(() -> new ResourceNotFoundException("Fulfillment task not found"));
-        Long orderId = observed.getShipment().getOrderId();
+        Long orderId = taskRepository.findOrderIdByTaskId(taskId);
+        if (orderId == null) {
+            throw new ResourceNotFoundException("Fulfillment task not found");
+        }
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
         FulfillmentTask task = taskRepository.findByIdForUpdate(taskId)
