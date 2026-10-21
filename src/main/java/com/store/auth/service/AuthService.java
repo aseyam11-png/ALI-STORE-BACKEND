@@ -180,7 +180,8 @@ public class AuthService {
         // A challenge may have been issued before concurrent failed password attempts
         // locked the account. Do not let completing that pending challenge mint a new JWT
         // while account lockout is active. This runtime exception rolls back OTP consumption.
-        if (loginAttemptService.isLocked(user.getEmail())) {
+        if (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now())) {
             throw new UnauthorizedException("Invalid email or password");
         }
 
