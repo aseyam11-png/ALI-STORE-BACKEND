@@ -6,6 +6,7 @@ import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
 import com.store.user.entity.User;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,7 @@ class EmailOtpServiceSecurityContractTest {
 
     @Mock private EmailOtpChallengeRepository challengeRepository;
     @Mock private EmailOtpSender emailOtpSender;
+    @Mock private EntityManager entityManager;
 
     private EmailOtpService service;
     private User user;
@@ -51,6 +53,7 @@ class EmailOtpServiceSecurityContractTest {
                                 "otp-test-secret-with-at-least-32-bytes!".getBytes(StandardCharsets.UTF_8)));
 
         service = new EmailOtpService(challengeRepository, emailOtpSender, environment);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "entityManager", entityManager);
         service.initialize();
 
         user = User.builder()
@@ -104,9 +107,28 @@ class EmailOtpServiceSecurityContractTest {
         assertTrue(code.matches("\\d{6}"));
         assertEquals(64, persisted.getCodeHash().length());
         assertNotEquals(code, persisted.getCodeHash());
+        assertEquals(0L, persisted.getAuthVersion());
         assertEquals(response.getChallengeId(), persisted.getChallengeId().toString());
         assertEquals("u***@example.com", response.getMaskedEmail());
         assertEquals(600, response.getExpiresInSeconds());
+    }
+
+    @Test
+    void verifyChallenge_revokesChallengeIssuedForAnOlderAuthVersion() {
+        UUID challengeId = issueChallengeForVerification();
+        EmailOtpChallenge challenge = capturePersistedChallenge();
+
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(anyString(), codeCaptor.capture(), any(), any());
+        when(challengeRepository.findForVerification(challengeId))
+                .thenReturn(Optional.of(challenge));
+        user.setAuthVersion(1L);
+
+        assertThrows(BusinessException.class,
+                () -> service.verifyChallenge(challengeId, codeCaptor.getValue()));
+
+        assertNotNull(challenge.getRevokedAt());
+        verify(challengeRepository, atLeastOnce()).save(challenge);
     }
 
     @Test
