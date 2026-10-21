@@ -134,6 +134,7 @@ class AuthServiceLockoutTest {
 
         verify(entityManager).refresh(user, LockModeType.PESSIMISTIC_WRITE);
         verify(userRepository, never()).save(any(User.class));
-        verifyNoInteractions(jwtService, emailOtpService);
+        verifyNoInteractions(jwtService);
+        verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
     }
 }
