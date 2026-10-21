@@ -1,6 +1,8 @@
 package com.store.auth.service;
 
 import com.store.auth.dto.LoginRequest;
+import com.store.auth.entity.EmailOtpChallenge;
+import com.store.auth.entity.EmailOtpPurpose;
 import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
@@ -21,6 +23,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,6 +61,43 @@ class AuthServiceLockoutTest {
                 emailOtpService,
                 loginAttemptService);
         ReflectionTestUtils.setField(authService, "entityManager", entityManager);
+    }
+
+    @Test
+    void refusesToMintSessionWhenAccountBecomesLockedDuringOtpVerification() {
+        UUID challengeId = UUID.randomUUID();
+        Role role = Role.builder().name("ROLE_USER").description("Standard customer").build();
+        User user = User.builder()
+                .firstName("Race")
+                .lastName("OTP")
+                .email(EMAIL)
+                .password("encoded-password")
+                .isEnabled(true)
+                .emailVerified(true)
+                .role(role)
+                .build();
+        EmailOtpChallenge challenge = EmailOtpChallenge.builder()
+                .challengeId(challengeId)
+                .user(user)
+                .purpose(EmailOtpPurpose.LOGIN)
+                .codeHash("0".repeat(64))
+                .expiresAt(Instant.now().plusSeconds(600))
+                .build();
+
+        when(emailOtpService.verifyChallenge(
+                eq(challengeId), eq("123456"), any(EmailOtpPurpose[].class)))
+                .thenReturn(challenge);
+        doAnswer(invocation -> {
+            user.setLoginLockedUntil(Instant.now().plusSeconds(900));
+            user.setFailedLoginAttempts(5);
+            return null;
+        }).when(entityManager).refresh(eq(user), eq(LockModeType.PESSIMISTIC_WRITE));
+
+        assertThrows(UnauthorizedException.class,
+                () -> authService.verifyEmailCode(challengeId.toString(), "123456"));
+
+        verify(entityManager).refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        verifyNoInteractions(jwtService);
     }
 
     @Test
