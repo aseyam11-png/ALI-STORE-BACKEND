@@ -7,6 +7,9 @@ import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
 import com.store.user.entity.User;
 import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,9 @@ public class EmailOtpService {
     private final EmailOtpSender emailOtpSender;
     private final Environment environment;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private byte[] hashSecret;
     private boolean verificationEnabled;
@@ -129,7 +135,8 @@ public class EmailOtpService {
 
         challengeRepository.findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
                         user.getId(), purpose)
-                .filter(existing -> existing.getCreatedAt() != null
+                .filter(existing -> existing.getAuthVersion() == user.getAuthVersion()
+                        && existing.getCreatedAt() != null
                         && now.isBefore(existing.getCreatedAt().toInstant(java.time.ZoneOffset.UTC)
                         .plusSeconds(resendCooldownSeconds)))
                 .ifPresent(existing -> {
@@ -146,6 +153,7 @@ public class EmailOtpService {
                 .challengeId(challengeId)
                 .user(user)
                 .purpose(purpose)
+                .authVersion(user.getAuthVersion())
                 .codeHash(hash(challengeId, code))
                 .expiresAt(now.plusSeconds(expirationSeconds))
                 .attemptCount(0)
@@ -220,6 +228,18 @@ public class EmailOtpService {
             throw invalidChallengeException(passwordResetFlow);
         }
 
+        // Bind this OTP to the account version that existed when it was issued. This
+        // closes the race where a stale login/reset challenge is created while a password
+        // change is concurrently invalidating the account's previous authentication state.
+        User challengeUser = challenge.getUser();
+        entityManager.refresh(challengeUser, LockModeType.PESSIMISTIC_WRITE);
+        if (challenge.getAuthVersion() != challengeUser.getAuthVersion()) {
+            challenge.setRevokedAt(now);
+            challengeRepository.save(challenge);
+            throw invalidChallengeException(
+                    passwordResetFlow || challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
+        }
+
         if (challenge.getAttemptCount() >= maxAttempts) {
             challenge.setRevokedAt(now);
             challengeRepository.save(challenge);
@@ -245,7 +265,7 @@ public class EmailOtpService {
         return challenge;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = BusinessException.class)
     public EmailOtpChallengeResponse resend(UUID challengeId) {
         // Do not expose whether a submitted handle belongs to a real email/account.
         // Unknown, expired, consumed, revoked, and cooldown-limited challenges share
@@ -254,6 +274,14 @@ public class EmailOtpService {
                 .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
 
         Instant now = Instant.now();
+        User challengeUser = current.getUser();
+        entityManager.refresh(challengeUser, LockModeType.PESSIMISTIC_WRITE);
+        if (current.getAuthVersion() != challengeUser.getAuthVersion()) {
+            current.setRevokedAt(now);
+            challengeRepository.save(current);
+            throw new BusinessException("Verification request is invalid or cannot be resent yet");
+        }
+
         if (current.getConsumedAt() != null
                 || current.getRevokedAt() != null
                 || !now.isBefore(current.getExpiresAt())
@@ -270,22 +298,6 @@ public class EmailOtpService {
             // account-existence oracle when a user submits a decoy challenge handle.
             throw new BusinessException("Verification request is invalid or cannot be resent yet");
         }
-    }
-
-    /**
-     * Revoke stale authentication proofs whenever credentials change. A pending LOGIN
-     * or EMAIL_VERIFICATION OTP may mint a session, and a PASSWORD_RESET OTP can change
-     * the password again; none should survive a password reset/change.
-     */
-    @Transactional
-    public void revokePendingAuthenticationChallenges(Long userId) {
-        if (userId == null) {
-            return;
-        }
-        Instant now = Instant.now();
-        challengeRepository.revokeActiveChallenges(userId, EmailOtpPurpose.LOGIN, now);
-        challengeRepository.revokeActiveChallenges(userId, EmailOtpPurpose.EMAIL_VERIFICATION, now);
-        challengeRepository.revokeActiveChallenges(userId, EmailOtpPurpose.PASSWORD_RESET, now);
     }
 
     private BusinessException invalidChallengeException(boolean passwordResetFlow) {
