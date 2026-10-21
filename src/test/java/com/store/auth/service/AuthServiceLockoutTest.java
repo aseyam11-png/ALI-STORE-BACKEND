@@ -1,7 +1,6 @@
 package com.store.auth.service;
 
 import com.store.auth.dto.LoginRequest;
-import com.store.auth.service.EmailOtpService;
 import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
