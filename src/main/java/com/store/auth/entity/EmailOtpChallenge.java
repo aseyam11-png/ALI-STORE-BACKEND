@@ -34,6 +34,10 @@ public class EmailOtpChallenge extends BaseEntity {
     @Column(nullable = false, length = 40)
     private EmailOtpPurpose purpose;
 
+    @Column(name = "auth_version", nullable = false)
+    @Builder.Default
+    private long authVersion = 0L;
+
     @Column(name = "code_hash", nullable = false, length = 64)
     private String codeHash;
 
