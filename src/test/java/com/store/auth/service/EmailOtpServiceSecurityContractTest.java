@@ -6,6 +6,7 @@ import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
 import com.store.user.entity.User;
+import com.store.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,7 @@ class EmailOtpServiceSecurityContractTest {
     @Mock private EmailOtpChallengeRepository challengeRepository;
     @Mock private EmailOtpSender emailOtpSender;
     @Mock private EntityManager entityManager;
+    @Mock private UserRepository userRepository;
 
     private EmailOtpService service;
     private User user;
@@ -52,7 +54,7 @@ class EmailOtpServiceSecurityContractTest {
                         Base64.getEncoder().encodeToString(
                                 "otp-test-secret-with-at-least-32-bytes!".getBytes(StandardCharsets.UTF_8)));
 
-        service = new EmailOtpService(challengeRepository, emailOtpSender, environment);
+        service = new EmailOtpService(challengeRepository, emailOtpSender, environment, userRepository);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "entityManager", entityManager);
         service.initialize();
 
@@ -65,6 +67,7 @@ class EmailOtpServiceSecurityContractTest {
                 .emailVerified(true)
                 .build();
         user.setId(42L);
+        when(userRepository.findById(42L)).thenReturn(Optional.of(user));
     }
 
     @Test
