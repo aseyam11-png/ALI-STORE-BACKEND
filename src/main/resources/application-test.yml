@@ -1,3 +1,4 @@
+
 # Test-only profile: an isolated in-memory H2 database, never used outside automated tests.
 # Flyway is disabled here and Hibernate generates the schema for the test slice instead,
 # because the real Flyway migrations are written for PostgreSQL. Flyway-against-real-Postgres
@@ -29,6 +30,7 @@ app:
   cors:
     allowed-origins: http://localhost:3000
   auth:
+    cookie-same-site: Strict
     email-verification-enabled: true
     login-email-otp-enabled: true
     email-code-expiration-seconds: 600

@@ -147,7 +147,9 @@ class AuthSecurityRegressionIntegrationTest {
                 () -> authService.verifyEmailCode(issued.getChallengeId(), codeCaptor.getValue()));
 
         UUID challengeId = UUID.fromString(issued.getChallengeId());
-        EmailOtpChallenge rejected = challengeRepository.findForVerification(challengeId).orElseThrow();
+        EmailOtpChallenge rejected =
+                challengeRepository.findByChallengeId(challengeId).orElseThrow();
+
         assertNull(rejected.getConsumedAt(),
                 "Rejecting a locked account must not consume its valid OTP");
 
@@ -159,7 +161,7 @@ class AuthSecurityRegressionIntegrationTest {
 
         var authenticated = authService.verifyEmailCode(issued.getChallengeId(), codeCaptor.getValue());
         assertNotNull(authenticated.getToken());
-        assertNotNull(challengeRepository.findForVerification(challengeId).orElseThrow().getConsumedAt());
+        assertNotNull(challengeRepository.findByChallengeId(challengeId).orElseThrow().getConsumedAt());
     }
 
     @Test
@@ -199,7 +201,7 @@ class AuthSecurityRegressionIntegrationTest {
 
         assertThrows(BusinessException.class,
                 () -> authService.verifyEmailCode(pendingLogin.getChallengeId(), "123456"));
-        assertNotNull(challengeRepository.findForVerification(
+        assertNotNull(challengeRepository.findByChallengeId(
                         UUID.fromString(pendingLogin.getChallengeId()))
                 .orElseThrow().getRevokedAt());
     }
@@ -237,10 +239,11 @@ class AuthSecurityRegressionIntegrationTest {
         User afterStaleReset = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
         assertTrue(passwordEncoder.matches("AnotherPassword456", afterStaleReset.getPassword()),
                 "A reset OTP issued before the password change must not overwrite the new password");
-        assertNotNull(challengeRepository.findForVerification(
+
+        assertNotNull(challengeRepository.findByChallengeId(
                         UUID.fromString(pendingLogin.getChallengeId()))
                 .orElseThrow().getRevokedAt());
-        assertNotNull(challengeRepository.findForVerification(
+        assertNotNull(challengeRepository.findByChallengeId(
                         UUID.fromString(pendingReset.getChallengeId()))
                 .orElseThrow().getRevokedAt());
     }
@@ -249,8 +252,10 @@ class AuthSecurityRegressionIntegrationTest {
         MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
                 .andExpect(status().isNoContent())
                 .andReturn();
+
         Cookie tokenCookie = result.getResponse().getCookie("XSRF-TOKEN");
         assertNotNull(tokenCookie, "CSRF bootstrap must issue XSRF-TOKEN");
+
         return post(path)
                 .cookie(tokenCookie)
                 .header("X-XSRF-TOKEN", tokenCookie.getValue());
@@ -260,6 +265,7 @@ class AuthSecurityRegressionIntegrationTest {
         Role role = roleRepository.findByName("ROLE_USER")
                 .orElseGet(() -> roleRepository.save(
                         Role.builder().name("ROLE_USER").description("Standard customer").build()));
+
         User user = User.builder()
                 .firstName("Test")
                 .lastName("Account")
@@ -269,6 +275,7 @@ class AuthSecurityRegressionIntegrationTest {
                 .emailVerified(true)
                 .role(role)
                 .build();
+
         return userRepository.saveAndFlush(user);
     }
 
@@ -280,6 +287,7 @@ class AuthSecurityRegressionIntegrationTest {
                 true,
                 Collections.singletonList(new SimpleGrantedAuthority(user.getRole().getName())),
                 user.getAuthVersion());
+
         return jwtService.generateToken(details);
     }
 

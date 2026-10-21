@@ -188,9 +188,9 @@ public class SearchService {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < input.length(); i++) {
             char ch = input.charAt(i);
-            if (ch >= '\\u0660' && ch <= '\\u0669') ch = (char) ('0' + (ch - '\\u0660'));
-            else if (ch >= '\\u06F0' && ch <= '\\u06F9') ch = (char) ('0' + (ch - '\\u06F0'));
-            if (ch == '\\u0640' || (ch >= '\\u064B' && ch <= '\\u065F')) continue;
+            if (ch >= 0x0660 && ch <= 0x0669) ch = (char) ('0' + (ch - 0x0660));
+            else if (ch >= 0x06F0 && ch <= 0x06F9) ch = (char) ('0' + (ch - 0x06F0));
+            if (ch == 0x0640 || (ch >= 0x064B && ch <= 0x065F)) continue;
             if (ch == 'أ' || ch == 'إ' || ch == 'آ' || ch == 'ٱ') ch = 'ا';
             else if (ch == 'ى') ch = 'ي';
             out.append(ch);

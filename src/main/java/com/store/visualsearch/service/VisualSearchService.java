@@ -103,7 +103,7 @@ public class VisualSearchService {
         if(hashCache.size()>=MAX_CACHE_ENTRIES){
             hashCache.entrySet().removeIf(entry->entry.getValue().expired());
             if(hashCache.size()>=MAX_CACHE_ENTRIES){
-                String key=hashCache.keys().hasMoreElements()?hashCache.keys().nextElement():null;
+                String key=hashCache.keySet().stream().findFirst().orElse(null);
                 if(key!=null)hashCache.remove(key);
             }
         }

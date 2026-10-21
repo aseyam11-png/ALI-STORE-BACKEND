@@ -1,3 +1,4 @@
+
 package com.store.common.security;
 
 import jakarta.servlet.http.Cookie;
@@ -10,9 +11,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,11 +26,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class CookieCsrfProtectionTest {
 
-    private static final Pattern CSRF_COOKIE =
-            Pattern.compile("(?:^|;\\s*)XSRF-TOKEN=([^;]+)");
-
     @Autowired
     private MockMvc mockMvc;
+
+    private Cookie findCsrfCookie(MvcResult result) {
+        return Arrays.stream(result.getResponse().getCookies())
+                .filter(cookie -> "XSRF-TOKEN".equals(cookie.getName()))
+                .findFirst()
+                .orElse(null);
+    }
 
     @Test
     void csrfEndpointIssuesReadableXsrfCookie() throws Exception {
@@ -37,28 +42,42 @@ class CookieCsrfProtectionTest {
                 .andExpect(status().isNoContent())
                 .andReturn();
 
-        String setCookie = result.getResponse().getHeader("Set-Cookie");
-        assertNotNull(setCookie, "CSRF endpoint must issue the XSRF-TOKEN cookie");
-        assertTrue(setCookie.contains("XSRF-TOKEN="));
-        assertTrue(setCookie.contains("Path=/"),
-                "The SPA must be able to read the CSRF cookie on application routes");
-        assertTrue(setCookie.contains("SameSite=Strict"),
-                "The default same-site setting must remain explicit for the local test profile");
-        assertFalse(setCookie.toLowerCase().contains("httponly"),
+        Cookie csrfCookie = findCsrfCookie(result);
+
+        assertNotNull(
+                csrfCookie,
+                "CSRF endpoint must issue the XSRF-TOKEN cookie");
+
+        assertEquals(
+                "/",
+                csrfCookie.getPath(),
+                "The CSRF cookie must be available across application routes");
+
+        assertEquals(
+                "Strict",
+                csrfCookie.getAttribute("SameSite"),
+                "The CSRF cookie must explicitly use SameSite=Strict");
+
+        assertFalse(
+                csrfCookie.isHttpOnly(),
                 "JavaScript-readable CSRF cookies must not be HttpOnly");
     }
 
     @Test
-    void cookieAuthenticatedUnsafeRequestWithoutCsrfTokenIsRejected() throws Exception {
+    void cookieAuthenticatedUnsafeRequestWithoutCsrfTokenIsRejected()
+            throws Exception {
         mockMvc.perform(post("/api/v1/auth/password/change")
-                        .cookie(new Cookie("ali_store_session", "invalid-session-cookie"))
+                        .cookie(new Cookie(
+                                "ali_store_session",
+                                "invalid-session-cookie"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void anonymousPasswordResetRequestWithoutCsrfTokenIsRejected() throws Exception {
+    void anonymousPasswordResetRequestWithoutCsrfTokenIsRejected()
+            throws Exception {
         mockMvc.perform(post("/api/v1/auth/password/forgot")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -68,20 +87,29 @@ class CookieCsrfProtectionTest {
     }
 
     @Test
-    void matchingCookieAndHeaderPassCsrfFilterBeforeAuthentication() throws Exception {
+    void matchingCookieAndHeaderPassCsrfFilterBeforeAuthentication()
+            throws Exception {
         MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
                 .andExpect(status().isNoContent())
                 .andReturn();
 
-        String setCookie = result.getResponse().getHeader("Set-Cookie");
-        assertNotNull(setCookie);
-        Matcher matcher = CSRF_COOKIE.matcher(setCookie);
-        assertTrue(matcher.find(), "Set-Cookie must contain a parseable XSRF-TOKEN");
-        String token = matcher.group(1);
+        Cookie csrfCookie = findCsrfCookie(result);
+
+        assertNotNull(
+                csrfCookie,
+                "CSRF endpoint must issue the XSRF-TOKEN cookie");
+
+        String token = csrfCookie.getValue();
+
+        assertTrue(
+                token != null && !token.isBlank(),
+                "The CSRF token value must not be empty");
 
         mockMvc.perform(post("/api/v1/auth/password/change")
                         .cookie(
-                                new Cookie("ali_store_session", "invalid-session-cookie"),
+                                new Cookie(
+                                        "ali_store_session",
+                                        "invalid-session-cookie"),
                                 new Cookie("XSRF-TOKEN", token))
                         .header("X-XSRF-TOKEN", token)
                         .contentType(MediaType.APPLICATION_JSON)

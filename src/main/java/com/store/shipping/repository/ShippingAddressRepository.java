@@ -1,3 +1,4 @@
+
 package com.store.shipping.repository;
 
 import com.store.shipping.entity.ShippingAddress;
@@ -11,13 +12,28 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface ShippingAddressRepository extends JpaRepository<ShippingAddress, Long> {
+public interface ShippingAddressRepository
+        extends JpaRepository<ShippingAddress, Long> {
 
     List<ShippingAddress> findByUserIdOrderByIsDefaultDescIdAsc(Long userId);
 
     Optional<ShippingAddress> findByIdAndUserId(Long id, Long userId);
 
-    @Modifying
-    @Query("update ShippingAddress a set a.isDefault = false where a.user.id = :userId")
+    /**
+     * Clears the default flag for every address owned by the user.
+     *
+     * This is a bulk update, so it does not synchronize managed entities
+     * already held in the persistence context. Flush pending changes before
+     * the update, then clear the persistence context to avoid stale entity
+     * state being returned by subsequent reads in the same transaction.
+     */
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true)
+    @Query("""
+            update ShippingAddress a
+            set a.isDefault = false
+            where a.user.id = :userId
+            """)
     int clearDefaultForUser(@Param("userId") Long userId);
 }

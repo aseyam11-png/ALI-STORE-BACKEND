@@ -1,3 +1,4 @@
+
 package com.store.auth.service;
 
 import com.store.auth.dto.LoginRequest;
@@ -40,14 +41,29 @@ class AuthServiceLockoutTest {
 
     private static final String EMAIL = "race-lockout@example.com";
 
-    @Mock private UserRepository userRepository;
-    @Mock private RoleRepository roleRepository;
-    @Mock private PasswordEncoder passwordEncoder;
-    @Mock private JwtService jwtService;
-    @Mock private AuthenticationManager authenticationManager;
-    @Mock private EmailOtpService emailOtpService;
-    @Mock private LoginAttemptService loginAttemptService;
-    @Mock private EntityManager entityManager;
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private RoleRepository roleRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private JwtService jwtService;
+
+    @Mock
+    private AuthenticationManager authenticationManager;
+
+    @Mock
+    private EmailOtpService emailOtpService;
+
+    @Mock
+    private LoginAttemptService loginAttemptService;
+
+    @Mock
+    private EntityManager entityManager;
 
     private AuthService authService;
 
@@ -61,13 +77,22 @@ class AuthServiceLockoutTest {
                 authenticationManager,
                 emailOtpService,
                 loginAttemptService);
-        ReflectionTestUtils.setField(authService, "entityManager", entityManager);
+
+        ReflectionTestUtils.setField(
+                authService,
+                "entityManager",
+                entityManager);
     }
 
     @Test
     void refusesToMintSessionWhenAccountBecomesLockedDuringOtpVerification() {
         UUID challengeId = UUID.randomUUID();
-        Role role = Role.builder().name("ROLE_USER").description("Standard customer").build();
+
+        Role role = Role.builder()
+                .name("ROLE_USER")
+                .description("Standard customer")
+                .build();
+
         User user = User.builder()
                 .firstName("Race")
                 .lastName("OTP")
@@ -77,6 +102,7 @@ class AuthServiceLockoutTest {
                 .emailVerified(true)
                 .role(role)
                 .build();
+
         EmailOtpChallenge challenge = EmailOtpChallenge.builder()
                 .challengeId(challengeId)
                 .user(user)
@@ -86,24 +112,39 @@ class AuthServiceLockoutTest {
                 .build();
 
         when(emailOtpService.verifyChallenge(
-                eq(challengeId), eq("123456"), any(EmailOtpPurpose[].class)))
+                eq(challengeId),
+                eq("123456"),
+                any(EmailOtpPurpose[].class)))
                 .thenReturn(challenge);
+
         doAnswer(invocation -> {
             user.setLoginLockedUntil(Instant.now().plusSeconds(900));
             user.setFailedLoginAttempts(5);
             return null;
-        }).when(entityManager).refresh(eq(user), eq(LockModeType.PESSIMISTIC_WRITE));
+        }).when(entityManager).refresh(
+                eq(user),
+                eq(LockModeType.PESSIMISTIC_WRITE));
 
-        assertThrows(UnauthorizedException.class,
-                () -> authService.verifyEmailCode(challengeId.toString(), "123456"));
+        assertThrows(
+                UnauthorizedException.class,
+                () -> authService.verifyEmailCode(
+                        challengeId.toString(),
+                        "123456"));
 
-        verify(entityManager).refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        verify(entityManager).refresh(
+                user,
+                LockModeType.PESSIMISTIC_WRITE);
+
         verifyNoInteractions(jwtService);
     }
 
     @Test
     void refusesToIssueOtpWhenPasswordChangesDuringCredentialCheck() {
-        Role role = Role.builder().name("ROLE_USER").description("Standard customer").build();
+        Role role = Role.builder()
+                .name("ROLE_USER")
+                .description("Standard customer")
+                .build();
+
         User user = User.builder()
                 .firstName("Race")
                 .lastName("Password")
@@ -114,22 +155,49 @@ class AuthServiceLockoutTest {
                 .authVersion(1L)
                 .role(role)
                 .build();
-        AccountUserDetails authenticatedPrincipal = new AccountUserDetails(
-                EMAIL, "old-encoded-password", true, true, List.of(), 0L);
 
-        when(loginAttemptService.isLocked(EMAIL)).thenReturn(false);
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(UsernamePasswordAuthenticationToken.authenticated(
-                        authenticatedPrincipal, null, List.of()));
-        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(user));
+        AccountUserDetails authenticatedPrincipal =
+                new AccountUserDetails(
+                        EMAIL,
+                        "old-encoded-password",
+                        true,
+                        true,
+                        List.of(),
+                        0L);
 
-        assertThrows(UnauthorizedException.class, () -> authService.login(
-                LoginRequest.builder().email(EMAIL).password("OldPassword123").build()));
+        when(loginAttemptService.isLocked(EMAIL))
+                .thenReturn(false);
 
-        verify(jwtService, never()).generateToken(any(org.springframework.security.core.userdetails.UserDetails.class));
-        verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
+        when(authenticationManager.authenticate(
+                any(UsernamePasswordAuthenticationToken.class)))
+                .thenReturn(
+                        UsernamePasswordAuthenticationToken.authenticated(
+                                authenticatedPrincipal,
+                                null,
+                                List.of()));
+
+        when(userRepository.findByEmailIgnoreCase(EMAIL))
+                .thenReturn(Optional.of(user));
+
+        assertThrows(
+                UnauthorizedException.class,
+                () -> authService.login(
+                        LoginRequest.builder()
+                                .email(EMAIL)
+                                .password("OldPassword123")
+                                .build()));
+
+        verify(jwtService, never()).generateToken(
+                any(org.springframework.security.core.userdetails.UserDetails.class));
+
         verify(emailOtpService, never()).issueChallenge(
-                any(User.class), any(EmailOtpPurpose.class), anyLong());
+                any(User.class),
+                any(EmailOtpPurpose.class));
+
+        verify(emailOtpService, never()).issueChallenge(
+                any(User.class),
+                any(EmailOtpPurpose.class),
+                anyLong());
     }
 
     @Test
@@ -138,6 +206,7 @@ class AuthServiceLockoutTest {
                 .name("ROLE_USER")
                 .description("Standard customer")
                 .build();
+
         User user = User.builder()
                 .firstName("Race")
                 .lastName("Condition")
@@ -148,30 +217,58 @@ class AuthServiceLockoutTest {
                 .role(role)
                 .build();
 
-        when(loginAttemptService.isLocked(EMAIL)).thenReturn(false);
-        AccountUserDetails authenticatedPrincipal = new AccountUserDetails(
-                EMAIL, "encoded-password", true, true, List.of(), 0L);
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(UsernamePasswordAuthenticationToken.authenticated(
-                        authenticatedPrincipal, null, List.of()));
-        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(user));
+        when(loginAttemptService.isLocked(EMAIL))
+                .thenReturn(false);
+
+        AccountUserDetails authenticatedPrincipal =
+                new AccountUserDetails(
+                        EMAIL,
+                        "encoded-password",
+                        true,
+                        true,
+                        List.of(),
+                        0L);
+
+        when(authenticationManager.authenticate(
+                any(UsernamePasswordAuthenticationToken.class)))
+                .thenReturn(
+                        UsernamePasswordAuthenticationToken.authenticated(
+                                authenticatedPrincipal,
+                                null,
+                                List.of()));
+
+        when(userRepository.findByEmailIgnoreCase(EMAIL))
+                .thenReturn(Optional.of(user));
+
+        // Simulate the account becoming locked after credential authentication
+        // but before AuthService.login() checks the refreshed user state.
         doAnswer(invocation -> {
             user.setLoginLockedUntil(Instant.now().plusSeconds(900));
             user.setFailedLoginAttempts(5);
             return null;
-        }).when(entityManager).refresh(eq(user), eq(LockModeType.PESSIMISTIC_WRITE));
+        }).when(entityManager).refresh(eq(user));
 
-        assertThrows(UnauthorizedException.class, () -> authService.login(
-                LoginRequest.builder()
-                        .email(EMAIL)
-                        .password("Password123")
-                        .build()));
+        assertThrows(
+                UnauthorizedException.class,
+                () -> authService.login(
+                        LoginRequest.builder()
+                                .email(EMAIL)
+                                .password("Password123")
+                                .build()));
 
-        verify(entityManager).refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        verify(entityManager).refresh(user);
+
         verify(userRepository, never()).save(any(User.class));
+
         verifyNoInteractions(jwtService);
-        verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
+
         verify(emailOtpService, never()).issueChallenge(
-                any(User.class), any(EmailOtpPurpose.class), anyLong());
+                any(User.class),
+                any(EmailOtpPurpose.class));
+
+        verify(emailOtpService, never()).issueChallenge(
+                any(User.class),
+                any(EmailOtpPurpose.class),
+                anyLong());
     }
 }

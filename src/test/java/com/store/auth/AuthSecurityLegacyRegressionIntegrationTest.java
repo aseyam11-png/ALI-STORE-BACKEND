@@ -68,6 +68,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         clearInvocations(emailOtpSender);
 
         mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.41");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
                 .andExpect(status().isAccepted())
@@ -101,6 +105,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 .findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
                         user.getId(), EmailOtpPurpose.PASSWORD_RESET)
                 .orElseThrow();
+
         assertEquals(1, persisted.getAttemptCount(),
                 "A wrong OTP must increment the persisted counter even though the endpoint returns an error");
     }
@@ -111,6 +116,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         clearInvocations(emailOtpSender);
 
         String existingJson = mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.42");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", existing.getEmail()))))
                 .andExpect(status().isAccepted())
@@ -118,6 +127,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
 
         String unknownEmail = uniqueEmail("missing-reset");
         String unknownJson = mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.42");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", unknownEmail))))
                 .andExpect(status().isAccepted())
@@ -125,6 +138,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
 
         JsonNode known = objectMapper.readTree(existingJson);
         JsonNode unknown = objectMapper.readTree(unknownJson);
+
         assertEquals(known.path("message").asText(), unknown.path("message").asText());
         assertEquals(known.path("data").path("requiresEmailVerification").asBoolean(),
                 unknown.path("data").path("requiresEmailVerification").asBoolean());
@@ -145,6 +159,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 issuedCode.capture(),
                 eq(EmailOtpPurpose.PASSWORD_RESET),
                 any());
+
         String wrongCode = "000000".equals(issuedCode.getValue()) ? "000001" : "000000";
 
         String knownAccountError = mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
@@ -178,6 +193,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         clearInvocations(emailOtpSender);
 
         mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.43");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
                 .andExpect(status().isAccepted());
@@ -206,7 +225,8 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         assertTrue(passwordEncoder.matches("NewPassword456", updated.getPassword()));
         assertTrue(Boolean.TRUE.equals(updated.getEmailVerified()));
         assertEquals(1L, updated.getAuthVersion());
-        assertNotNull(challengeRepository.findForVerification(challenge.getChallengeId())
+
+        assertNotNull(challengeRepository.findByChallengeId(challenge.getChallengeId())
                 .orElseThrow().getConsumedAt());
 
         mockMvc.perform(get("/api/v1/auth/session")
@@ -221,6 +241,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
 
         EmailOtpChallengeResponse issued =
                 emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+
         ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
         verify(emailOtpSender).send(
                 eq(user.getEmail()),
@@ -239,8 +260,9 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 .andExpect(status().isBadRequest());
 
         EmailOtpChallenge persisted = challengeRepository
-                .findForVerification(UUID.fromString(issued.getChallengeId()))
+                .findByChallengeId(UUID.fromString(issued.getChallengeId()))
                 .orElseThrow();
+
         assertEquals(1, persisted.getAttemptCount(),
                 "An invalid login OTP must commit attempt_count despite returning an error response");
     }
@@ -316,6 +338,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
 
         JsonNode duplicate = objectMapper.readTree(duplicateResponse);
         JsonNode newlyRegistered = objectMapper.readTree(newResponse);
+
         assertEquals(duplicate.path("message").asText(), newlyRegistered.path("message").asText());
         assertEquals(duplicate.path("data").path("requiresEmailVerification").asBoolean(),
                 newlyRegistered.path("data").path("requiresEmailVerification").asBoolean());
@@ -330,6 +353,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 issuedCode.capture(),
                 eq(EmailOtpPurpose.EMAIL_VERIFICATION),
                 any());
+
         String wrongCode = "000000".equals(issuedCode.getValue()) ? "000001" : "000000";
 
         String duplicateChallengeError = mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
@@ -400,8 +424,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
                 .andExpect(status().isNoContent())
                 .andReturn();
+
         Cookie tokenCookie = result.getResponse().getCookie("XSRF-TOKEN");
         assertNotNull(tokenCookie, "CSRF bootstrap must issue XSRF-TOKEN");
+
         return post(path)
                 .cookie(tokenCookie)
                 .header("X-XSRF-TOKEN", tokenCookie.getValue());
@@ -411,6 +437,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         Role role = roleRepository.findByName("ROLE_USER")
                 .orElseGet(() -> roleRepository.save(
                         Role.builder().name("ROLE_USER").description("Standard customer").build()));
+
         User user = User.builder()
                 .firstName("Test")
                 .lastName("Account")
@@ -420,6 +447,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 .emailVerified(true)
                 .role(role)
                 .build();
+
         return userRepository.save(user);
     }
 
@@ -431,6 +459,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 true,
                 Collections.singletonList(new SimpleGrantedAuthority(user.getRole().getName())),
                 user.getAuthVersion());
+
         return jwtService.generateToken(details);
     }
 

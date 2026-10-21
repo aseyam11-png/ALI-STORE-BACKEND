@@ -1,3 +1,4 @@
+
 package com.store.config;
 
 import org.junit.jupiter.api.Test;
@@ -15,8 +16,16 @@ class ProductionProfileConfigurationTest {
         String yaml = Files.readString(
                 Path.of("src/main/resources/application.yml"));
 
-        assertTrue(yaml.contains("profiles:\n    default: dev"));
-        assertFalse(yaml.contains("profiles:\n    active: dev"));
+        // Normalize line endings so the assertions work on Windows and Unix.
+        yaml = yaml.replace("\r\n", "\n").replace('\r', '\n');
+
+        assertTrue(
+                yaml.contains("profiles:\n    default: dev"),
+                "application.yml must declare dev as the default profile");
+
+        assertFalse(
+                yaml.contains("profiles:\n    active: dev"),
+                "application.yml must not force dev as the active profile");
     }
 
     @Test

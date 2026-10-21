@@ -23,6 +23,12 @@ public interface EmailOtpChallengeRepository extends JpaRepository<EmailOtpChall
             """)
     Optional<EmailOtpChallenge> findForVerification(@Param("challengeId") UUID challengeId);
 
+    /**
+     * Reads a challenge without acquiring a pessimistic write lock.
+     * Intended for read-only lookups, such as verifying persisted state in tests.
+     */
+    Optional<EmailOtpChallenge> findByChallengeId(UUID challengeId);
+
     Optional<EmailOtpChallenge> findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
             Long userId, EmailOtpPurpose purpose);
 

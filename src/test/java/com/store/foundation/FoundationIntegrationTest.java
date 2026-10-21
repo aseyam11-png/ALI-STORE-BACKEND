@@ -1,3 +1,4 @@
+
 package com.store.foundation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,35 +20,35 @@ import com.store.user.repository.UserRepository;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.Map;
 
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import org.mockito.ArgumentCaptor;
-import static org.mockito.Mockito.clearInvocations;
-import static org.mockito.Mockito.verify;
 
 /**
  * Foundational, non-negotiable behaviors for Phase 1 stabilization:
@@ -66,22 +67,31 @@ class FoundationIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
     @Autowired
     private ObjectMapper objectMapper;
+
     @Autowired
     private RoleRepository roleRepository;
+
     @Autowired
     private UserRepository userRepository;
+
     @Autowired
     private PasswordEncoder passwordEncoder;
+
     @Autowired
     private JwtService jwtService;
+
     @Autowired
     private CategoryRepository categoryRepository;
+
     @Autowired
     private ProductRepository productRepository;
+
     @Autowired
     private SupplierRepository supplierRepository;
+
     @Autowired
     private InventoryRepository inventoryRepository;
 
@@ -94,9 +104,18 @@ class FoundationIntegrationTest {
     @BeforeEach
     void seedRoles() {
         userRole = roleRepository.findByName("ROLE_USER")
-                .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_USER").description("Standard customer role").build()));
+                .orElseGet(() -> roleRepository.save(
+                        Role.builder()
+                                .name("ROLE_USER")
+                                .description("Standard customer role")
+                                .build()));
+
         adminRole = roleRepository.findByName("ROLE_ADMIN")
-                .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
+                .orElseGet(() -> roleRepository.save(
+                        Role.builder()
+                                .name("ROLE_ADMIN")
+                                .description("Administrator role")
+                                .build()));
     }
 
     private User createUser(String email, Role role) {
@@ -109,6 +128,7 @@ class FoundationIntegrationTest {
                 .isEnabled(true)
                 .role(role)
                 .build();
+
         return userRepository.save(user);
     }
 
@@ -116,35 +136,56 @@ class FoundationIntegrationTest {
         UserDetails userDetails = new org.springframework.security.core.userdetails.User(
                 user.getEmail(),
                 user.getPassword(),
-                Collections.singletonList(new SimpleGrantedAuthority(user.getRole().getName())));
+                Collections.singletonList(
+                        new SimpleGrantedAuthority(user.getRole().getName())));
+
         return jwtService.generateToken(userDetails);
     }
 
     @Test
     void registerThenLogin_requiresEmailOtpBeforeIssuingSession() throws Exception {
-        String testEmail = "otp-flow-" + java.util.UUID.randomUUID() + "@example.com";
+        String testEmail =
+                "otp-flow-" + java.util.UUID.randomUUID() + "@example.com";
+
         Map<String, String> registerBody = Map.of(
-                "firstName", "Ali", "lastName", "Store", "email", testEmail,
-                "password", "Password123", "phoneNumber", "0599000000");
+                "firstName", "Ali",
+                "lastName", "Store",
+                "email", testEmail,
+                "password", "Password123",
+                "phoneNumber", "0599000000");
 
-        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> codeCaptor =
+                ArgumentCaptor.forClass(String.class);
 
-        String registrationJson = mockMvc.perform(post("/api/v1/auth/register").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(registerBody)))
+        String registrationJson = mockMvc.perform(
+                        post("/api/v1/auth/register")
+                                .with(csrf())
+                                .with(request -> {
+                                    request.setRemoteAddr("192.0.2.45");
+                                    return request;
+                                })
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(registerBody)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.token").doesNotExist())
                 .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().doesNotExist("ali_store_session"))
-                .andReturn().getResponse().getContentAsString();
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .cookie().doesNotExist("ali_store_session"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
         String challengeId = objectMapper.readTree(registrationJson)
-                .path("data").path("challengeId").asText();
+                .path("data")
+                .path("challengeId")
+                .asText();
 
         verify(emailOtpSender).send(
                 org.mockito.ArgumentMatchers.eq(testEmail),
                 codeCaptor.capture(),
-                org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.EMAIL_VERIFICATION),
+                org.mockito.ArgumentMatchers.eq(
+                        EmailOtpPurpose.EMAIL_VERIFICATION),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
 
         // The verification service uses REQUIRES_NEW to commit invalid-attempt counters.
@@ -152,47 +193,78 @@ class FoundationIntegrationTest {
         TestTransaction.flagForCommit();
         TestTransaction.end();
 
-        mockMvc.perform(post("/api/v1/auth/email/verify").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", challengeId,
-                                "code", codeCaptor.getValue()))))
+        mockMvc.perform(
+                        post("/api/v1/auth/email/verify")
+                                .with(csrf())
+                                .with(request -> {
+                                    request.setRemoteAddr("192.0.2.45");
+                                    return request;
+                                })
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(Map.of(
+                                        "challengeId", challengeId,
+                                        "code", codeCaptor.getValue()))))
                 .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().exists("ali_store_session"));
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .cookie().exists("ali_store_session"));
 
         clearInvocations(emailOtpSender);
 
         Map<String, String> loginBody = Map.of(
-                "email", testEmail, "password", "Password123");
+                "email", testEmail,
+                "password", "Password123");
 
-        String loginJson = mockMvc.perform(post("/api/v1/auth/login").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(loginBody)))
+        String loginJson = mockMvc.perform(
+                        post("/api/v1/auth/login")
+                                .with(csrf())
+                                .with(request -> {
+                                    request.setRemoteAddr("192.0.2.45");
+                                    return request;
+                                })
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(loginBody)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.token").doesNotExist())
                 .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
                 .andExpect(jsonPath("$.data.purpose").value("LOGIN"))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().doesNotExist("ali_store_session"))
-                .andReturn().getResponse().getContentAsString();
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .cookie().doesNotExist("ali_store_session"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
         String loginChallengeId = objectMapper.readTree(loginJson)
-                .path("data").path("challengeId").asText();
+                .path("data")
+                .path("challengeId")
+                .asText();
 
-        ArgumentCaptor<String> loginCodeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> loginCodeCaptor =
+                ArgumentCaptor.forClass(String.class);
 
+        // The account uses the generated testEmail, not ali@example.com.
         verify(emailOtpSender).send(
-                org.mockito.ArgumentMatchers.eq("ali@example.com"),
+                org.mockito.ArgumentMatchers.eq(testEmail),
                 loginCodeCaptor.capture(),
                 org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.LOGIN),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
 
-        mockMvc.perform(post("/api/v1/auth/email/verify").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", loginChallengeId,
-                                "code", loginCodeCaptor.getValue()))))
+        mockMvc.perform(
+                        post("/api/v1/auth/email/verify")
+                                .with(csrf())
+                                .with(request -> {
+                                    request.setRemoteAddr("192.0.2.45");
+                                    return request;
+                                })
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(Map.of(
+                                        "challengeId", loginChallengeId,
+                                        "code", loginCodeCaptor.getValue()))))
                 .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().exists("ali_store_session"));
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .cookie().exists("ali_store_session"));
     }
 
     @Test
@@ -204,7 +276,8 @@ class FoundationIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/v1/auth/logout").with(csrf())
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .with(csrf())
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
 
@@ -216,27 +289,34 @@ class FoundationIntegrationTest {
     @Test
     void register_rejectsPasswordBelowMinimumLength() throws Exception {
         Map<String, String> body = Map.of(
-                "firstName", "Ali", "lastName", "Store", "email", "shortpw@example.com",
-                "password", "Short1", "phoneNumber", "0599000000");
+                "firstName", "Ali",
+                "lastName", "Store",
+                "email", "shortpw@example.com",
+                "password", "Short1",
+                "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    void register_rejectsPasswordOverBcryptByteLimit_evenWhenUnderCharacterLimit() throws Exception {
-        // 36 Arabic letters (2 UTF-8 bytes each = 72 bytes) + 2 more ASCII chars = 74 bytes,
-        // but only 38 CHARACTERS - well under a naive 72-character limit. A byte-blind
-        // validator (e.g. plain @Size) would wrongly accept this and let it silently
-        // truncate under BCrypt's 72-byte limit.
+    void register_rejectsPasswordOverBcryptByteLimit_evenWhenUnderCharacterLimit()
+            throws Exception {
+        // 36 Arabic letters (2 UTF-8 bytes each = 72 bytes) + 2 ASCII chars = 74 bytes.
         String password = "ا".repeat(36) + "A1";
-        Map<String, String> body = Map.of(
-                "firstName", "Ali", "lastName", "Store", "email", "unicodepw@example.com",
-                "password", password, "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+        Map<String, String> body = Map.of(
+                "firstName", "Ali",
+                "lastName", "Store",
+                "email", "unicodepw@example.com",
+                "password", password,
+                "phoneNumber", "0599000000");
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -245,10 +325,14 @@ class FoundationIntegrationTest {
     @Test
     void register_acceptsPasswordWithinByteLimit() throws Exception {
         Map<String, String> body = Map.of(
-                "firstName", "Ali", "lastName", "Store", "email", "validbytepw@example.com",
-                "password", "Password123", "phoneNumber", "0599000000");
+                "firstName", "Ali",
+                "lastName", "Store",
+                "email", "validbytepw@example.com",
+                "password", "Password123",
+                "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isAccepted());
@@ -270,7 +354,8 @@ class FoundationIntegrationTest {
     void me_withToken_returnsCurrentUserWithoutPassword() throws Exception {
         User user = createUser("me@example.com", userRole);
 
-        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + tokenFor(user)))
+        mockMvc.perform(get("/api/v1/me")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.email").value("me@example.com"))
                 .andExpect(jsonPath("$.data.password").doesNotExist());
@@ -281,7 +366,10 @@ class FoundationIntegrationTest {
         MockMultipartFile image = new MockMultipartFile(
                 "image", "query.png", "image/png", new byte[]{1, 2, 3});
 
-        mockMvc.perform(multipart("/api/v1/visual-search").file(image))
+        // Include CSRF so the assertion reaches authentication, not CSRF rejection.
+        mockMvc.perform(multipart("/api/v1/visual-search")
+                        .file(image)
+                        .with(csrf()))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -298,6 +386,7 @@ class FoundationIntegrationTest {
                 .andExpect(status().is4xxClientError());
 
         User regular = createUser("shopper@example.com", userRole);
+
         mockMvc.perform(post("/api/v1/categories")
                         .header("Authorization", "Bearer " + tokenFor(regular))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -305,6 +394,7 @@ class FoundationIntegrationTest {
                 .andExpect(status().isForbidden());
 
         User admin = createUser("admin@example.com", adminRole);
+
         mockMvc.perform(post("/api/v1/categories")
                         .header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -315,16 +405,27 @@ class FoundationIntegrationTest {
     }
 
     @Test
-    void productCreation_exposesCanonicalFieldsAndInitializesInventory() throws Exception {
+    void productCreation_exposesCanonicalFieldsAndInitializesInventory()
+            throws Exception {
         User admin = createUser("catalog-admin@example.com", adminRole);
+
         Category category = categoryRepository.save(Category.builder()
-                .name("Phones").slug("phones").active(true).build());
+                .name("Phones")
+                .slug("phones")
+                .active(true)
+                .build());
+
         Supplier supplier = supplierRepository.findByExternalCode("TEST-SUPPLIER")
                 .orElseGet(() -> supplierRepository.save(
-                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build()));
+                        Supplier.builder()
+                                .externalCode("TEST-SUPPLIER")
+                                .name("Test Supplier")
+                                .build()));
 
         Map<String, Object> body = Map.of(
-                "name", "Test Phone", "price", 199.99, "sku", "PHN-001",
+                "name", "Test Phone",
+                "price", 199.99,
+                "sku", "PHN-001",
                 "categoryId", category.getId(),
                 "supplierId", supplier.getId(),
                 "supplierSku", "SUP-PHN-001",
@@ -338,19 +439,27 @@ class FoundationIntegrationTest {
                 .andExpect(jsonPath("$.data.slug").value("test-phone"))
                 .andExpect(jsonPath("$.data.currency").value("USD"))
                 .andExpect(jsonPath("$.data.status").value("DRAFT"))
-                .andReturn().getResponse().getContentAsString();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
-        long productId = objectMapper.readTree(response).path("data").path("id").asLong();
+        long productId = objectMapper.readTree(response)
+                .path("data")
+                .path("id")
+                .asLong();
 
         mockMvc.perform(patch("/api/v1/products/" + productId)
                         .header("Authorization", "Bearer " + tokenFor(admin))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("status", "ACTIVE"))))
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("status", "ACTIVE"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
 
         Product saved = productRepository.findBySku("PHN-001").orElseThrow();
-        Inventory inventory = inventoryRepository.findByProductId(saved.getId()).orElseThrow();
+        Inventory inventory = inventoryRepository.findByProductId(saved.getId())
+                .orElseThrow();
+
         Assertions.assertEquals(0, inventory.getQuantity());
 
         mockMvc.perform(get("/api/v1/inventory/product/" + saved.getId())
@@ -367,20 +476,29 @@ class FoundationIntegrationTest {
     }
 
     @Test
-    void shippingAddressOwnership_isEnforcedAgainstAuthenticatedPrincipal() throws Exception {
+    void shippingAddressOwnership_isEnforcedAgainstAuthenticatedPrincipal()
+            throws Exception {
         User owner = createUser("owner@example.com", userRole);
         User intruder = createUser("intruder@example.com", userRole);
 
-        Map<String, String> address = Map.of("street", "123 Main St", "city", "Gaza", "country", "PS");
+        Map<String, String> address = Map.of(
+                "street", "123 Main St",
+                "city", "Gaza",
+                "country", "PS");
 
         String response = mockMvc.perform(post("/api/v1/shipping-addresses")
                         .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(address)))
                 .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
-        long addressId = objectMapper.readTree(response).path("data").path("id").asLong();
+        long addressId = objectMapper.readTree(response)
+                .path("data")
+                .path("id")
+                .asLong();
 
         mockMvc.perform(get("/api/v1/shipping-addresses/" + addressId)
                         .header("Authorization", "Bearer " + tokenFor(intruder)))
@@ -392,8 +510,10 @@ class FoundationIntegrationTest {
     }
 
     @Test
-    void shippingAddressCrud_persistsCompleteFieldsAndAllowsOwnedLifecycle() throws Exception {
-        User owner = createUser("address-owner-" + System.nanoTime() + "@example.com", userRole);
+    void shippingAddressCrud_persistsCompleteFieldsAndAllowsOwnedLifecycle()
+            throws Exception {
+        User owner = createUser(
+                "address-owner-" + System.nanoTime() + "@example.com", userRole);
         String suffix = Long.toString(System.nanoTime());
 
         Map<String, Object> createBody = Map.ofEntries(
@@ -408,8 +528,7 @@ class FoundationIntegrationTest {
                 Map.entry("building", "12"),
                 Map.entry("apartment", "4"),
                 Map.entry("notes", "Call before delivery"),
-                Map.entry("isDefault", true)
-        );
+                Map.entry("isDefault", true));
 
         String createdJson = mockMvc.perform(post("/api/v1/shipping-addresses")
                         .header("Authorization", "Bearer " + tokenFor(owner))
@@ -423,9 +542,14 @@ class FoundationIntegrationTest {
                 .andExpect(jsonPath("$.data.apartment").value("4"))
                 .andExpect(jsonPath("$.data.notes").value("Call before delivery"))
                 .andExpect(jsonPath("$.data.isDefault").value(true))
-                .andReturn().getResponse().getContentAsString();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
-        long addressId = objectMapper.readTree(createdJson).path("data").path("id").asLong();
+        long addressId = objectMapper.readTree(createdJson)
+                .path("data")
+                .path("id")
+                .asLong();
 
         Map<String, Object> updateBody = Map.ofEntries(
                 Map.entry("label", "Work"),
@@ -439,8 +563,7 @@ class FoundationIntegrationTest {
                 Map.entry("building", "20"),
                 Map.entry("apartment", "7"),
                 Map.entry("notes", "Updated notes"),
-                Map.entry("isDefault", true)
-        );
+                Map.entry("isDefault", true));
 
         mockMvc.perform(put("/api/v1/shipping-addresses/" + addressId)
                         .header("Authorization", "Bearer " + tokenFor(owner))
@@ -459,19 +582,24 @@ class FoundationIntegrationTest {
                 Map.entry("street", "Second Street " + suffix),
                 Map.entry("city", "Gaza"),
                 Map.entry("country", "PS"),
-                Map.entry("isDefault", false)
-        );
+                Map.entry("isDefault", false));
 
         String secondJson = mockMvc.perform(post("/api/v1/shipping-addresses")
                         .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(secondAddress)))
                 .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
-        long secondAddressId = objectMapper.readTree(secondJson).path("data").path("id").asLong();
+        long secondAddressId = objectMapper.readTree(secondJson)
+                .path("data")
+                .path("id")
+                .asLong();
 
-        mockMvc.perform(patch("/api/v1/shipping-addresses/" + secondAddressId + "/default")
+        mockMvc.perform(patch(
+                        "/api/v1/shipping-addresses/" + secondAddressId + "/default")
                         .header("Authorization", "Bearer " + tokenFor(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(secondAddressId))
@@ -496,7 +624,7 @@ class FoundationIntegrationTest {
         mockMvc.perform(get("/api/v1/wishlists"))
                 .andExpect(status().is4xxClientError());
 
-        // A spoofed X-User-Id header must not grant access - only the authenticated principal counts.
+        // A spoofed X-User-Id header must not grant access; the authenticated principal counts.
         mockMvc.perform(get("/api/v1/wishlists").header("X-User-Id", "1"))
                 .andExpect(status().is4xxClientError());
     }
@@ -505,10 +633,20 @@ class FoundationIntegrationTest {
     void responses_carryExplicitSecurityHeaders() throws Exception {
         mockMvc.perform(get("/api/v1/categories"))
                 .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("X-Content-Type-Options", "nosniff"))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("X-Frame-Options", "DENY"))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Referrer-Policy", "no-referrer"))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()"));
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .header().string("X-Frame-Options", "DENY"))
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .header().string(
+                                        "Permissions-Policy",
+                                        "geolocation=(), camera=(), microphone=(), payment=()"));
     }
 
     @Test
@@ -519,7 +657,9 @@ class FoundationIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(regular))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "rfqId", 1, "sellerId", 1, "totalPrice", 10.00))))
+                                "rfqId", 1,
+                                "sellerId", 1,
+                                "totalPrice", 10.00))))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/rfqs")
@@ -547,5 +687,4 @@ class FoundationIntegrationTest {
                                 "status", "IN_TRANSIT"))))
                 .andExpect(status().isUnauthorized());
     }
-
 }

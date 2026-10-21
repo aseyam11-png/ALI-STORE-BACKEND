@@ -1,6 +1,7 @@
 package com.store.foundation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.store.auth.service.AccountUserDetails;
 import com.store.auth.service.JwtService;
 import com.store.brand.entity.Brand;
 import com.store.brand.repository.BrandRepository;
@@ -9,6 +10,9 @@ import com.store.category.repository.CategoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.supplier.entity.Supplier;
+import com.store.supplier.entity.SupplierStatus;
+import com.store.supplier.repository.SupplierRepository;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -20,7 +24,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,15 +49,35 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class CatalogSecurityTest {
 
-    @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
-    @Autowired private RoleRepository roleRepository;
-    @Autowired private UserRepository userRepository;
-    @Autowired private PasswordEncoder passwordEncoder;
-    @Autowired private JwtService jwtService;
-    @Autowired private CategoryRepository categoryRepository;
-    @Autowired private BrandRepository brandRepository;
-    @Autowired private ProductRepository productRepository;
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private RoleRepository roleRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtService jwtService;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
+    private BrandRepository brandRepository;
+
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private SupplierRepository supplierRepository;
 
     private Role adminRole;
     private Category category;
@@ -62,25 +85,55 @@ class CatalogSecurityTest {
     @BeforeEach
     void setUp() {
         roleRepository.findByName("ROLE_USER")
-                .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_USER").description("Standard customer role").build()));
+                .orElseGet(() -> roleRepository.save(
+                        Role.builder()
+                                .name("ROLE_USER")
+                                .description("Standard customer role")
+                                .build()));
+
         adminRole = roleRepository.findByName("ROLE_ADMIN")
-                .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
-        category = categoryRepository.save(Category.builder().name("Electronics").slug("electronics").active(true).build());
+                .orElseGet(() -> roleRepository.save(
+                        Role.builder()
+                                .name("ROLE_ADMIN")
+                                .description("Administrator role")
+                                .build()));
+
+        category = categoryRepository.save(Category.builder()
+                .name("Electronics")
+                .slug("electronics")
+                .active(true)
+                .build());
     }
 
     private String adminToken() {
         User admin = userRepository.save(User.builder()
-                .firstName("Admin").lastName("User").email("admin-" + System.nanoTime() + "@example.com")
-                .password(passwordEncoder.encode("Password123")).phoneNumber("0").isEnabled(true).role(adminRole).build());
-        UserDetails ud = new org.springframework.security.core.userdetails.User(
-                admin.getEmail(), admin.getPassword(),
-                Collections.singletonList(new SimpleGrantedAuthority(admin.getRole().getName())));
-        return jwtService.generateToken(ud);
+                .firstName("Admin")
+                .lastName("User")
+                .email("admin-" + System.nanoTime() + "@example.com")
+                .password(passwordEncoder.encode("Password123"))
+                .phoneNumber("0")
+                .isEnabled(true)
+                .authVersion(0L)
+                .role(adminRole)
+                .build());
+
+        AccountUserDetails userDetails = new AccountUserDetails(
+                admin.getEmail(),
+                admin.getPassword(),
+                Boolean.TRUE.equals(admin.getIsEnabled()),
+                true,
+                Collections.singletonList(
+                        new SimpleGrantedAuthority(admin.getRole().getName())),
+                admin.getAuthVersion()
+        );
+
+        return jwtService.generateToken(userDetails);
     }
 
     @Test
     void malformedJwt_degradesToCleanRejection_notServerError() throws Exception {
-        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer not-a-real-jwt"))
+        mockMvc.perform(get("/api/v1/me")
+                        .header("Authorization", "Bearer not-a-real-jwt"))
                 .andExpect(status().is4xxClientError());
     }
 
@@ -88,59 +141,112 @@ class CatalogSecurityTest {
     void tamperedSignature_degradesToCleanRejection_notServerError() throws Exception {
         String realToken = adminToken();
         String tampered = realToken.substring(0, realToken.length() - 4) + "abcd";
-        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + tampered))
+
+        mockMvc.perform(get("/api/v1/me")
+                        .header("Authorization", "Bearer " + tampered))
                 .andExpect(status().is4xxClientError());
     }
 
     @Test
     void productCreation_rejectsDuplicateSku() throws Exception {
         String token = adminToken();
-        Map<String, Object> body = Map.of("name", "Phone A", "price", 100, "sku", "DUP-SKU", "categoryId", category.getId());
 
-        mockMvc.perform(post("/api/v1/products").header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(body)))
+        Map<String, Object> body = Map.of(
+                "name", "Phone A",
+                "price", 100,
+                "sku", "DUP-SKU",
+                "categoryId", category.getId());
+
+        mockMvc.perform(post("/api/v1/products")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk());
 
-        Map<String, Object> duplicate = Map.of("name", "Phone B", "price", 150, "sku", "DUP-SKU", "categoryId", category.getId());
-        mockMvc.perform(post("/api/v1/products").header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(duplicate)))
+        Map<String, Object> duplicate = Map.of(
+                "name", "Phone B",
+                "price", 150,
+                "sku", "DUP-SKU",
+                "categoryId", category.getId());
+
+        mockMvc.perform(post("/api/v1/products")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(duplicate)))
                 .andExpect(status().isConflict());
     }
 
     @Test
     void productCreation_rejectsInvalidCategory() throws Exception {
         String token = adminToken();
-        Map<String, Object> body = Map.of("name", "Orphan Product", "price", 50, "sku", "ORPHAN-1", "categoryId", 999999L);
 
-        mockMvc.perform(post("/api/v1/products").header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(body)))
+        Map<String, Object> body = Map.of(
+                "name", "Orphan Product",
+                "price", 50,
+                "sku", "ORPHAN-1",
+                "categoryId", 999999L);
+
+        mockMvc.perform(post("/api/v1/products")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void categoryCreation_rejectsCircularParent() throws Exception {
         String token = adminToken();
-        Category child = categoryRepository.save(Category.builder().name("Phones").slug("phones").active(true).parent(category).build());
+
+        Category child = categoryRepository.save(Category.builder()
+                .name("Phones")
+                .slug("phones")
+                .active(true)
+                .parent(category)
+                .build());
 
         // Trying to make the parent's parent be its own child must be rejected.
         Map<String, Object> body = Map.of("parentId", child.getId());
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/categories/" + category.getId())
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(body)))
+
+        mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .patch("/api/v1/categories/" + category.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void archivedProduct_hiddenFromListing_and_notResolvableById() throws Exception {
         Product active = productRepository.save(Product.builder()
-                .name("Active One").slug("active-one").price(BigDecimal.TEN).currency("USD").sku("ACT-1")
-                .status(ProductStatus.ACTIVE).category(category).build());
+                .name("Active One")
+                .slug("active-one")
+                .price(BigDecimal.TEN)
+                .currency("USD")
+                .sku("ACT-1")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .build());
+
         Product archived = productRepository.save(Product.builder()
-                .name("Archived One").slug("archived-one").price(BigDecimal.TEN).currency("USD").sku("ARC-1")
-                .status(ProductStatus.ARCHIVED).category(category).build());
+                .name("Archived One")
+                .slug("archived-one")
+                .price(BigDecimal.TEN)
+                .currency("USD")
+                .sku("ARC-1")
+                .status(ProductStatus.ARCHIVED)
+                .category(category)
+                .build());
+
         Product draft = productRepository.save(Product.builder()
-                .name("Draft One").slug("draft-one").price(BigDecimal.TEN).currency("USD").sku("DRF-1")
-                .status(ProductStatus.DRAFT).category(category).build());
+                .name("Draft One")
+                .slug("draft-one")
+                .price(BigDecimal.TEN)
+                .currency("USD")
+                .sku("DRF-1")
+                .status(ProductStatus.DRAFT)
+                .category(category)
+                .build());
 
         // Listing only ever contains ACTIVE products.
         mockMvc.perform(get("/api/v1/products"))
@@ -175,12 +281,42 @@ class CatalogSecurityTest {
 
     @Test
     void productSearch_filtersByPriceRange() throws Exception {
-        productRepository.save(Product.builder().name("Cheap").slug("cheap-x").price(new BigDecimal("10.00"))
-                .currency("USD").sku("CHEAP-1").status(ProductStatus.ACTIVE).category(category).build());
-        productRepository.save(Product.builder().name("Expensive").slug("expensive-x").price(new BigDecimal("500.00"))
-                .currency("USD").sku("EXP-1").status(ProductStatus.ACTIVE).category(category).build());
+        Supplier supplier = supplierRepository.save(Supplier.builder()
+                .externalCode("PRICE-FILTER-" + System.nanoTime())
+                .name("Price Filter Test Supplier")
+                .status(SupplierStatus.ACTIVE)
+                .fulfillmentEnabled(true)
+                .build());
 
-        mockMvc.perform(get("/api/v1/products").param("minPrice", "100").param("maxPrice", "1000"))
+        productRepository.save(Product.builder()
+                .name("Cheap")
+                .slug("cheap-x")
+                .price(new BigDecimal("10.00"))
+                .currency("USD")
+                .sku("CHEAP-1")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .supplier(supplier)
+                .supplierSku("CHEAP-SUPPLIER-1")
+                .supplierCost(new BigDecimal("3.00"))
+                .build());
+
+        productRepository.save(Product.builder()
+                .name("Expensive")
+                .slug("expensive-x")
+                .price(new BigDecimal("500.00"))
+                .currency("USD")
+                .sku("EXP-1")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .supplier(supplier)
+                .supplierSku("EXP-SUPPLIER-1")
+                .supplierCost(new BigDecimal("100.00"))
+                .build());
+
+        mockMvc.perform(get("/api/v1/products")
+                        .param("minPrice", "100")
+                        .param("maxPrice", "1000"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[?(@.sku=='CHEAP-1')]").isEmpty())
                 .andExpect(jsonPath("$.data.content[?(@.sku=='EXP-1')]").exists());
