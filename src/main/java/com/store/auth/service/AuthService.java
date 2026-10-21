@@ -169,6 +169,10 @@ public class AuthService {
                 EmailOtpPurpose.LOGIN);
         User user = challenge.getUser();
 
+        // The challenge query may already have loaded this User into the persistence
+        // context. Refresh under a row lock so concurrent failed logins cannot set a lock
+        // that this transaction misses before it consumes the OTP and mints a JWT.
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
         if (!Boolean.TRUE.equals(user.getIsEnabled())) {
             throw new BusinessException("User account is disabled");
         }
