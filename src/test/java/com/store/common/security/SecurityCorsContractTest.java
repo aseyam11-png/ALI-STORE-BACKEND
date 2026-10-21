@@ -7,12 +7,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -54,6 +56,23 @@ class SecurityCorsContractTest {
                         HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
                 .andExpect(header().string(
                         HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+    }
+
+    @Test
+    void csrfBootstrapExposesTokenHeaderToConfiguredSpaOrigin() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:3000"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
+                .andReturn();
+
+        assertTrue(result.getResponse().getHeader("X-XSRF-TOKEN") != null,
+                "CSRF bootstrap must return the token in a readable response header");
+        assertTrue(result.getResponse().getHeader(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS)
+                        .contains("X-XSRF-TOKEN"),
+                "CORS must expose the CSRF token header to the SPA");
+        assertEquals("no-store", result.getResponse().getHeader(HttpHeaders.CACHE_CONTROL));
     }
 
     @Test
