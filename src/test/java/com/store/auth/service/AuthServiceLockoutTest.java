@@ -101,6 +101,35 @@ class AuthServiceLockoutTest {
     }
 
     @Test
+    void refusesToIssueOtpWhenPasswordChangesDuringCredentialCheck() {
+        Role role = Role.builder().name("ROLE_USER").description("Standard customer").build();
+        User user = User.builder()
+                .firstName("Race")
+                .lastName("Password")
+                .email(EMAIL)
+                .password("new-encoded-password")
+                .isEnabled(true)
+                .emailVerified(true)
+                .authVersion(1L)
+                .role(role)
+                .build();
+        AccountUserDetails authenticatedPrincipal = new AccountUserDetails(
+                EMAIL, "old-encoded-password", true, true, List.of(), 0L);
+
+        when(loginAttemptService.isLocked(EMAIL)).thenReturn(false);
+        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                .thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                        authenticatedPrincipal, null, List.of()));
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(user));
+
+        assertThrows(UnauthorizedException.class, () -> authService.login(
+                LoginRequest.builder().email(EMAIL).password("OldPassword123").build()));
+
+        verify(jwtService, never()).generateToken(any(org.springframework.security.core.userdetails.UserDetails.class));
+        verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
+    }
+
+    @Test
     void refusesToIssueOtpOrSessionWhenAccountBecomesLockedDuringCredentialCheck() {
         Role role = Role.builder()
                 .name("ROLE_USER")
@@ -117,8 +146,11 @@ class AuthServiceLockoutTest {
                 .build();
 
         when(loginAttemptService.isLocked(EMAIL)).thenReturn(false);
+        AccountUserDetails authenticatedPrincipal = new AccountUserDetails(
+                EMAIL, "encoded-password", true, true, List.of(), 0L);
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(UsernamePasswordAuthenticationToken.authenticated(EMAIL, null, List.of()));
+                .thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                        authenticatedPrincipal, null, List.of()));
         when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(user));
         doAnswer(invocation -> {
             user.setLoginLockedUntil(Instant.now().plusSeconds(900));
