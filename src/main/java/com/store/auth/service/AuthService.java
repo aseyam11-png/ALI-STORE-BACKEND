@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -101,8 +102,9 @@ public class AuthService {
             throw new UnauthorizedException("Invalid email or password");
         }
 
+        Authentication primaryAuthentication;
         try {
-            authenticationManager.authenticate(
+            primaryAuthentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.getPassword()));
         } catch (AuthenticationException ex) {
             // REQUIRES_NEW commits the failed attempt independently of this method's
@@ -118,9 +120,14 @@ public class AuthService {
         // have disabled or locked the account while the password was being checked. Do not
         // hold the user-row lock while OTP challenge rows may be locked below.
         entityManager.refresh(user);
-        if (!Boolean.TRUE.equals(user.getIsEnabled())
+        Object authenticatedPrincipal = primaryAuthentication.getPrincipal();
+        if (!(authenticatedPrincipal instanceof AccountVersionAware authenticatedVersion)
+                || authenticatedVersion.getAuthVersion() != user.getAuthVersion()
+                || !Boolean.TRUE.equals(user.getIsEnabled())
                 || (user.getLoginLockedUntil() != null
                 && user.getLoginLockedUntil().isAfter(Instant.now()))) {
+            // The password may have been changed/reset or the account locked/disabled
+            // between the primary credential check and the fresh database read.
             throw new UnauthorizedException("Invalid email or password");
         }
 
