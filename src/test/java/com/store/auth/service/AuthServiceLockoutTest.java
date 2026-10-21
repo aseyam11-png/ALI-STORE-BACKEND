@@ -127,6 +127,8 @@ class AuthServiceLockoutTest {
 
         verify(jwtService, never()).generateToken(any(org.springframework.security.core.userdetails.UserDetails.class));
         verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
+        verify(emailOtpService, never()).issueChallenge(
+                any(User.class), any(EmailOtpPurpose.class), anyLong());
     }
 
     @Test
@@ -168,5 +170,7 @@ class AuthServiceLockoutTest {
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(jwtService);
         verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
+        verify(emailOtpService, never()).issueChallenge(
+                any(User.class), any(EmailOtpPurpose.class), anyLong());
     }
 }
