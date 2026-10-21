@@ -212,9 +212,11 @@ class AuthSecurityRegressionIntegrationTest {
         assertEquals(1L, updated.getAuthVersion());
         assertNotNull(challengeRepository.findForVerification(challenge.getChallengeId())
                 .orElseThrow().getConsumedAt());
+        assertThrows(com.store.common.exception.BusinessException.class,
+                () -> authService.verifyEmailCode(pendingLogin.getChallengeId(), "123456"));
         assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingLogin.getChallengeId()))
                 .orElseThrow().getRevokedAt(),
-                "Password reset must revoke pending login OTPs issued against the previous password");
+                "A pending login OTP must be rejected and revoked when its account auth version changes");
 
         mockMvc.perform(get("/api/v1/auth/session")
                         .header("Authorization", "Bearer " + token))
@@ -432,12 +434,20 @@ class AuthSecurityRegressionIntegrationTest {
         User updated = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
         assertTrue(passwordEncoder.matches("AnotherPassword456", updated.getPassword()));
         assertEquals(1L, updated.getAuthVersion());
+        assertThrows(com.store.common.exception.BusinessException.class,
+                () -> authService.verifyEmailCode(pendingLogin.getChallengeId(), "123456"));
         assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingLogin.getChallengeId()))
                 .orElseThrow().getRevokedAt(),
-                "Password change must revoke pending login OTPs issued against the previous password");
+                "Pending login OTPs must be revoked when their account auth version changes");
+        assertThrows(com.store.common.exception.BusinessException.class,
+                () -> authService.resetPassword(pendingPasswordReset.getChallengeId(), "123456", "StalePassword987"));
         assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingPasswordReset.getChallengeId()))
                 .orElseThrow().getRevokedAt(),
-                "Password change must revoke pending reset OTPs so they cannot overwrite the new password");
+                "Stale password-reset OTPs cannot be used after password change");
+
+        User afterStaleReset = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+        assertTrue(passwordEncoder.matches("AnotherPassword456", afterStaleReset.getPassword()),
+                "Stale reset OTP must not overwrite the password changed in this session");
 
         mockMvc.perform(get("/api/v1/auth/session")
                         .header("Authorization", "Bearer " + token))
