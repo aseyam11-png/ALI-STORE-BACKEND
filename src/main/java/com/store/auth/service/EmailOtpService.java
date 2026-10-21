@@ -5,6 +5,7 @@ import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
+import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
@@ -157,8 +158,12 @@ public class EmailOtpService {
         // Re-read detached or previously managed users; a stale snapshot must never cause
         // the cooldown check to revoke a newer challenge or bless an old proof.
         entityManager.refresh(user);
-        if (expectedAuthVersion != null && user.getAuthVersion() != expectedAuthVersion) {
-            throw new BusinessException("Invalid authentication challenge request");
+        if (expectedAuthVersion != null
+                && (user.getAuthVersion() != expectedAuthVersion
+                || !Boolean.TRUE.equals(user.getIsEnabled())
+                || (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now())))) {
+            throw new UnauthorizedException("Invalid email or password");
         }
 
         Instant now = Instant.now();
