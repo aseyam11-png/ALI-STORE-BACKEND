@@ -220,7 +220,8 @@ public class EmailOtpService {
      * Used by the ordinary email verification/login OTP endpoint. The transaction
      * deliberately commits BusinessException outcomes because a failed code updates
      * attempt_count (and can revoke the challenge) immediately before throwing.
-     * There must be no surrounding AuthService transaction that can roll this back.
+     * The outer AuthService transaction must also use noRollbackFor=BusinessException so
+     * failed-code counters and challenge revocations commit with the normalized error.
      */
     @Transactional(noRollbackFor = BusinessException.class)
     public EmailOtpChallenge verifyChallenge(UUID challengeId, String code) {
