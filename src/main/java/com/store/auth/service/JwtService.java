@@ -83,10 +83,22 @@ public class JwtService {
             return false;
         }
 
-        final String username = extractUsername(token);
-        if (username == null
-                || !username.equals(userDetails.getUsername())
-                || isTokenExpired(token)) {
+        final Claims claims;
+        try {
+            claims = extractAllClaims(token);
+        } catch (JwtException | IllegalArgumentException ex) {
+            return false;
+        }
+
+        String username = claims.getSubject();
+        String expectedUsername = userDetails.getUsername();
+        Date expiration = claims.getExpiration();
+        if (username == null || expectedUsername == null
+                || !username.equals(expectedUsername)
+                || expiration == null
+                || !expiration.after(new Date())) {
+            // Require a usable subject and expiration instead of allowing malformed
+            // but correctly signed claims to trigger NullPointerExceptions downstream.
             return false;
         }
 
@@ -99,7 +111,7 @@ public class JwtService {
         }
 
         if (userDetails instanceof AccountVersionAware versionAware) {
-            Object versionClaim = extractClaim(token, claims -> claims.get("av"));
+            Object versionClaim = claims.get("av");
             if (versionClaim != null && !(versionClaim instanceof Number)) {
                 return false;
             }
