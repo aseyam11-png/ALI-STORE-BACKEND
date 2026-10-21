@@ -9,7 +9,6 @@ import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
