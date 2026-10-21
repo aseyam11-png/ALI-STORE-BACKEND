@@ -40,6 +40,12 @@ class CookieCsrfProtectionTest {
         String setCookie = result.getResponse().getHeader("Set-Cookie");
         assertNotNull(setCookie, "CSRF endpoint must issue the XSRF-TOKEN cookie");
         assertTrue(setCookie.contains("XSRF-TOKEN="));
+        assertNotNull(result.getResponse().getHeader("X-XSRF-TOKEN"),
+                "The bootstrap endpoint must expose a CORS-readable CSRF token header");
+        assertEquals(result.getResponse().getCookie("XSRF-TOKEN").getValue(),
+                result.getResponse().getHeader("X-XSRF-TOKEN"),
+                "The response header must match the persisted raw CSRF cookie token");
+        assertEquals("no-store", result.getResponse().getHeader("Cache-Control"));
         assertTrue(setCookie.contains("Path=/"),
                 "The SPA must be able to read the CSRF cookie on application routes");
         assertTrue(setCookie.contains("SameSite=Strict"),
