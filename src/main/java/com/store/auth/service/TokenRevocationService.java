@@ -26,8 +26,11 @@ public class TokenRevocationService {
 
         final LocalDateTime expiresAt;
         try {
-            expiresAt = jwtService.extractExpiration(token)
-                    .toInstant().atZone(ZoneOffset.UTC).toLocalDateTime();
+            java.util.Date expiration = jwtService.extractExpiration(token);
+            if (expiration == null) {
+                return;
+            }
+            expiresAt = expiration.toInstant().atZone(ZoneOffset.UTC).toLocalDateTime();
         } catch (JwtException | IllegalArgumentException ignored) {
             return;
         }
