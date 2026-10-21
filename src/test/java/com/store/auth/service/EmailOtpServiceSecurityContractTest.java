@@ -232,7 +232,7 @@ class EmailOtpServiceSecurityContractTest {
     }
 
     @Test
-    void failedCodeCounterUsesNoRollbackAndAuthServiceHasNoOuterVerificationTransaction() throws Exception {
+    void failedCodeCounterAndChallengeRevocationCommitWithBusinessException() throws Exception {
         Transactional annotation = EmailOtpService.class
                 .getMethod("verifyChallenge", UUID.class, String.class)
                 .getAnnotation(Transactional.class);
