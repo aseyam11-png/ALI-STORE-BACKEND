@@ -5,6 +5,7 @@ import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
+import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
@@ -114,6 +115,20 @@ class EmailOtpServiceSecurityContractTest {
         assertEquals(response.getChallengeId(), persisted.getChallengeId().toString());
         assertEquals("u***@example.com", response.getMaskedEmail());
         assertEquals(600, response.getExpiresInSeconds());
+    }
+
+    @Test
+    void authenticatedOtpChallengeIsNotIssuedForLockedAccount() {
+        user.setFailedLoginAttempts(5);
+        user.setLastFailedLoginAt(Instant.now());
+        user.setLoginLockedUntil(Instant.now().plusSeconds(900));
+
+        assertThrows(UnauthorizedException.class,
+                () -> service.issueChallenge(user, EmailOtpPurpose.LOGIN, 0L));
+
+        verifyNoInteractions(emailOtpSender);
+        verify(challengeRepository, never()).revokeActiveChallenges(
+                anyLong(), any(EmailOtpPurpose.class), any(Instant.class));
     }
 
     @Test
