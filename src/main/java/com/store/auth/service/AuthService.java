@@ -121,8 +121,11 @@ public class AuthService {
         // hold the user-row lock while OTP challenge rows may be locked below.
         entityManager.refresh(user);
         Object authenticatedPrincipal = primaryAuthentication.getPrincipal();
-        if (!(authenticatedPrincipal instanceof AccountVersionAware authenticatedVersion)
-                || authenticatedVersion.getAuthVersion() != user.getAuthVersion()
+        if (!(authenticatedPrincipal instanceof AccountVersionAware)) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+        AccountVersionAware authenticatedVersion = (AccountVersionAware) authenticatedPrincipal;
+        if (authenticatedVersion.getAuthVersion() != user.getAuthVersion()
                 || !Boolean.TRUE.equals(user.getIsEnabled())
                 || (user.getLoginLockedUntil() != null
                 && user.getLoginLockedUntil().isAfter(Instant.now()))) {
@@ -133,7 +136,7 @@ public class AuthService {
 
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
             if (!emailOtpService.isVerificationEnabled()) {
-                prepareDirectSession(user);
+                prepareDirectSession(user, authenticatedVersion.getAuthVersion());
                 user.setEmailVerified(true);
                 userRepository.save(user);
                 return authenticatedResponse(user);
@@ -142,17 +145,17 @@ public class AuthService {
             // Do not reset failed-password state until the OTP is completed. If the account
             // is locked concurrently after this snapshot, OTP verification will recheck it.
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION);
+                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION, authenticatedVersion.getAuthVersion());
             return pendingVerificationResponse(user, challenge);
         }
 
         if (emailOtpService.isLoginOtpEnabled()) {
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, authenticatedVersion.getAuthVersion());
             return pendingVerificationResponse(user, challenge);
         }
 
-        prepareDirectSession(user);
+        prepareDirectSession(user, authenticatedVersion.getAuthVersion());
         return authenticatedResponse(user);
     }
 
@@ -174,6 +177,9 @@ public class AuthService {
         // context. Refresh under a row lock so concurrent failed logins cannot set a lock
         // that this transaction misses before it consumes the OTP and mints a JWT.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        if (challenge.getAuthVersion() != user.getAuthVersion()) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
         if (!Boolean.TRUE.equals(user.getIsEnabled())) {
             throw new BusinessException("User account is disabled");
         }
@@ -241,6 +247,10 @@ public class AuthService {
         EmailOtpChallenge challenge = emailOtpService.verifyChallenge(
                 parsedChallengeId, code, EmailOtpPurpose.PASSWORD_RESET);
         User user = challenge.getUser();
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        if (challenge.getAuthVersion() != user.getAuthVersion()) {
+            throw new BusinessException("Invalid or expired password reset request");
+        }
 
         if (!Boolean.TRUE.equals(user.getIsEnabled())) {
             throw new BusinessException("Invalid or expired password reset request");
@@ -279,11 +289,12 @@ public class AuthService {
         userRepository.save(user);
     }
 
-    private void prepareDirectSession(User user) {
+    private void prepareDirectSession(User user, long expectedAuthVersion) {
         // Direct JWT issuance has no pending challenge row to lock, so lock the user row
-        // for the final enabled/lockout check and keep it locked through transaction commit.
+        // for the final enabled/lockout/version check and keep it locked through transaction commit.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
-        if (!Boolean.TRUE.equals(user.getIsEnabled())
+        if (user.getAuthVersion() != expectedAuthVersion
+                || !Boolean.TRUE.equals(user.getIsEnabled())
                 || (user.getLoginLockedUntil() != null
                 && user.getLoginLockedUntil().isAfter(Instant.now()))) {
             throw new UnauthorizedException("Invalid email or password");
