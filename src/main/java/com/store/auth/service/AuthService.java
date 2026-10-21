@@ -2,6 +2,9 @@ package com.store.auth.service;
 
 import com.store.auth.dto.AuthResponse;
 import com.store.auth.dto.EmailOtpChallengeResponse;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
 import com.store.common.exception.BusinessException;
@@ -23,6 +26,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.UUID;
@@ -40,6 +44,9 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailOtpService emailOtpService;
     private final LoginAttemptService loginAttemptService;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Transactional
     public AuthResponse register(com.store.auth.dto.RegisterRequest request) {
@@ -106,6 +113,16 @@ public class AuthService {
 
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+
+        // AuthenticationManager checked credentials using a snapshot loaded earlier in the
+        // request. Lock and refresh the persistent row before issuing a challenge/session so
+        // concurrent failed attempts or an account disable cannot be overwritten by stale state.
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        if (!Boolean.TRUE.equals(user.getIsEnabled())
+                || (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now()))) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
 
         // A successful primary credential check clears the account-scoped lockout state.
         if (user.getFailedLoginAttempts() != 0
