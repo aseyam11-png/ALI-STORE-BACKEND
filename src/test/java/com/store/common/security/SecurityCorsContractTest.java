@@ -45,7 +45,7 @@ class SecurityCorsContractTest {
 
     @Test
     void spaPreflightAllowsCredentialedRequestWithXsrfHeader() throws Exception {
-        mockMvc.perform(options("/api/v1/auth/login")
+        mockMvc.perform(options("/api/v1/orders")
                         .header(HttpHeaders.ORIGIN, "http://localhost:3000")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "content-type,x-xsrf-token"))
