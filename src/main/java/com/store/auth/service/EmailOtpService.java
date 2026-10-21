@@ -323,8 +323,13 @@ public class EmailOtpService {
         try {
             return issueChallengeInternal(current.getUser(), current.getPurpose(), current.getAuthVersion());
         } catch (RuntimeException ex) {
-            // Normalize cooldown/provider failures so the endpoint cannot become an
-            // account-existence oracle when a user submits a decoy challenge handle.
+            // If the account version changed between the initial check and replacement
+            // issuance, persist invalidation of the stale challenge before normalizing
+            // the public error. Provider/cooldown failures remain indistinguishable.
+            if (current.getAuthVersion() != current.getUser().getAuthVersion()) {
+                current.setRevokedAt(Instant.now());
+                challengeRepository.save(current);
+            }
             throw new BusinessException("Verification request is invalid or cannot be resent yet");
         }
     }
