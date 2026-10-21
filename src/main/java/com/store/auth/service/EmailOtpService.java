@@ -89,7 +89,9 @@ public class EmailOtpService {
                     "AUTH_OTP_HASH_SECRET must be configured separately in production");
         }
         if (!hasText(configuredSecret)) {
-            configuredSecret = environment.getProperty("JWT_SECRET", "");
+            configuredSecret = environment.getProperty(
+                    "JWT_SECRET",
+                    environment.getProperty("jwt.secret", ""));
         }
 
         try {
