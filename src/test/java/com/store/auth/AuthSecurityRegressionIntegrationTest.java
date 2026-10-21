@@ -25,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -58,6 +59,7 @@ class AuthSecurityRegressionIntegrationTest {
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtService jwtService;
     @Autowired private AuthService authService;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     @MockBean
     private EmailOtpSender emailOtpSender;
@@ -286,8 +288,13 @@ class AuthSecurityRegressionIntegrationTest {
         EmailOtpChallengeResponse original = emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
         UUID originalId = UUID.fromString(original.getChallengeId());
         EmailOtpChallenge oldChallenge = challengeRepository.findForVerification(originalId).orElseThrow();
-        oldChallenge.setCreatedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(61));
-        challengeRepository.saveAndFlush(oldChallenge);
+        // created_at is marked updatable=false on BaseEntity, so simulate elapsed time
+        // with SQL instead of relying on Hibernate to flush a protected field.
+        jdbcTemplate.update(
+                "UPDATE email_otp_challenges SET created_at = ? WHERE id = ?",
+                java.sql.Timestamp.valueOf(
+                        java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(61)),
+                oldChallenge.getId());
 
         EmailOtpChallengeResponse resent = emailOtpService.resend(originalId);
 
