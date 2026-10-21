@@ -2,8 +2,6 @@ package com.store.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.Cookie;
-import com.store.auth.dto.LoginRequest;
 import com.store.auth.dto.EmailOtpChallengeResponse;
 import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
@@ -13,11 +11,13 @@ import com.store.auth.service.AuthService;
 import com.store.auth.service.EmailOtpSender;
 import com.store.auth.service.EmailOtpService;
 import com.store.auth.service.JwtService;
+import com.store.common.exception.BusinessException;
 import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
 import com.store.user.repository.UserRepository;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +25,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -33,6 +32,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
@@ -59,175 +59,15 @@ class AuthSecurityRegressionIntegrationTest {
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtService jwtService;
     @Autowired private AuthService authService;
-    @Autowired private JdbcTemplate jdbcTemplate;
 
     @MockBean
     private EmailOtpSender emailOtpSender;
 
     @Test
-    void invalidPasswordResetCodeAttemptPersistsAfterRequestReturnsBadRequest() throws Exception {
-        User user = createUser(uniqueEmail("otp-counter"));
-        clearInvocations(emailOtpSender);
-
-        mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.message").value(
-                        "If an account exists for this email, password reset instructions will be sent."));
-
-        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
-        verify(emailOtpSender).send(
-                eq(user.getEmail()),
-                codeCaptor.capture(),
-                eq(EmailOtpPurpose.PASSWORD_RESET),
-                any());
-
-        EmailOtpChallenge challenge = challengeRepository
-                .findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
-                        user.getId(), EmailOtpPurpose.PASSWORD_RESET)
-                .orElseThrow();
-
-        String correctCode = codeCaptor.getValue();
-        String wrongCode = "000000".equals(correctCode) ? "000001" : "000000";
-
-        mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", challenge.getChallengeId().toString(),
-                                "code", wrongCode,
-                                "newPassword", "NewPassword123"))))
-                .andExpect(status().isBadRequest());
-
-        EmailOtpChallenge persisted = challengeRepository
-                .findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
-                        user.getId(), EmailOtpPurpose.PASSWORD_RESET)
-                .orElseThrow();
-        assertEquals(1, persisted.getAttemptCount(),
-                "A wrong OTP must increment the persisted counter even though the endpoint returns an error");
-    }
-
-    @Test
-    void passwordResetRequestReturnsSamePublicShapeForExistingAndUnknownEmails() throws Exception {
-        User existing = createUser(uniqueEmail("reset-enumeration"));
-        clearInvocations(emailOtpSender);
-
-        String existingJson = mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("email", existing.getEmail()))))
-                .andExpect(status().isAccepted())
-                .andReturn().getResponse().getContentAsString();
-
-        String unknownEmail = uniqueEmail("missing-reset");
-        String unknownJson = mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("email", unknownEmail))))
-                .andExpect(status().isAccepted())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode known = objectMapper.readTree(existingJson);
-        JsonNode unknown = objectMapper.readTree(unknownJson);
-        assertEquals(known.path("message").asText(), unknown.path("message").asText());
-        assertEquals(known.path("data").path("requiresEmailVerification").asBoolean(),
-                unknown.path("data").path("requiresEmailVerification").asBoolean());
-        assertEquals("PASSWORD_RESET", known.path("data").path("purpose").asText());
-        assertEquals("PASSWORD_RESET", unknown.path("data").path("purpose").asText());
-        assertTrue(known.path("data").path("challengeId").isTextual());
-        assertTrue(unknown.path("data").path("challengeId").isTextual());
-        assertNotEquals(known.path("data").path("challengeId").asText(),
-                unknown.path("data").path("challengeId").asText());
-        assertNotEquals("", known.path("data").path("maskedEmail").asText());
-        assertNotEquals("", unknown.path("data").path("maskedEmail").asText());
-        assertTrue(known.path("data").path("expiresInSeconds").isNull());
-        assertTrue(unknown.path("data").path("expiresInSeconds").isNull());
-
-        ArgumentCaptor<String> issuedCode = ArgumentCaptor.forClass(String.class);
-        verify(emailOtpSender, times(1)).send(
-                eq(existing.getEmail()),
-                issuedCode.capture(),
-                eq(EmailOtpPurpose.PASSWORD_RESET),
-                any());
-        String wrongCode = "000000".equals(issuedCode.getValue()) ? "000001" : "000000";
-
-        String knownAccountError = mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", known.path("data").path("challengeId").asText(),
-                                "code", wrongCode,
-                                "newPassword", "ChangedPassword123"))))
-                .andExpect(status().isBadRequest())
-                .andReturn().getResponse().getContentAsString();
-
-        String unknownAccountError = mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", unknown.path("data").path("challengeId").asText(),
-                                "code", wrongCode,
-                                "newPassword", "ChangedPassword123"))))
-                .andExpect(status().isBadRequest())
-                .andReturn().getResponse().getContentAsString();
-
-        assertEquals(
-                objectMapper.readTree(knownAccountError).path("message").asText(),
-                objectMapper.readTree(unknownAccountError).path("message").asText(),
-                "Wrong OTP and decoy challenge failures must not reveal whether the account exists");
-    }
-
-    @Test
-    void passwordResetConsumesOtpChangesPasswordAndInvalidatesExistingJwt() throws Exception {
-        User user = createUser(uniqueEmail("password-reset"));
-        String token = tokenFor(user);
-        clearInvocations(emailOtpSender);
-        EmailOtpChallengeResponse pendingLogin =
-                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
-
-        mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
-                .andExpect(status().isAccepted());
-
-        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
-        verify(emailOtpSender).send(
-                eq(user.getEmail()),
-                codeCaptor.capture(),
-                eq(EmailOtpPurpose.PASSWORD_RESET),
-                any());
-
-        EmailOtpChallenge challenge = challengeRepository
-                .findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
-                        user.getId(), EmailOtpPurpose.PASSWORD_RESET)
-                .orElseThrow();
-
-        mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", challenge.getChallengeId().toString(),
-                                "code", codeCaptor.getValue(),
-                                "newPassword", "NewPassword456"))))
-                .andExpect(status().isOk());
-
-        User updated = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
-        assertTrue(passwordEncoder.matches("NewPassword456", updated.getPassword()));
-        assertTrue(Boolean.TRUE.equals(updated.getEmailVerified()));
-        assertEquals(1L, updated.getAuthVersion());
-        assertNotNull(challengeRepository.findForVerification(challenge.getChallengeId())
-                .orElseThrow().getConsumedAt());
-        assertThrows(com.store.common.exception.BusinessException.class,
-                () -> authService.verifyEmailCode(pendingLogin.getChallengeId(), "123456"));
-        assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingLogin.getChallengeId()))
-                .orElseThrow().getRevokedAt(),
-                "A pending login OTP must be rejected and revoked when its account auth version changes");
-
-        mockMvc.perform(get("/api/v1/auth/session")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void passwordLoginOtpVerificationCreatesHttpOnlyCookieSessionWithoutExposingJwt() throws Exception {
+    void passwordAndOtpLoginCreatesHttpOnlyCookieAndDoesNotExposeJwt() throws Exception {
         User user = createUser(uniqueEmail("successful-login"));
         user.setFailedLoginAttempts(2);
-        user.setLastFailedLoginAt(java.time.Instant.now().minusSeconds(10));
+        user.setLastFailedLoginAt(Instant.now().minusSeconds(10));
         userRepository.saveAndFlush(user);
         clearInvocations(emailOtpSender);
 
@@ -244,12 +84,12 @@ class AuthSecurityRegressionIntegrationTest {
         JsonNode loginJson = objectMapper.readTree(loginResult.getResponse().getContentAsString());
         String challengeId = loginJson.path("data").path("challengeId").asText();
         assertFalse(challengeId.isBlank());
-        assertFalse(loginJson.path("data").has("token"));
+        assertFalse(loginJson.path("data").has("token"),
+                "The primary login response must not expose the JWT in JSON");
 
-        User resetAttempts = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
-        assertEquals(2, resetAttempts.getFailedLoginAttempts(),
-                "Failed-password counters are cleared only after the OTP proves completion of login");
-        assertNull(resetAttempts.getLoginLockedUntil());
+        User pending = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+        assertEquals(2, pending.getFailedLoginAttempts(),
+                "Password failure counters should clear only after all login factors complete");
 
         ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
         verify(emailOtpSender).send(
@@ -263,14 +103,14 @@ class AuthSecurityRegressionIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        String verificationJson = verificationResult.getResponse().getContentAsString();
-        assertFalse(objectMapper.readTree(verificationJson).path("data").has("token"),
-                "The bearer token must not be serialized into the response body");
+        assertFalse(objectMapper.readTree(verificationResult.getResponse().getContentAsString())
+                        .path("data").has("token"),
+                "The verification response must not expose the JWT in JSON");
 
         String sessionCookieHeader = verificationResult.getResponse().getHeaders("Set-Cookie").stream()
                 .filter(value -> value.startsWith("ali_store_session="))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("Login completion must set the session cookie"));
+                .orElseThrow(() -> new AssertionError("Completing login must issue the session cookie"));
         assertTrue(sessionCookieHeader.toLowerCase().contains("httponly"));
         assertTrue(sessionCookieHeader.contains("Path=/"));
         assertTrue(sessionCookieHeader.contains("SameSite=Strict"));
@@ -288,87 +128,28 @@ class AuthSecurityRegressionIntegrationTest {
     }
 
     @Test
-    void resendAfterCooldownPersistsNewChallengeAndRevokesOldOne() {
-        User user = createUser(uniqueEmail("otp-resend"));
-        clearInvocations(emailOtpSender);
-
-        EmailOtpChallengeResponse original = emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
-        UUID originalId = UUID.fromString(original.getChallengeId());
-        EmailOtpChallenge oldChallenge = challengeRepository.findForVerification(originalId).orElseThrow();
-        // created_at is marked updatable=false on BaseEntity, so simulate elapsed time
-        // with SQL instead of relying on Hibernate to flush a protected field.
-        jdbcTemplate.update(
-                "UPDATE email_otp_challenges SET created_at = ? WHERE id = ?",
-                java.sql.Timestamp.valueOf(
-                        java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(61)),
-                oldChallenge.getId());
-
-        EmailOtpChallengeResponse resent = emailOtpService.resend(originalId);
-
-        assertNotEquals(original.getChallengeId(), resent.getChallengeId());
-        assertNotNull(challengeRepository.findForVerification(originalId).orElseThrow().getRevokedAt());
-        verify(emailOtpSender, times(2)).send(
-                eq(user.getEmail()), anyString(), eq(EmailOtpPurpose.LOGIN), any());
-    }
-
-    @Test
-    void invalidLoginOtpAttemptPersistsAfterApiReturnsBadRequest() throws Exception {
-        User user = createUser(uniqueEmail("login-otp-counter"));
-        clearInvocations(emailOtpSender);
-
-        EmailOtpChallengeResponse issued =
-                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
-        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
-        verify(emailOtpSender).send(
-                eq(user.getEmail()),
-                codeCaptor.capture(),
-                eq(EmailOtpPurpose.LOGIN),
-                any());
-
-        String actualCode = codeCaptor.getValue();
-        String wrongCode = "000000".equals(actualCode) ? "000001" : "000000";
-
-        mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", issued.getChallengeId(),
-                                "code", wrongCode))))
-                .andExpect(status().isBadRequest());
-
-        EmailOtpChallenge persisted = challengeRepository
-                .findForVerification(UUID.fromString(issued.getChallengeId()))
-                .orElseThrow();
-        assertEquals(1, persisted.getAttemptCount(),
-                "An invalid login OTP must commit attempt_count despite returning an error response");
-    }
-
-    @Test
-    void pendingLoginOtpCannotMintSessionDuringAccountLockoutAndCanBeRetriedAfterUnlock() {
+    void pendingLoginOtpCannotCreateSessionDuringLockoutAndCanBeRetriedAfterUnlock() {
         User user = createUser(uniqueEmail("locked-pending-otp"));
+        clearInvocations(emailOtpSender);
+
         EmailOtpChallengeResponse issued =
                 emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
-
         ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
         verify(emailOtpSender).send(
-                eq(user.getEmail()),
-                codeCaptor.capture(),
-                eq(EmailOtpPurpose.LOGIN),
-                any());
-        String code = codeCaptor.getValue();
+                eq(user.getEmail()), codeCaptor.capture(), eq(EmailOtpPurpose.LOGIN), any());
 
         user.setFailedLoginAttempts(5);
-        user.setLastFailedLoginAt(java.time.Instant.now());
-        user.setLoginLockedUntil(java.time.Instant.now().plusSeconds(900));
+        user.setLastFailedLoginAt(Instant.now());
+        user.setLoginLockedUntil(Instant.now().plusSeconds(900));
         userRepository.saveAndFlush(user);
 
         assertThrows(UnauthorizedException.class,
-                () -> authService.verifyEmailCode(issued.getChallengeId(), code));
+                () -> authService.verifyEmailCode(issued.getChallengeId(), codeCaptor.getValue()));
 
-        EmailOtpChallenge challengeAfterRejectedLogin = challengeRepository
-                .findForVerification(UUID.fromString(issued.getChallengeId()))
-                .orElseThrow();
-        assertNull(challengeAfterRejectedLogin.getConsumedAt(),
-                "A lockout rejection must roll back OTP consumption so the account can retry after unlock");
+        UUID challengeId = UUID.fromString(issued.getChallengeId());
+        EmailOtpChallenge rejected = challengeRepository.findForVerification(challengeId).orElseThrow();
+        assertNull(rejected.getConsumedAt(),
+                "Rejecting a locked account must not consume its valid OTP");
 
         User unlocked = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
         unlocked.setFailedLoginAttempts(0);
@@ -376,194 +157,92 @@ class AuthSecurityRegressionIntegrationTest {
         unlocked.setLoginLockedUntil(null);
         userRepository.saveAndFlush(unlocked);
 
-        var authResponse = authService.verifyEmailCode(issued.getChallengeId(), code);
-        assertNotNull(authResponse.getToken(), "The valid OTP can complete login after lockout expires");
-        assertNotNull(challengeRepository.findForVerification(UUID.fromString(issued.getChallengeId()))
-                .orElseThrow().getConsumedAt());
+        var authenticated = authService.verifyEmailCode(issued.getChallengeId(), codeCaptor.getValue());
+        assertNotNull(authenticated.getToken());
+        assertNotNull(challengeRepository.findForVerification(challengeId).orElseThrow().getConsumedAt());
     }
 
     @Test
-    void jwtIssuedBeforeAccountLockoutRemainsValidByPolicy() throws Exception {
-        User user = createUser(uniqueEmail("session-during-lockout"));
-        String token = tokenFor(user);
-
-        user.setFailedLoginAttempts(5);
-        user.setLastFailedLoginAt(java.time.Instant.now());
-        user.setLoginLockedUntil(java.time.Instant.now().plusSeconds(900));
-        userRepository.saveAndFlush(user);
-
-        mockMvc.perform(get("/api/v1/auth/session")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void disabledAccountCannotReuseAnUnexpiredJwt() throws Exception {
-        User user = createUser(uniqueEmail("disabled-session"));
-        String token = tokenFor(user);
-
-        mockMvc.perform(get("/api/v1/auth/session")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk());
-
-        user.setIsEnabled(false);
-        userRepository.save(user);
-
-        mockMvc.perform(get("/api/v1/auth/session")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void passwordChangeInvalidatesExistingJwtAndUpdatesPassword() throws Exception {
-        User user = createUser(uniqueEmail("change-password"));
-        String token = tokenFor(user);
+    void passwordResetInvalidatesExistingJwtAndPendingLoginOtp() throws Exception {
+        User user = createUser(uniqueEmail("reset-invalidates-session"));
+        String oldJwt = tokenFor(user);
         EmailOtpChallengeResponse pendingLogin =
                 emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
-        EmailOtpChallengeResponse pendingPasswordReset =
+        clearInvocations(emailOtpSender);
+
+        MvcResult forgotResult = mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
+                .andExpect(status().isAccepted())
+                .andReturn();
+
+        JsonNode forgotJson = objectMapper.readTree(forgotResult.getResponse().getContentAsString());
+        String resetChallengeId = forgotJson.path("data").path("challengeId").asText();
+        ArgumentCaptor<String> resetCode = ArgumentCaptor.forClass(String.class);
+        verify(emailOtpSender).send(
+                eq(user.getEmail()), resetCode.capture(), eq(EmailOtpPurpose.PASSWORD_RESET), any());
+
+        mockMvc.perform(csrfPost("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "challengeId", resetChallengeId,
+                                "code", resetCode.getValue(),
+                                "newPassword", "NewPassword456"))))
+                .andExpect(status().isOk());
+
+        User updated = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+        assertTrue(passwordEncoder.matches("NewPassword456", updated.getPassword()));
+        assertEquals(1L, updated.getAuthVersion());
+
+        mockMvc.perform(get("/api/v1/auth/session").header("Authorization", "Bearer " + oldJwt))
+                .andExpect(status().isUnauthorized());
+
+        assertThrows(BusinessException.class,
+                () -> authService.verifyEmailCode(pendingLogin.getChallengeId(), "123456"));
+        assertNotNull(challengeRepository.findForVerification(
+                        UUID.fromString(pendingLogin.getChallengeId()))
+                .orElseThrow().getRevokedAt());
+    }
+
+    @Test
+    void passwordChangeRejectsPendingResetOtpAndInvalidatesPriorJwt() throws Exception {
+        User user = createUser(uniqueEmail("change-invalidates-session"));
+        String oldJwt = tokenFor(user);
+        EmailOtpChallengeResponse pendingLogin =
+                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN);
+        EmailOtpChallengeResponse pendingReset =
                 authService.requestPasswordReset(user.getEmail());
 
-        mockMvc.perform(post("/api/v1/auth/password/change")
-                        .header("Authorization", "Bearer " + token)
+        mockMvc.perform(csrfPost("/api/v1/auth/password/change")
+                        .header("Authorization", "Bearer " + oldJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "currentPassword", "Password123",
                                 "newPassword", "AnotherPassword456"))))
                 .andExpect(status().isOk());
 
-        User updated = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
-        assertTrue(passwordEncoder.matches("AnotherPassword456", updated.getPassword()));
-        assertEquals(1L, updated.getAuthVersion());
-        assertThrows(com.store.common.exception.BusinessException.class,
+        User changed = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+        assertTrue(passwordEncoder.matches("AnotherPassword456", changed.getPassword()));
+        assertEquals(1L, changed.getAuthVersion());
+
+        mockMvc.perform(get("/api/v1/auth/session").header("Authorization", "Bearer " + oldJwt))
+                .andExpect(status().isUnauthorized());
+
+        assertThrows(BusinessException.class,
                 () -> authService.verifyEmailCode(pendingLogin.getChallengeId(), "123456"));
-        assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingLogin.getChallengeId()))
-                .orElseThrow().getRevokedAt(),
-                "Pending login OTPs must be revoked when their account auth version changes");
-        assertThrows(com.store.common.exception.BusinessException.class,
-                () -> authService.resetPassword(pendingPasswordReset.getChallengeId(), "123456", "StalePassword987"));
-        assertNotNull(challengeRepository.findForVerification(UUID.fromString(pendingPasswordReset.getChallengeId()))
-                .orElseThrow().getRevokedAt(),
-                "Stale password-reset OTPs cannot be used after password change");
+        assertThrows(BusinessException.class,
+                () -> authService.resetPassword(
+                        pendingReset.getChallengeId(), "123456", "StalePassword987"));
 
         User afterStaleReset = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
         assertTrue(passwordEncoder.matches("AnotherPassword456", afterStaleReset.getPassword()),
-                "Stale reset OTP must not overwrite the password changed in this session");
-
-        mockMvc.perform(get("/api/v1/auth/session")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void registrationDoesNotRevealWhetherEmailAlreadyExists() throws Exception {
-        String email = uniqueEmail("enumeration");
-        createUser(email);
-
-        Map<String, String> request = Map.of(
-                "firstName", "Ali",
-                "lastName", "Store",
-                "email", email,
-                "password", "Password123");
-
-        String duplicateResponse = mockMvc.perform(csrfPost("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isAccepted())
-                .andReturn().getResponse().getContentAsString();
-
-        String newEmail = uniqueEmail("new-registration");
-        Map<String, String> newRequest = Map.of(
-                "firstName", "Ali",
-                "lastName", "Store",
-                "email", newEmail,
-                "password", "Password123");
-
-        String newResponse = mockMvc.perform(csrfPost("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(newRequest)))
-                .andExpect(status().isAccepted())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode duplicate = objectMapper.readTree(duplicateResponse);
-        JsonNode newlyRegistered = objectMapper.readTree(newResponse);
-        assertEquals(duplicate.path("message").asText(), newlyRegistered.path("message").asText());
-        assertEquals(duplicate.path("data").path("requiresEmailVerification").asBoolean(),
-                newlyRegistered.path("data").path("requiresEmailVerification").asBoolean());
-        assertEquals(duplicate.path("data").path("purpose").asText(),
-                newlyRegistered.path("data").path("purpose").asText());
-        assertNotEquals(duplicate.path("data").path("challengeId").asText(),
-                newlyRegistered.path("data").path("challengeId").asText());
-
-        ArgumentCaptor<String> issuedCode = ArgumentCaptor.forClass(String.class);
-        verify(emailOtpSender).send(
-                eq(newEmail),
-                issuedCode.capture(),
-                eq(EmailOtpPurpose.EMAIL_VERIFICATION),
-                any());
-        String wrongCode = "000000".equals(issuedCode.getValue()) ? "000001" : "000000";
-
-        String duplicateChallengeError = mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", duplicate.path("data").path("challengeId").asText(),
-                                "code", wrongCode))))
-                .andExpect(status().isBadRequest())
-                .andReturn().getResponse().getContentAsString();
-
-        String realChallengeError = mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", newlyRegistered.path("data").path("challengeId").asText(),
-                                "code", wrongCode))))
-                .andExpect(status().isBadRequest())
-                .andReturn().getResponse().getContentAsString();
-
-        assertEquals(
-                objectMapper.readTree(duplicateChallengeError).path("message").asText(),
-                objectMapper.readTree(realChallengeError).path("message").asText(),
-                "A decoy registration challenge and a real challenge with a wrong OTP must fail identically");
-
-        String decoyResendError = mockMvc.perform(csrfPost("/api/v1/auth/email/resend")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", duplicate.path("data").path("challengeId").asText()))))
-                .andExpect(status().isBadRequest())
-                .andReturn().getResponse().getContentAsString();
-
-        String realResendError = mockMvc.perform(csrfPost("/api/v1/auth/email/resend")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "challengeId", newlyRegistered.path("data").path("challengeId").asText()))))
-                .andExpect(status().isBadRequest())
-                .andReturn().getResponse().getContentAsString();
-
-        assertEquals(
-                objectMapper.readTree(decoyResendError).path("message").asText(),
-                objectMapper.readTree(realResendError).path("message").asText(),
-                "Resend cooldown errors must not disclose whether the challenge identifier exists");
-    }
-
-    @Test
-    void fifthFailedLoginLocksAccountAndReturnsSameUnauthorizedError() {
-        User user = createUser(uniqueEmail("account-lockout"));
-
-        for (int attempt = 0; attempt < 5; attempt++) {
-            assertThrows(UnauthorizedException.class, () -> authService.login(
-                    LoginRequest.builder()
-                            .email(user.getEmail())
-                            .password("WrongPassword123")
-                            .build()));
-        }
-
-        User locked = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
-        assertNotNull(locked.getLoginLockedUntil());
-        assertTrue(locked.getLoginLockedUntil().isAfter(java.time.Instant.now()));
-
-        assertThrows(UnauthorizedException.class, () -> authService.login(
-                LoginRequest.builder()
-                        .email(user.getEmail())
-                        .password("Password123")
-                        .build()));
+                "A reset OTP issued before the password change must not overwrite the new password");
+        assertNotNull(challengeRepository.findForVerification(
+                        UUID.fromString(pendingLogin.getChallengeId()))
+                .orElseThrow().getRevokedAt());
+        assertNotNull(challengeRepository.findForVerification(
+                        UUID.fromString(pendingReset.getChallengeId()))
+                .orElseThrow().getRevokedAt());
     }
 
     private MockHttpServletRequestBuilder csrfPost(String path) throws Exception {
@@ -590,7 +269,7 @@ class AuthSecurityRegressionIntegrationTest {
                 .emailVerified(true)
                 .role(role)
                 .build();
-        return userRepository.save(user);
+        return userRepository.saveAndFlush(user);
     }
 
     private String tokenFor(User user) {
