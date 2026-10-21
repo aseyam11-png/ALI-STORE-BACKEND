@@ -6,6 +6,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -88,6 +89,21 @@ class JwtServiceTest {
         assertFalse(service.isTokenValid(null, user));
         assertFalse(service.isTokenValid("  ", user));
         assertFalse(service.isTokenValid("not-parsed-because-user-details-is-null", null));
+    }
+
+    @Test
+    void rejectsJwtWhenAuthVersionClaimHasUnexpectedType() {
+        String secret = Base64.getEncoder().encodeToString("e".repeat(32).getBytes());
+        JwtService service = newService(secret);
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        var legacyDetails = new org.springframework.security.core.userdetails.User(
+                "user@example.com", "hash", true, true, true, true, authorities);
+        AccountUserDetails currentDetails = new AccountUserDetails(
+                "user@example.com", "hash", true, true, authorities, 0L);
+
+        String token = service.generateToken(Map.of("av", "not-a-number"), legacyDetails);
+
+        assertFalse(service.isTokenValid(token, currentDetails));
     }
 
     @Test
