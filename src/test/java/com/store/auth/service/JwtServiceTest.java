@@ -5,8 +5,11 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Base64;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -89,6 +92,23 @@ class JwtServiceTest {
         assertFalse(service.isTokenValid(null, user));
         assertFalse(service.isTokenValid("  ", user));
         assertFalse(service.isTokenValid("not-parsed-because-user-details-is-null", null));
+    }
+
+    @Test
+    void rejectsSignedJwtWithoutExpirationInsteadOfThrowingNullPointerException() {
+        String secret = Base64.getEncoder().encodeToString("f".repeat(32).getBytes());
+        JwtService service = newService(secret);
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        AccountUserDetails user = new AccountUserDetails(
+                "user@example.com", "hash", true, true, authorities, 0L);
+        String token = Jwts.builder()
+                .subject("user@example.com")
+                .issuer("ali-store-backend")
+                .issuedAt(new Date())
+                .signWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(secret)))
+                .compact();
+
+        assertFalse(service.isTokenValid(token, user));
     }
 
     @Test
