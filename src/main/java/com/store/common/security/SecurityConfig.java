@@ -193,7 +193,7 @@ public class SecurityConfig {
         configuration.setAllowedHeaders(List.of(
                 "Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-XSRF-TOKEN"));
         configuration.setAllowCredentials(true);
-        configuration.setExposedHeaders(List.of("Retry-After"));
+        configuration.setExposedHeaders(List.of("Retry-After", "X-XSRF-TOKEN"));
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
