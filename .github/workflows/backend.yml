@@ -2,9 +2,9 @@ name: ALI STORE Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/auth-session-csrf-contracts-20261020]
   pull_request:
-    branches: [main]
+    branches: [main, integration/verified-hardening-20261020, fix/auth-session-csrf-contracts-20261020]
   workflow_dispatch:
 
 permissions:
