@@ -63,6 +63,8 @@ class SecurityCorsContractTest {
 
         assertTrue(configuration != null, "CORS configuration must be available");
         assertTrue(configuration.getExposedHeaders().contains("Retry-After"));
+        assertTrue(configuration.getExposedHeaders().contains("X-XSRF-TOKEN"),
+                "The SPA must be able to read the CSRF header across origins");
         assertTrue(configuration.getMaxAge() != null && configuration.getMaxAge() == 3600L);
     }
 }
