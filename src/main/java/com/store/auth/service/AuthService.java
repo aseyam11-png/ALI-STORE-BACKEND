@@ -178,7 +178,11 @@ public class AuthService {
         // that this transaction misses before it consumes the OTP and mints a JWT.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
         if (challenge.getAuthVersion() != user.getAuthVersion()) {
-            throw new UnauthorizedException("Invalid email or password");
+            // The account changed after EmailOtpService's first version check. Permanently
+            // invalidate this challenge and commit that invalidation rather than repeatedly
+            // rolling it back as an unauthenticated retry.
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired verification challenge");
         }
         if (!Boolean.TRUE.equals(user.getIsEnabled())) {
             throw new BusinessException("User account is disabled");
