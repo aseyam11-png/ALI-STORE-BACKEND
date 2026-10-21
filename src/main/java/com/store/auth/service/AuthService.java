@@ -114,33 +114,26 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
-        // AuthenticationManager checked credentials using a snapshot loaded earlier in the
-        // request. Lock and refresh the persistent row before issuing a challenge/session so
-        // concurrent failed attempts or an account disable cannot be overwritten by stale state.
-        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        // Refresh this snapshot after AuthenticationManager returned: another request may
+        // have disabled or locked the account while the password was being checked. Do not
+        // hold the user-row lock while OTP challenge rows may be locked below.
+        entityManager.refresh(user);
         if (!Boolean.TRUE.equals(user.getIsEnabled())
                 || (user.getLoginLockedUntil() != null
                 && user.getLoginLockedUntil().isAfter(Instant.now()))) {
             throw new UnauthorizedException("Invalid email or password");
         }
 
-        // A successful primary credential check clears the account-scoped lockout state.
-        if (user.getFailedLoginAttempts() != 0
-                || user.getLoginLockedUntil() != null
-                || user.getLastFailedLoginAt() != null) {
-            user.setFailedLoginAttempts(0);
-            user.setLoginLockedUntil(null);
-            user.setLastFailedLoginAt(null);
-            userRepository.save(user);
-        }
-
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
             if (!emailOtpService.isVerificationEnabled()) {
+                prepareDirectSession(user);
                 user.setEmailVerified(true);
                 userRepository.save(user);
                 return authenticatedResponse(user);
             }
 
+            // Do not reset failed-password state until the OTP is completed. If the account
+            // is locked concurrently after this snapshot, OTP verification will recheck it.
             EmailOtpChallengeResponse challenge =
                     emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION);
             return pendingVerificationResponse(user, challenge);
@@ -152,6 +145,7 @@ public class AuthService {
             return pendingVerificationResponse(user, challenge);
         }
 
+        prepareDirectSession(user);
         return authenticatedResponse(user);
     }
 
@@ -188,9 +182,9 @@ public class AuthService {
         if (challenge.getPurpose() == EmailOtpPurpose.EMAIL_VERIFICATION
                 && !Boolean.TRUE.equals(user.getEmailVerified())) {
             user.setEmailVerified(true);
-            userRepository.save(user);
         }
 
+        clearLoginAttemptState(user);
         return authenticatedResponse(user);
     }
 
@@ -277,6 +271,29 @@ public class AuthService {
         user.setLastFailedLoginAt(null);
         user.setAuthVersion(user.getAuthVersion() + 1L);
         userRepository.save(user);
+    }
+
+    private void prepareDirectSession(User user) {
+        // Direct JWT issuance has no pending challenge row to lock, so lock the user row
+        // for the final enabled/lockout check and keep it locked through transaction commit.
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        if (!Boolean.TRUE.equals(user.getIsEnabled())
+                || (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now()))) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+        clearLoginAttemptState(user);
+    }
+
+    private void clearLoginAttemptState(User user) {
+        if (user.getFailedLoginAttempts() != 0
+                || user.getLoginLockedUntil() != null
+                || user.getLastFailedLoginAt() != null) {
+            user.setFailedLoginAttempts(0);
+            user.setLoginLockedUntil(null);
+            user.setLastFailedLoginAt(null);
+            userRepository.save(user);
+        }
     }
 
     private UUID parseChallengeId(String challengeId) {
