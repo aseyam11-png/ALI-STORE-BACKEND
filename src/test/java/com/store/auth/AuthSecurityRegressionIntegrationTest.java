@@ -245,7 +245,8 @@ class AuthSecurityRegressionIntegrationTest {
         assertFalse(loginJson.path("data").has("token"));
 
         User resetAttempts = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
-        assertEquals(0, resetAttempts.getFailedLoginAttempts());
+        assertEquals(2, resetAttempts.getFailedLoginAttempts(),
+                "Failed-password counters are cleared only after the OTP proves completion of login");
         assertNull(resetAttempts.getLoginLockedUntil());
 
         ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
@@ -271,6 +272,10 @@ class AuthSecurityRegressionIntegrationTest {
         assertTrue(sessionCookieHeader.toLowerCase().contains("httponly"));
         assertTrue(sessionCookieHeader.contains("Path=/"));
         assertTrue(sessionCookieHeader.contains("SameSite=Strict"));
+
+        User completedLogin = userRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+        assertEquals(0, completedLogin.getFailedLoginAttempts());
+        assertNull(completedLogin.getLoginLockedUntil());
 
         String cookieValue = sessionCookieHeader.substring(
                 "ali_store_session=".length(), sessionCookieHeader.indexOf(';'));
