@@ -6,6 +6,7 @@ import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
 import com.store.user.entity.User;
+import com.store.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
@@ -42,6 +43,7 @@ public class EmailOtpService {
     private final EmailOtpChallengeRepository challengeRepository;
     private final EmailOtpSender emailOtpSender;
     private final Environment environment;
+    private final UserRepository userRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @PersistenceContext
@@ -131,8 +133,36 @@ public class EmailOtpService {
 
     @Transactional
     public EmailOtpChallengeResponse issueChallenge(User user, EmailOtpPurpose purpose) {
-        Instant now = Instant.now();
+        return issueChallengeInternal(user, purpose, null);
+    }
 
+    /**
+     * Issues a challenge only if the primary authentication's account version is still
+     * current. This prevents a password change racing with login from upgrading a stale
+     * credential check into a challenge that could mint a new-version JWT.
+     */
+    @Transactional
+    public EmailOtpChallengeResponse issueChallenge(
+            User user, EmailOtpPurpose purpose, long expectedAuthVersion) {
+        return issueChallengeInternal(user, purpose, expectedAuthVersion);
+    }
+
+    private EmailOtpChallengeResponse issueChallengeInternal(
+            User requestedUser, EmailOtpPurpose purpose, Long expectedAuthVersion) {
+        if (requestedUser == null || requestedUser.getId() == null) {
+            throw new BusinessException("Invalid authentication challenge request");
+        }
+
+        User user = userRepository.findById(requestedUser.getId())
+                .orElseThrow(() -> new BusinessException("Invalid authentication challenge request"));
+        // Re-read detached or previously managed users; a stale snapshot must never cause
+        // the cooldown check to revoke a newer challenge or bless an old proof.
+        entityManager.refresh(user);
+        if (expectedAuthVersion != null && user.getAuthVersion() != expectedAuthVersion) {
+            throw new BusinessException("Invalid authentication challenge request");
+        }
+
+        Instant now = Instant.now();
         challengeRepository.findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
                         user.getId(), purpose)
                 .filter(existing -> existing.getAuthVersion() == user.getAuthVersion()
@@ -153,7 +183,7 @@ public class EmailOtpService {
                 .challengeId(challengeId)
                 .user(user)
                 .purpose(purpose)
-                .authVersion(user.getAuthVersion())
+                .authVersion(expectedAuthVersion == null ? user.getAuthVersion() : expectedAuthVersion)
                 .codeHash(hash(challengeId, code))
                 .expiresAt(now.plusSeconds(expirationSeconds))
                 .attemptCount(0)
@@ -232,7 +262,7 @@ public class EmailOtpService {
         // closes the race where a stale login/reset challenge is created while a password
         // change is concurrently invalidating the account's previous authentication state.
         User challengeUser = challenge.getUser();
-        entityManager.refresh(challengeUser, LockModeType.PESSIMISTIC_WRITE);
+        entityManager.refresh(challengeUser);
         if (challenge.getAuthVersion() != challengeUser.getAuthVersion()) {
             challenge.setRevokedAt(now);
             challengeRepository.save(challenge);
@@ -275,7 +305,7 @@ public class EmailOtpService {
 
         Instant now = Instant.now();
         User challengeUser = current.getUser();
-        entityManager.refresh(challengeUser, LockModeType.PESSIMISTIC_WRITE);
+        entityManager.refresh(challengeUser);
         if (current.getAuthVersion() != challengeUser.getAuthVersion()) {
             current.setRevokedAt(now);
             challengeRepository.save(current);
@@ -292,7 +322,7 @@ public class EmailOtpService {
         }
 
         try {
-            return issueChallenge(current.getUser(), current.getPurpose());
+            return issueChallengeInternal(current.getUser(), current.getPurpose(), current.getAuthVersion());
         } catch (RuntimeException ex) {
             // Normalize cooldown/provider failures so the endpoint cannot become an
             // account-existence oracle when a user submits a decoy challenge handle.
