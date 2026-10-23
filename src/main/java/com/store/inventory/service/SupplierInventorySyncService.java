@@ -93,14 +93,14 @@ public class SupplierInventorySyncService {
                     if (result.updated()) updated++;
                     if (result.error() != null) {
                         rejected++;
-                        errors.add("Rejected " + sku + ": " + result.error());
+                        errors.add("Rejected " + itemKey + ": " + result.error());
                     }
                 } catch (RuntimeException ex) {
                     // Each SKU has its own transaction. One malformed product/cost must
                     // not roll back updates already committed for other SKUs in this payload.
                     rejected++;
                     String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
-                    errors.add("Rejected " + sku + ": " + message.substring(0, Math.min(200, message.length())));
+                    errors.add("Rejected " + itemKey + ": " + message.substring(0, Math.min(200, message.length())));
                 }
             }
         }
