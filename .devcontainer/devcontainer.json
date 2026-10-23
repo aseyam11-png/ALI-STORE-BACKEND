@@ -1,5 +1,5 @@
 {
-  "name": "ALI STORE Backend - Java 21 + Docker",
+  "name": "ALI STORE Backend - Java 17 + Docker",
   "image": "mcr.microsoft.com/devcontainers/java:1-17-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
