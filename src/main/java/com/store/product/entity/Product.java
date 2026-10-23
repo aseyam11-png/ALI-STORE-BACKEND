@@ -61,6 +61,9 @@ public class Product extends BaseEntity {
     @Column(name = "supplier_sku", length = 100)
     private String supplierSku;
 
+    @Column(name = "supplier_product_id", length = 150)
+    private String supplierProductId;
+
     @Column(name = "supplier_cost", precision = 10, scale = 2)
     private BigDecimal supplierCost;
 
