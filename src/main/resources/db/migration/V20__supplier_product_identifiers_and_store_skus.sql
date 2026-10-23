@@ -12,7 +12,10 @@ BEGIN
     FOR product_row IN
         SELECT id FROM products WHERE sku IS NULL OR BTRIM(sku) = '' ORDER BY id
     LOOP
-        candidate_sku := 'ALI-' || LPAD(product_row.id::TEXT, 8, '0');
+        candidate_sku := 'ALI-' || CASE
+            WHEN LENGTH(product_row.id::TEXT) < 8 THEN LPAD(product_row.id::TEXT, 8, '0')
+            ELSE product_row.id::TEXT
+        END;
         IF EXISTS (
             SELECT 1 FROM products existing
             WHERE existing.sku = candidate_sku AND existing.id <> product_row.id
