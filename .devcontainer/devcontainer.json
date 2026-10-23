@@ -1,0 +1,19 @@
+{
+  "name": "ALI STORE Backend - Java 21 + Docker",
+  "image": "mcr.microsoft.com/devcontainers/java:1-21-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest"
+    }
+  },
+  "runArgs": [
+    "--init"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack"
+      ]
+    }
+  }
+}
