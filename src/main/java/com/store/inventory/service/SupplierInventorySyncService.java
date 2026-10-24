@@ -66,15 +66,22 @@ public class SupplierInventorySyncService {
 
         if (payload.getItems() != null) {
             for (SupplierInventoryResponse.Item item : payload.getItems()) {
-                if (item == null || item.getSupplierSku() == null || item.getSupplierSku().isBlank()) {
+                if (item == null) {
                     rejected++;
-                    errors.add("Rejected inventory item without supplierSku");
+                    errors.add("Rejected null inventory item");
                     continue;
                 }
-                String sku = item.getSupplierSku().trim();
+                String supplierProductId = normalizeOptional(item.getSupplierProductId());
+                String supplierSku = normalizeOptional(item.getSupplierSku());
+                if (supplierProductId == null && supplierSku == null) {
+                    rejected++;
+                    errors.add("Rejected inventory item without supplierProductId or supplierSku");
+                    continue;
+                }
+                String itemKey = supplierProductId != null ? supplierProductId : supplierSku;
                 if (item.getQuantity() == null || item.getQuantity() < 0) {
                     rejected++;
-                    errors.add("Rejected " + sku + ": quantity must be >= 0");
+                    errors.add("Rejected " + itemKey + ": quantity must be >= 0");
                     continue;
                 }
 
@@ -86,14 +93,14 @@ public class SupplierInventorySyncService {
                     if (result.updated()) updated++;
                     if (result.error() != null) {
                         rejected++;
-                        errors.add("Rejected " + sku + ": " + result.error());
+                        errors.add("Rejected " + itemKey + ": " + result.error());
                     }
                 } catch (RuntimeException ex) {
                     // Each SKU has its own transaction. One malformed product/cost must
                     // not roll back updates already committed for other SKUs in this payload.
                     rejected++;
                     String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
-                    errors.add("Rejected " + sku + ": " + message.substring(0, Math.min(200, message.length())));
+                    errors.add("Rejected " + itemKey + ": " + message.substring(0, Math.min(200, message.length())));
                 }
             }
         }
@@ -118,8 +125,24 @@ public class SupplierInventorySyncService {
             throw new BusinessException("Supplier is not active for inventory synchronization");
         }
 
-        String supplierSku = item.getSupplierSku().trim();
-        Product product = productRepository.findBySupplierIdAndSupplierSku(supplier.getId(), supplierSku).orElse(null);
+        String supplierSku = normalizeOptional(item.getSupplierSku());
+        String supplierProductId = normalizeOptional(item.getSupplierProductId());
+        Product product = null;
+        if (supplierProductId != null) {
+            product = productRepository.findBySupplierIdAndSupplierProductId(supplier.getId(), supplierProductId).orElse(null);
+            if (product == null && supplierSku != null) {
+                Product skuMatch = productRepository.findBySupplierIdAndSupplierSku(supplier.getId(), supplierSku).orElse(null);
+                if (skuMatch != null && normalizeOptional(skuMatch.getSupplierProductId()) == null) {
+                    // Adopt a stable supplier ID for a product already matched by its legacy supplier SKU.
+                    skuMatch.setSupplierProductId(supplierProductId);
+                    product = productRepository.save(skuMatch);
+                } else if (skuMatch != null && !supplierProductId.equals(skuMatch.getSupplierProductId())) {
+                    return new ApplyResult(true, false, "Supplier SKU is already mapped to a different supplier product ID");
+                }
+            }
+        } else if (supplierSku != null) {
+            product = productRepository.findBySupplierIdAndSupplierSku(supplier.getId(), supplierSku).orElse(null);
+        }
         if (product == null) return new ApplyResult(false, false, null);
 
         LocalDateTime observedAt = item.getObservedAt() != null ? item.getObservedAt() : syncedAt;
@@ -145,6 +168,10 @@ public class SupplierInventorySyncService {
     }
 
     private record ApplyResult(boolean matched, boolean updated, String error) {
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private void updateSupplierCost(Product product, BigDecimal unitCost, String currency) {

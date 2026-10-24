@@ -29,5 +29,6 @@ public class ProductAdminResponse {
     private String supplierCode;
     private String supplierName;
     private String supplierSku;
+    private String supplierProductId;
     private BigDecimal supplierCost;
 }

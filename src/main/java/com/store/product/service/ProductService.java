@@ -53,7 +53,8 @@ public class ProductService {
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
-        if (productRepository.existsBySku(request.getSku())) {
+        String requestedSku = normalizeOptional(request.getSku());
+        if (requestedSku != null && productRepository.existsBySku(requestedSku)) {
             throw new ConflictException("Product with this SKU already exists");
         }
 
@@ -69,6 +70,12 @@ public class ProductService {
                     .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + request.getSupplierId()));
             ensureSupplierCanFulfill(supplier);
         }
+
+        String supplierProductId = normalizeOptional(request.getSupplierProductId());
+        if (supplierProductId != null && supplier == null) {
+            throw new BusinessException("Supplier product ID requires a mapped supplier");
+        }
+        ensureSupplierProductIdAvailable(supplier, supplierProductId, null);
 
         if (request.getSupplierCost() != null) {
             validateSupplierCost(request.getPrice(), request.getSupplierCost());
@@ -96,11 +103,12 @@ public class ProductService {
                 .description(request.getDescription())
                 .price(request.getPrice())
                 .currency(currency)
-                .sku(request.getSku().trim())
+                .sku(requestedSku)
                 .category(category)
                 .brand(brand)
                 .supplier(supplier)
                 .supplierSku(request.getSupplierSku() == null ? null : request.getSupplierSku().trim())
+                .supplierProductId(supplierProductId)
                 .supplierCost(request.getSupplierCost())
                 .status(ProductStatus.DRAFT)
                 .build();
@@ -111,6 +119,10 @@ public class ProductService {
         }
 
         Product saved = productRepository.save(product);
+        if (saved.getSku() == null || saved.getSku().isBlank()) {
+            saved.setSku(generateUniqueStoreSku(saved.getId()));
+            saved = productRepository.save(saved);
+        }
         if (saved.getSupplierCost() != null) {
             pricingService.repriceProduct(saved);
             saved = productRepository.save(saved);
@@ -206,6 +218,13 @@ public class ProductService {
             product.setSupplier(supplier);
         }
         if (request.getSupplierSku() != null && !request.getSupplierSku().isBlank()) product.setSupplierSku(request.getSupplierSku().trim());
+        if (request.getSupplierProductId() != null) {
+            String supplierProductId = normalizeOptional(request.getSupplierProductId());
+            if (supplierProductId != null && product.getSupplier() == null) {
+                throw new BusinessException("Supplier product ID requires a mapped supplier");
+            }
+            product.setSupplierProductId(supplierProductId);
+        }
         if (request.getSupplierCost() != null) product.setSupplierCost(request.getSupplierCost());
         if (request.getStatus() != null) {
             if (request.getStatus() == ProductStatus.ACTIVE) validatePublishable(product);
@@ -215,6 +234,10 @@ public class ProductService {
             pricingService.repriceProduct(product);
         }
 
+        if (product.getSupplierProductId() != null && product.getSupplier() == null) {
+            throw new BusinessException("Supplier product ID requires a mapped supplier");
+        }
+        ensureSupplierProductIdAvailable(product.getSupplier(), product.getSupplierProductId(), id);
         if (product.getStatus() == ProductStatus.ACTIVE) validatePublishable(product);
 
         return mapToAdminResponse(productRepository.save(product));
@@ -226,6 +249,32 @@ public class ProductService {
                 new ResourceNotFoundException("Product not found with id: " + id));
         product.setStatus(ProductStatus.ARCHIVED);
         productRepository.save(product);
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String generateUniqueStoreSku(Long productId) {
+        String candidate = StoreProductCodeGenerator.forProductId(productId);
+        if (!productRepository.existsBySku(candidate)) return candidate;
+
+        // Preserve a deterministic, unique fallback if an operator already used the canonical code.
+        candidate = "ALI-P-" + productId;
+        long suffix = 1;
+        while (productRepository.existsBySku(candidate)) {
+            candidate = "ALI-P-" + productId + "-" + suffix++;
+        }
+        return candidate;
+    }
+
+    private void ensureSupplierProductIdAvailable(Supplier supplier, String supplierProductId, Long currentProductId) {
+        if (supplier == null || supplierProductId == null) return;
+        productRepository.findBySupplierIdAndSupplierProductId(supplier.getId(), supplierProductId)
+                .filter(existing -> currentProductId == null || !existing.getId().equals(currentProductId))
+                .ifPresent(existing -> {
+                    throw new ConflictException("Supplier product ID is already mapped to another store product");
+                });
     }
 
     private void ensureSupplierCanFulfill(Supplier supplier) {
@@ -289,6 +338,7 @@ public class ProductService {
                 .supplierId(product.getSupplier() != null ? product.getSupplier().getId() : null)
                 .supplierCode(product.getSupplier() != null ? product.getSupplier().getExternalCode() : null)
                 .supplierName(product.getSupplier() != null ? product.getSupplier().getName() : null)
-                .supplierSku(product.getSupplierSku()).supplierCost(product.getSupplierCost()).build();
+                .supplierSku(product.getSupplierSku()).supplierProductId(product.getSupplierProductId())
+                .supplierCost(product.getSupplierCost()).build();
     }
 }

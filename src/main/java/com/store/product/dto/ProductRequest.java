@@ -22,7 +22,7 @@ public class ProductRequest {
 
     private String currency;
 
-    @NotBlank(message = "Store SKU is required")
+    // Optional for new products; the backend generates a stable ALI SKU when absent.
     private String sku;
 
     private String imageUrl;
@@ -36,6 +36,7 @@ public class ProductRequest {
     // Product activation still requires an active/fulfillable external supplier.
     private Long supplierId;
     private String supplierSku;
+    private String supplierProductId;
 
     @DecimalMin(value = "0.01", message = "Supplier cost must be greater than zero")
     private BigDecimal supplierCost;
