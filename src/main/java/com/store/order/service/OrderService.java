@@ -1,5 +1,7 @@
 package com.store.order.service;
 
+import com.store.admin.dto.AdminOrderItemResponse;
+import com.store.admin.dto.AdminOrderResponse;
 import com.store.cart.entity.Cart;
 import com.store.cart.entity.CartItem;
 import com.store.cart.repository.CartItemRepository;
@@ -249,6 +251,29 @@ public class OrderService {
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
 
+    /**
+     * Admin-only order listing with the customer and catalog identifiers needed
+     * by order operations. Kept separate from OrderResponse so customer endpoints
+     * do not receive other users' contact details.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AdminOrderResponse> getAllAdminOrderDetails(Pageable pageable) {
+        Page<AdminOrderResponse> page = mapAdminOrderPage(orderRepository.findAll(pageable));
+        return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages(), page.isLast());
+    }
+
+    @Transactional(readOnly = true)
+    public AdminOrderResponse getAdminOrderDetails(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository
+                .findByOrderIdOrderByIdAsc(order.getId()).stream()
+                .map(this::mapShipment)
+                .collect(Collectors.toList());
+        return mapToAdminResponse(order, shipmentResponses);
+    }
+
     @Transactional
     public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
         Order order = orderRepository.findByIdForUpdate(orderId)
@@ -323,6 +348,55 @@ public class OrderService {
     @Transactional
     public void releaseOrderReservations(Order order) {
         order.getItems().forEach(item -> inventoryService.releaseReservedStock(item.getId()));
+    }
+
+    private Page<AdminOrderResponse> mapAdminOrderPage(Page<Order> orders) {
+        List<Long> orderIds = orders.getContent().stream().map(Order::getId).toList();
+        if (orderIds.isEmpty()) return orders.map(order -> mapToAdminResponse(order, List.of()));
+
+        Map<Long, List<ShipmentSummaryResponse>> shipmentsByOrder = shipmentRepository
+                .findByOrderIdInOrderByOrderIdAscIdAsc(orderIds).stream()
+                .map(shipment -> Map.entry(shipment.getOrderId(), mapShipment(shipment)))
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+
+        return orders.map(order -> mapToAdminResponse(order,
+                shipmentsByOrder.getOrDefault(order.getId(), List.of())));
+    }
+
+    private AdminOrderResponse mapToAdminResponse(
+            Order order, List<ShipmentSummaryResponse> shipmentResponses) {
+        User customer = order.getUser();
+        String customerName = ((customer.getFirstName() == null ? "" : customer.getFirstName()) + " "
+                + (customer.getLastName() == null ? "" : customer.getLastName())).trim();
+
+        List<AdminOrderItemResponse> itemResponses = order.getItems().stream().map(item ->
+                AdminOrderItemResponse.builder()
+                        .id(item.getId())
+                        .productId(item.getProduct().getId())
+                        .productSku(item.getProduct().getSku())
+                        .productName(item.getProduct().getName())
+                        .quantity(item.getQuantity())
+                        .price(item.getUnitPrice())
+                        .subTotal(item.getSubtotal())
+                        .build()
+        ).collect(Collectors.toList());
+
+        return AdminOrderResponse.builder()
+                .id(order.getId())
+                .customerName(customerName)
+                .customerEmail(customer.getEmail())
+                .customerPhone(customer.getPhoneNumber())
+                .status(order.getStatus())
+                .totalAmount(order.getTotalAmount())
+                .currency(order.getCurrency())
+                .couponCode(order.getCouponCode())
+                .discountAmount(order.getDiscountAmount())
+                .shippingAddress(order.getShippingAddress())
+                .createdAt(order.getCreatedAt())
+                .items(itemResponses)
+                .shipments(shipmentResponses)
+                .build();
     }
 
     private Page<OrderResponse> mapOrderPage(Page<Order> orders) {
