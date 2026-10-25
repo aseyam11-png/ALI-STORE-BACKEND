@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,7 +43,9 @@ class CookieCsrfProtectionTest {
         assertTrue(setCookie.contains("XSRF-TOKEN="));
         assertNotNull(result.getResponse().getHeader("X-XSRF-TOKEN"),
                 "The bootstrap endpoint must expose a CORS-readable CSRF token header");
-        assertEquals(result.getResponse().getCookie("XSRF-TOKEN").getValue(),
+        Cookie csrfCookie = result.getResponse().getCookie("XSRF-TOKEN");
+        assertNotNull(csrfCookie, "CSRF endpoint must issue the XSRF-TOKEN cookie");
+        assertEquals(csrfCookie.getValue(),
                 result.getResponse().getHeader("X-XSRF-TOKEN"),
                 "The response header must match the persisted raw CSRF cookie token");
         assertEquals("no-store", result.getResponse().getHeader("Cache-Control"));

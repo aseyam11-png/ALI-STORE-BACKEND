@@ -16,6 +16,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SearchServiceTest {
@@ -39,6 +41,31 @@ class SearchServiceTest {
         var result = service.suggestions("phone-77", 5);
 
         assertEquals("2", result.suggestions().get(0).id());
+    }
+
+
+    @Test
+    void suggestionsNormalizeArabicIndicAndPersianDigitsBeforeCatalogSearch() {
+        ProductService products = mock(ProductService.class);
+        CategoryRepository categories = mock(CategoryRepository.class);
+        BrandRepository brands = mock(BrandRepository.class);
+
+        ProductResponse matching = ProductResponse.builder()
+                .id(77L).name("Phone").sku("PHONE-77").build();
+        PageResponse<ProductResponse> page = PageResponse.of(List.of(matching), 0, 24, 1, 1, true);
+        when(products.searchProducts(eq("phone-77"), isNull(), isNull(), isNull(), isNull(), isNull(),
+                eq("relevance"), eq(0), eq(24))).thenReturn(page);
+        when(categories.searchActive(eq("phone-77"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+        when(brands.searchByName(eq("phone-77"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        SearchService service = new SearchService(products, categories, brands);
+        service.suggestions("phone-٧٧", 5);
+        service.suggestions("phone-۷۷", 5);
+
+        verify(products, times(2)).searchProducts(eq("phone-77"), isNull(), isNull(), isNull(), isNull(),
+                isNull(), eq("relevance"), eq(0), eq(24));
     }
 
     @Test
