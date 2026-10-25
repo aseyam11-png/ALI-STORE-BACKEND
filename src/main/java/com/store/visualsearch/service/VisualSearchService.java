@@ -30,6 +30,12 @@ public class VisualSearchService {
     private final VisualSearchProperties properties;
     private final Map<String,CachedHash> hashCache=new ConcurrentHashMap<>();
 
+    /**
+     * Legacy validation-only constructor retained for source compatibility.
+     * A valid search requires the candidate-loading service; use the autowired
+     * constructor for full visual-search behavior.
+     */
+    @Deprecated(since = "2026-10-25")
     public VisualSearchService(ProductRepository productRepository,VisualImageHashService imageHashService,
                                SecureImageFetcher imageFetcher,VisualSearchProperties properties){
         this.productRepository=productRepository;this.candidateService=null;this.imageHashService=imageHashService;
@@ -46,6 +52,10 @@ public class VisualSearchService {
 
     public List<VisualSearchResult> search(MultipartFile image){
         validateUpload(image);
+        if (candidateService == null) {
+            throw new IllegalStateException(
+                    "VisualSearchCandidateService is required for a valid visual search; use the dependency-injected constructor");
+        }
         byte[] uploadedBytes;
         try{uploadedBytes=image.getBytes();}catch(IOException ex){throw new BusinessException("Unable to read the uploaded image");}
         long[] queryHash=imageHashService.hash(uploadedBytes);
@@ -99,11 +109,11 @@ public class VisualSearchService {
         }
     }
 
-    private void cache(String url,CachedHash value){
+    private synchronized void cache(String url,CachedHash value){
         if(hashCache.size()>=MAX_CACHE_ENTRIES){
             hashCache.entrySet().removeIf(entry->entry.getValue().expired());
             if(hashCache.size()>=MAX_CACHE_ENTRIES){
-                String key=hashCache.keys().hasMoreElements()?hashCache.keys().nextElement():null;
+                String key=hashCache.keySet().stream().findFirst().orElse(null);
                 if(key!=null)hashCache.remove(key);
             }
         }
