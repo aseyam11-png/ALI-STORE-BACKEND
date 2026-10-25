@@ -64,6 +64,14 @@
 - Graphify was not run because the CLI/terminal is unavailable in this session. The source changes were reviewed statically instead.
 - The candidate workflow's branch filters are configured for `main`; a Draft PR targeting the release-candidate branch may not automatically trigger that workflow unless the workflow configuration is extended or manually dispatched.
 
+## Pull request and latest CI
+
+- Draft PR: [#51 — Consolidate backend compilation and contract fixes](https://github.com/aboodSeyam1/ALI-STORE-BACKEND/pull/51), targeting `integration/release-candidate-20261025`.
+- GitHub Actions run observed for PR head `65da252ede85e9377b0992e1ecbf53ee810f376e`: [run 40191427551](https://github.com/aboodSeyam1/ALI-STORE-BACKEND/actions/runs/40191427551).
+- Maven unit/integration job: **failure**; real PostgreSQL concurrency job: **skipped**.
+- The API reported no job steps and no runner details for the failed job, and its downloadable log endpoint returned `404 BlobNotFound`. The failure cause therefore remains unknown. This is not evidence that the modified code itself passed or failed compilation.
+- PR #51 remains open as Draft and has not been merged.
+
 ## Migrations reviewed
 
 All migration files V1–V20 were read statically: initial roles/users, catalog, commerce tables, internal dropshipping supplier foundation, legacy marketplace cleanup, checkout idempotency, pricing rules, token revocation, email OTP, Google identities, supplier inventory discrepancies, payment/refund integrity, reservation expiry, supplier webhook idempotency, order currency, shipping addresses, authentication lockout/version, inventory-reservation invariants, OTP auth-version binding, and supplier product identifiers/store SKUs.

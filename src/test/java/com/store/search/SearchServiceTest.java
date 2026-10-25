@@ -41,7 +41,7 @@ class SearchServiceTest {
         assertEquals("2", result.suggestions().get(0).id());
     }
 
-    
+
     @Test
     void suggestionsNormalizeArabicIndicAndPersianDigits() {
         ProductService products = mock(ProductService.class);
