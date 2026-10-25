@@ -54,7 +54,7 @@
 - Confirmed the candidate ref and selected branch refs via the GitHub API.
 - Compared branch ancestry and per-file change summaries; examined relevant commit patches before choosing focused changes.
 - Read the complete contents of migrations V1 through V20. This was static review only; no migrations were executed against any database.
-- Read the primary Maven configuration, application profiles, CI workflow, and selected production/test files.
+- Read the primary Maven configuration, application profiles, CI workflow, selected production/test files, and Flyway migrations V1–V20.
 - Re-fetched selected files after creating the first two commits and verified that the intended edits are present in the work branch.
 
 ### Checks not run / evidence unavailable
@@ -62,7 +62,7 @@
 - Maven `compile`, `test-compile`, targeted tests, `clean verify`, `git diff --check`, and Testcontainers/PostgreSQL tests were **not run in this session** because no local terminal or Maven runtime was available through the connected GitHub interface.
 - Existing Actions runs for the candidate showed the Maven job failing and the PostgreSQL job skipped. Attempts to retrieve their logs returned GitHub `404 BlobNotFound`; the underlying CI failure message therefore remains unknown and is not attributed to a specific source error.
 - Graphify was not run because the CLI/terminal is unavailable in this session. The source changes were reviewed statically instead.
-- The candidate workflow's branch filters are configured for `main`; a Draft PR targeting the release-candidate branch may not automatically trigger that workflow unless the workflow configuration is extended or manually dispatched.
+- The candidate workflow includes `integration/release-candidate-20261025` in both push and pull-request branch filters. CI was triggered for PR #51; however, the latest Maven job failed before exposing any step details.
 
 ## Pull request and CI observations captured during consolidation
 
