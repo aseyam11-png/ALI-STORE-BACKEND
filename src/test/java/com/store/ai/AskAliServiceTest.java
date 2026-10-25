@@ -53,7 +53,7 @@ class AskAliServiceTest {
 
         assertEquals("تم العثور على منتج مناسب", response.answer());
         assertEquals(1, response.products().size());
-        assertEquals(41L, response.products().get(0).getId());
+        assertEquals(41L, response.products().get(0).id());
 
         var promptCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(provider).chat(anyString(), promptCaptor.capture());

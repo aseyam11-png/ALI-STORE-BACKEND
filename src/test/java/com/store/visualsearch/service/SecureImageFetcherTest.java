@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SecureImageFetcherTest {
     private VisualSearchProperties properties() {
-        return new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024);
+        return new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024,60);
     }
 
     @Test void rejectsNonHttpsImageUrlsBeforeNetworkAccess() {

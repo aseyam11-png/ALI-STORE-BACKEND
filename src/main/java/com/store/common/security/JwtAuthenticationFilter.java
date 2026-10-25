@@ -1,5 +1,6 @@
 package com.store.common.security;
 
+import com.store.auth.service.AccountVersionAware;
 import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.TokenRevocationService;
 import com.store.auth.service.CustomUserDetailsService;
