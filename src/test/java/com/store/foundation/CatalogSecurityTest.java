@@ -176,6 +176,77 @@ class CatalogSecurityTest {
     }
 
     @Test
+    void publicProductDetailsHideInactiveCategoriesSuppliersAndIncompleteMappings() throws Exception {
+        Supplier inactiveSupplier = supplierRepository.save(Supplier.builder()
+                .externalCode("CATALOG-INACTIVE-" + System.nanoTime())
+                .name("Inactive Test Supplier")
+                .status(SupplierStatus.INACTIVE)
+                .fulfillmentEnabled(false)
+                .build());
+        Category inactiveCategory = categoryRepository.save(Category.builder()
+                .name("Disabled Catalog Category")
+                .slug("disabled-catalog-category")
+                .active(false)
+                .build());
+
+        Product inactiveSupplierProduct = productRepository.save(Product.builder()
+                .name("Inactive Supplier Product")
+                .slug("inactive-supplier-product")
+                .price(new BigDecimal("25.00"))
+                .currency("USD")
+                .sku("SUP-DIS-1")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .supplier(inactiveSupplier)
+                .supplierSku("SUP-DIS-SKU")
+                .supplierCost(new BigDecimal("5.00"))
+                .build());
+        Product incompleteMappingProduct = productRepository.save(Product.builder()
+                .name("Incomplete Supplier Mapping")
+                .slug("incomplete-supplier-mapping")
+                .price(new BigDecimal("25.00"))
+                .currency("USD")
+                .sku("MAP-DIS-1")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .supplier(supplier)
+                .supplierSku(" ")
+                .supplierCost(null)
+                .build());
+        Product inactiveCategoryProduct = productRepository.save(Product.builder()
+                .name("Inactive Category Product")
+                .slug("inactive-category-product")
+                .price(new BigDecimal("25.00"))
+                .currency("USD")
+                .sku("CAT-DIS-1")
+                .status(ProductStatus.ACTIVE)
+                .category(inactiveCategory)
+                .supplier(supplier)
+                .supplierSku("CAT-DIS-SKU")
+                .supplierCost(new BigDecimal("5.00"))
+                .build());
+
+        mockMvc.perform(get("/api/v1/products/" + inactiveSupplierProduct.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/slug/" + inactiveSupplierProduct.getSlug()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/" + incompleteMappingProduct.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/slug/" + incompleteMappingProduct.getSlug()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/" + inactiveCategoryProduct.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/slug/" + inactiveCategoryProduct.getSlug()))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/v1/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[?(@.sku=='SUP-DIS-1')]").isEmpty())
+                .andExpect(jsonPath("$.data.content[?(@.sku=='MAP-DIS-1')]").isEmpty())
+                .andExpect(jsonPath("$.data.content[?(@.sku=='CAT-DIS-1')]").isEmpty());
+    }
+
+    @Test
     void productSearch_rejectsUnsupportedSort() throws Exception {
         mockMvc.perform(get("/api/v1/products").param("sort", "rating_desc"))
                 .andExpect(status().isBadRequest());

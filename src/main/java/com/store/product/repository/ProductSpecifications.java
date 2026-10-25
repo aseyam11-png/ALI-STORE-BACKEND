@@ -25,10 +25,19 @@ public final class ProductSpecifications {
         return (root, query, cb) -> cb.isTrue(root.get("category").get("active"));
     }
 
+    /**
+     * Public catalog entries must have an active, enabled supplier and a complete
+     * supplier SKU/cost mapping. Checkout rejects incomplete mappings, so they
+     * must not appear as purchasable storefront products.
+     */
     public static Specification<Product> hasActiveSupplier() {
         return (root, query, cb) -> cb.and(
                 cb.equal(root.get("supplier").get("status"), com.store.supplier.entity.SupplierStatus.ACTIVE),
-                cb.isTrue(root.get("supplier").get("fulfillmentEnabled"))
+                cb.isTrue(root.get("supplier").get("fulfillmentEnabled")),
+                cb.isNotNull(root.get("supplierSku")),
+                cb.notEqual(cb.trim(root.<String>get("supplierSku")), ""),
+                cb.isNotNull(root.get("supplierCost")),
+                cb.greaterThan(root.<BigDecimal>get("supplierCost"), BigDecimal.ZERO)
         );
     }
 
