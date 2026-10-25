@@ -52,6 +52,10 @@ class SearchServiceTest {
                 eq("phone-123"), isNull(), isNull(), isNull(), isNull(), isNull(),
                 eq("relevance"), eq(0), eq(24)))
                 .thenReturn(PageResponse.of(List.of(), 0, 24, 0, 0, true));
+        when(products.searchProducts(
+                eq(""), isNull(), isNull(), isNull(), isNull(), isNull(),
+                eq("relevance"), eq(0), eq(100)))
+                .thenReturn(PageResponse.of(List.of(), 0, 100, 0, 0, true));
         when(categories.searchActive(eq("phone-123"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(org.springframework.data.domain.Page.empty());
         when(brands.searchByName(eq("phone-123"), org.mockito.ArgumentMatchers.any()))

@@ -78,7 +78,7 @@ No migration file was modified or executed. Production-schema compatibility and 
 - The production profile intentionally has no real `PaymentProvider`; production startup needs a genuine gateway implementation/configuration. The mock provider is explicitly non-production and does not prove provider-side idempotency.
 - `SecureImageFetcher` checks DNS-resolved addresses before the HTTP connection resolves/connects again. A DNS-rebinding/TOCTOU SSRF risk should be specifically reviewed and tested; this report does not claim a confirmed exploit.
 - V2/V15 migrations default/backfill currency using USD. Confirm the canonical store currency contract before changing historical persisted amounts; no currency migration was altered here.
-- The release-candidate-targeted Draft PR may not run CI because the existing workflow listens for PRs targeting `main` only.
+- The candidate workflow explicitly includes `integration/release-candidate-20261025` in its `pull_request.branches` list. A Draft PR targeting that branch should trigger the configured CI workflow; this still needs confirmation from an actual run.
 
 ## Final state
 
