@@ -17,7 +17,11 @@ public interface ShippingAddressRepository extends JpaRepository<ShippingAddress
 
     Optional<ShippingAddress> findByIdAndUserId(Long id, Long userId);
 
-    @Modifying
-    @Query("update ShippingAddress a set a.isDefault = false where a.user.id = :userId")
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update ShippingAddress a
+            set a.isDefault = false
+            where a.user.id = :userId
+            """)
     int clearDefaultForUser(@Param("userId") Long userId);
 }

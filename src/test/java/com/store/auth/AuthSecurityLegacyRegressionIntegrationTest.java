@@ -206,7 +206,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         assertTrue(passwordEncoder.matches("NewPassword456", updated.getPassword()));
         assertTrue(Boolean.TRUE.equals(updated.getEmailVerified()));
         assertEquals(1L, updated.getAuthVersion());
-        assertNotNull(challengeRepository.findForVerification(challenge.getChallengeId())
+        assertNotNull(challengeRepository.findByChallengeId(challenge.getChallengeId())
                 .orElseThrow().getConsumedAt());
 
         mockMvc.perform(get("/api/v1/auth/session")
@@ -239,7 +239,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 .andExpect(status().isBadRequest());
 
         EmailOtpChallenge persisted = challengeRepository
-                .findForVerification(UUID.fromString(issued.getChallengeId()))
+                .findByChallengeId(UUID.fromString(issued.getChallengeId()))
                 .orElseThrow();
         assertEquals(1, persisted.getAttemptCount(),
                 "An invalid login OTP must commit attempt_count despite returning an error response");

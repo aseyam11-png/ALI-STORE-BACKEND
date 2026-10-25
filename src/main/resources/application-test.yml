@@ -26,6 +26,8 @@ jwt:
   expiration: 3600000
 
 app:
+  auth:
+    cookie-same-site: Strict
   cors:
     allowed-origins: http://localhost:3000
   auth:
