@@ -281,7 +281,8 @@ class FoundationIntegrationTest {
         MockMultipartFile image = new MockMultipartFile(
                 "image", "query.png", "image/png", new byte[]{1, 2, 3});
 
-        mockMvc.perform(multipart("/api/v1/visual-search").file(image))
+        // Pass CSRF first so this contract asserts authentication rather than CSRF rejection.
+        mockMvc.perform(multipart("/api/v1/visual-search").file(image).with(csrf()))
                 .andExpect(status().isUnauthorized());
     }
 
