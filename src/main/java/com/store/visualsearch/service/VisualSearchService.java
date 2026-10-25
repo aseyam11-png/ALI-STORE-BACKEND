@@ -11,7 +11,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.*;
@@ -30,16 +29,9 @@ public class VisualSearchService {
     private final VisualSearchProperties properties;
     private final Map<String,CachedHash> hashCache=new ConcurrentHashMap<>();
 
-    public VisualSearchService(ProductRepository productRepository,VisualImageHashService imageHashService,
-                               SecureImageFetcher imageFetcher,VisualSearchProperties properties){
-        this.productRepository=productRepository;this.candidateService=null;this.imageHashService=imageHashService;
-        this.imageFetcher=imageFetcher;this.properties=properties;
-    }
-
-    @Autowired
-    public VisualSearchService(ProductRepository productRepository,VisualSearchCandidateService candidateService,
-                               VisualImageHashService imageHashService,SecureImageFetcher imageFetcher,
-                               VisualSearchProperties properties){
+    public VisualSearchService(ProductRepository productRepository, VisualSearchCandidateService candidateService,
+                               VisualImageHashService imageHashService, SecureImageFetcher imageFetcher,
+                               VisualSearchProperties properties) {
         this.productRepository=productRepository;this.candidateService=candidateService;
         this.imageHashService=imageHashService;this.imageFetcher=imageFetcher;this.properties=properties;
     }

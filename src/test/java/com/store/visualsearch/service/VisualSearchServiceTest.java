@@ -14,6 +14,7 @@ class VisualSearchServiceTest {
         ProductRepository repository=Mockito.mock(ProductRepository.class);
         VisualSearchService service=new VisualSearchService(
                 repository,
+                Mockito.mock(VisualSearchCandidateService.class),
                 Mockito.mock(VisualImageHashService.class),
                 Mockito.mock(SecureImageFetcher.class),
                 new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024,60));
@@ -56,6 +57,7 @@ class VisualSearchServiceTest {
         ProductRepository repository=Mockito.mock(ProductRepository.class);
         VisualSearchService service=new VisualSearchService(
                 repository,
+                Mockito.mock(VisualSearchCandidateService.class),
                 Mockito.mock(VisualImageHashService.class),
                 Mockito.mock(SecureImageFetcher.class),
                 new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024,60));
