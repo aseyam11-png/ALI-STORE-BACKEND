@@ -175,7 +175,7 @@ public class ProductService {
     @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
         return productRepository.findById(id)
-                .filter(p -> p.getStatus() == ProductStatus.ACTIVE)
+                .filter(this::isPubliclyAvailableToCustomers)
                 .map(this::mapToResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
     }
@@ -183,8 +183,26 @@ public class ProductService {
     @Transactional(readOnly = true)
     public ProductResponse getProductBySlug(String slug) {
         return productRepository.findBySlugAndStatusIn(slug, List.of(ProductStatus.ACTIVE))
+                .filter(this::isPubliclyAvailableToCustomers)
                 .map(this::mapToResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with slug: " + slug));
+    }
+
+    private boolean isPubliclyAvailableToCustomers(Product product) {
+        if (product.getStatus() != ProductStatus.ACTIVE
+                || product.getCategory() == null
+                || !Boolean.TRUE.equals(product.getCategory().getActive())) {
+            return false;
+        }
+
+        Supplier supplier = product.getSupplier();
+        return supplier != null
+                && supplier.getStatus() == SupplierStatus.ACTIVE
+                && Boolean.TRUE.equals(supplier.getFulfillmentEnabled())
+                && product.getSupplierSku() != null
+                && !product.getSupplierSku().isBlank()
+                && product.getSupplierCost() != null
+                && product.getSupplierCost().signum() > 0;
     }
 
     @Transactional(readOnly = true)
