@@ -38,6 +38,9 @@ public class VisualSearchService {
 
     public List<VisualSearchResult> search(MultipartFile image){
         validateUpload(image);
+        if (candidateService == null) {
+            throw new IllegalStateException("Visual-search candidate service is not configured");
+        }
         byte[] uploadedBytes;
         try{uploadedBytes=image.getBytes();}catch(IOException ex){throw new BusinessException("Unable to read the uploaded image");}
         long[] queryHash=imageHashService.hash(uploadedBytes);
@@ -91,7 +94,7 @@ public class VisualSearchService {
         }
     }
 
-    private void cache(String url,CachedHash value){
+    private synchronized void cache(String url,CachedHash value){
         if(hashCache.size()>=MAX_CACHE_ENTRIES){
             hashCache.entrySet().removeIf(entry->entry.getValue().expired());
             if(hashCache.size()>=MAX_CACHE_ENTRIES){
