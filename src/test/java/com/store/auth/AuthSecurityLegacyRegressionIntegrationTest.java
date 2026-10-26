@@ -68,6 +68,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         clearInvocations(emailOtpSender);
 
         mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.41");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
                 .andExpect(status().isAccepted())
@@ -111,6 +115,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         clearInvocations(emailOtpSender);
 
         String existingJson = mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.42");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", existing.getEmail()))))
                 .andExpect(status().isAccepted())
@@ -118,6 +126,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
 
         String unknownEmail = uniqueEmail("missing-reset");
         String unknownJson = mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.42");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", unknownEmail))))
                 .andExpect(status().isAccepted())
@@ -178,6 +190,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         clearInvocations(emailOtpSender);
 
         mockMvc.perform(csrfPost("/api/v1/auth/password/forgot")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.43");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
                 .andExpect(status().isAccepted());
@@ -232,6 +248,10 @@ class AuthSecurityLegacyRegressionIntegrationTest {
         String wrongCode = "000000".equals(actualCode) ? "000001" : "000000";
 
         mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
+                        .with(request -> {
+                            request.setRemoteAddr("192.0.2.45");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", issued.getChallengeId(),
