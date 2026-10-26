@@ -96,9 +96,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     try {
                         UserDetails current = userDetailsService.loadUserByUsername(authentication.getName());
                         boolean enabled = current.isEnabled();
-                        boolean versionMatches = !(principal instanceof AccountVersionAware previous)
-                                || !(current instanceof AccountVersionAware latest)
-                                || previous.getAuthVersion() == latest.getAuthVersion();
+                        boolean versionMatches;
+                        if (current instanceof AccountVersionAware latest) {
+                            // A version-aware local account must not accept an older principal
+                            // that cannot prove which account version authenticated it.
+                            versionMatches = principal instanceof AccountVersionAware previous
+                                    && previous.getAuthVersion() == latest.getAuthVersion();
+                        } else {
+                            // Preserve compatibility only when neither side carries a version.
+                            versionMatches = !(principal instanceof AccountVersionAware);
+                        }
                         if (!enabled || !versionMatches) {
                             SecurityContextHolder.clearContext();
                         }
