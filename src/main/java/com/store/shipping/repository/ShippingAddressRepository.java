@@ -17,6 +17,13 @@ public interface ShippingAddressRepository extends JpaRepository<ShippingAddress
 
     Optional<ShippingAddress> findByIdAndUserId(Long id, Long userId);
 
+    /**
+     * Clears the default flag for every address owned by the user.
+     *
+     * This bulk update bypasses managed entity state. Flush pending changes
+     * before the update and clear the persistence context afterward so later
+     * reads do not return stale values within the same transaction.
+     */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update ShippingAddress a
