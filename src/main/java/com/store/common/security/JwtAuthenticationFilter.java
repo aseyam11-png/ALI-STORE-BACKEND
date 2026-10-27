@@ -37,6 +37,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final AuthSessionCookieService cookieService;
     private final TokenRevocationService tokenRevocationService;
 
+    @org.springframework.beans.factory.annotation.Value("${app.security.admin-gate.enabled:false}")
+    private boolean adminGateEnabled;
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -61,11 +64,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     } else {
                         UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
                         if (jwtService.isTokenValid(jwt, userDetails)) {
+                            var grantedAuthorities = userDetails.getAuthorities();
+                            boolean isAdmin = grantedAuthorities.stream()
+                                    .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                            if (adminGateEnabled && isAdmin && !jwtService.isAdminGateVerified(jwt)) {
+                                // Legacy and OAuth-issued admin JWTs remain authenticated as a user
+                                // where possible, but cannot exercise ROLE_ADMIN without the signed proof.
+                                grantedAuthorities = grantedAuthorities.stream()
+                                        .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                                        .toList();
+                            }
                             UsernamePasswordAuthenticationToken authToken =
                                     new UsernamePasswordAuthenticationToken(
                                             userDetails,
                                             null,
-                                            userDetails.getAuthorities()
+                                            grantedAuthorities
                                     );
                             authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                             SecurityContextHolder.getContext().setAuthentication(authToken);
