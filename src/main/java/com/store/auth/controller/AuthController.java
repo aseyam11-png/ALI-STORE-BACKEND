@@ -15,6 +15,7 @@ import com.store.auth.service.TokenRevocationService;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
+import com.store.common.security.SecurityConfig;
 import com.store.user.dto.MeResponse;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
