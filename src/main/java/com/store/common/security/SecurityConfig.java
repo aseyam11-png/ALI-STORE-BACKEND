@@ -51,7 +51,7 @@ public class SecurityConfig {
     // All browser-originated unsafe requests, including anonymous login/register/reset flows,
     // require the XSRF cookie/header pair; non-browser Bearer clients are exempt in the matcher.
     public static final String RAW_CSRF_TOKEN_ATTRIBUTE =
-            SecurityConfig.class.getName() + ".rawCsrfToken";
+            "com.store.common.security.SecurityConfig.rawCsrfToken";
 
     private static final Set<String> CSRF_EXEMPT_PATHS = Set.of(
             "/api/v1/integrations/suppliers/shipments/update"
