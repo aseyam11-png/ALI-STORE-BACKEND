@@ -15,6 +15,7 @@ import java.util.Optional;
 public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 
     List<Shipment> findByOrderIdOrderByIdAsc(Long orderId);
+    List<Shipment> findByOrderIdInOrderByOrderIdAscIdAsc(java.util.Collection<Long> orderIds);
 
     boolean existsByOrderIdAndSupplierId(Long orderId, Long supplierId);
 

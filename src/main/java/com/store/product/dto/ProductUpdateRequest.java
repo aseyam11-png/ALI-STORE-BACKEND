@@ -21,6 +21,7 @@ public class ProductUpdateRequest {
 
     private Long supplierId;
     private String supplierSku;
+    private String supplierProductId;
 
     @DecimalMin(value = "0.01", message = "Supplier cost must be greater than zero")
     private BigDecimal supplierCost;

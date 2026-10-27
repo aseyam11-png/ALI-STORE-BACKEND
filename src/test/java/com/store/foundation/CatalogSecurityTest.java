@@ -9,6 +9,9 @@ import com.store.category.repository.CategoryRepository;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
+import com.store.supplier.entity.Supplier;
+import com.store.supplier.entity.SupplierStatus;
+import com.store.supplier.repository.SupplierRepository;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
 import com.store.user.repository.RoleRepository;
@@ -55,9 +58,11 @@ class CatalogSecurityTest {
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private BrandRepository brandRepository;
     @Autowired private ProductRepository productRepository;
+    @Autowired private SupplierRepository supplierRepository;
 
     private Role adminRole;
     private Category category;
+    private Supplier supplier;
 
     @BeforeEach
     void setUp() {
@@ -66,6 +71,12 @@ class CatalogSecurityTest {
         adminRole = roleRepository.findByName("ROLE_ADMIN")
                 .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
         category = categoryRepository.save(Category.builder().name("Electronics").slug("electronics").active(true).build());
+        supplier = supplierRepository.save(Supplier.builder()
+                .externalCode("CATALOG-SECURITY-" + System.nanoTime())
+                .name("Catalog Security Test Supplier")
+                .status(SupplierStatus.ACTIVE)
+                .fulfillmentEnabled(true)
+                .build());
     }
 
     private String adminToken() {
@@ -134,13 +145,16 @@ class CatalogSecurityTest {
     void archivedProduct_hiddenFromListing_and_notResolvableById() throws Exception {
         Product active = productRepository.save(Product.builder()
                 .name("Active One").slug("active-one").price(BigDecimal.TEN).currency("USD").sku("ACT-1")
-                .status(ProductStatus.ACTIVE).category(category).build());
+                .status(ProductStatus.ACTIVE).category(category).supplier(supplier)
+                .supplierSku("CATALOG-ACT-1").supplierCost(BigDecimal.ONE).build());
         Product archived = productRepository.save(Product.builder()
                 .name("Archived One").slug("archived-one").price(BigDecimal.TEN).currency("USD").sku("ARC-1")
-                .status(ProductStatus.ARCHIVED).category(category).build());
+                .status(ProductStatus.ARCHIVED).category(category).supplier(supplier)
+                .supplierSku("CATALOG-ARC-1").supplierCost(BigDecimal.ONE).build());
         Product draft = productRepository.save(Product.builder()
                 .name("Draft One").slug("draft-one").price(BigDecimal.TEN).currency("USD").sku("DRF-1")
-                .status(ProductStatus.DRAFT).category(category).build());
+                .status(ProductStatus.DRAFT).category(category).supplier(supplier)
+                .supplierSku("CATALOG-DRF-1").supplierCost(BigDecimal.ONE).build());
 
         // Listing only ever contains ACTIVE products.
         mockMvc.perform(get("/api/v1/products"))
@@ -162,6 +176,77 @@ class CatalogSecurityTest {
     }
 
     @Test
+    void publicProductDetailsHideInactiveCategoriesSuppliersAndIncompleteMappings() throws Exception {
+        Supplier inactiveSupplier = supplierRepository.save(Supplier.builder()
+                .externalCode("CATALOG-INACTIVE-" + System.nanoTime())
+                .name("Inactive Test Supplier")
+                .status(SupplierStatus.INACTIVE)
+                .fulfillmentEnabled(false)
+                .build());
+        Category inactiveCategory = categoryRepository.save(Category.builder()
+                .name("Disabled Catalog Category")
+                .slug("disabled-catalog-category")
+                .active(false)
+                .build());
+
+        Product inactiveSupplierProduct = productRepository.save(Product.builder()
+                .name("Inactive Supplier Product")
+                .slug("inactive-supplier-product")
+                .price(new BigDecimal("25.00"))
+                .currency("USD")
+                .sku("SUP-DIS-1")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .supplier(inactiveSupplier)
+                .supplierSku("SUP-DIS-SKU")
+                .supplierCost(new BigDecimal("5.00"))
+                .build());
+        Product incompleteMappingProduct = productRepository.save(Product.builder()
+                .name("Incomplete Supplier Mapping")
+                .slug("incomplete-supplier-mapping")
+                .price(new BigDecimal("25.00"))
+                .currency("USD")
+                .sku("MAP-DIS-1")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .supplier(supplier)
+                .supplierSku(" ")
+                .supplierCost(null)
+                .build());
+        Product inactiveCategoryProduct = productRepository.save(Product.builder()
+                .name("Inactive Category Product")
+                .slug("inactive-category-product")
+                .price(new BigDecimal("25.00"))
+                .currency("USD")
+                .sku("CAT-DIS-1")
+                .status(ProductStatus.ACTIVE)
+                .category(inactiveCategory)
+                .supplier(supplier)
+                .supplierSku("CAT-DIS-SKU")
+                .supplierCost(new BigDecimal("5.00"))
+                .build());
+
+        mockMvc.perform(get("/api/v1/products/" + inactiveSupplierProduct.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/slug/" + inactiveSupplierProduct.getSlug()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/" + incompleteMappingProduct.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/slug/" + incompleteMappingProduct.getSlug()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/" + inactiveCategoryProduct.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/slug/" + inactiveCategoryProduct.getSlug()))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/v1/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[?(@.sku=='SUP-DIS-1')]").isEmpty())
+                .andExpect(jsonPath("$.data.content[?(@.sku=='MAP-DIS-1')]").isEmpty())
+                .andExpect(jsonPath("$.data.content[?(@.sku=='CAT-DIS-1')]").isEmpty());
+    }
+
+    @Test
     void productSearch_rejectsUnsupportedSort() throws Exception {
         mockMvc.perform(get("/api/v1/products").param("sort", "rating_desc"))
                 .andExpect(status().isBadRequest());
@@ -176,9 +261,11 @@ class CatalogSecurityTest {
     @Test
     void productSearch_filtersByPriceRange() throws Exception {
         productRepository.save(Product.builder().name("Cheap").slug("cheap-x").price(new BigDecimal("10.00"))
-                .currency("USD").sku("CHEAP-1").status(ProductStatus.ACTIVE).category(category).build());
+                .currency("USD").sku("CHEAP-1").status(ProductStatus.ACTIVE).category(category)
+                .supplier(supplier).supplierSku("CATALOG-CHEAP-1").supplierCost(new BigDecimal("3.00")).build());
         productRepository.save(Product.builder().name("Expensive").slug("expensive-x").price(new BigDecimal("500.00"))
-                .currency("USD").sku("EXP-1").status(ProductStatus.ACTIVE).category(category).build());
+                .currency("USD").sku("EXP-1").status(ProductStatus.ACTIVE).category(category)
+                .supplier(supplier).supplierSku("CATALOG-EXP-1").supplierCost(new BigDecimal("100.00")).build());
 
         mockMvc.perform(get("/api/v1/products").param("minPrice", "100").param("maxPrice", "1000"))
                 .andExpect(status().isOk())

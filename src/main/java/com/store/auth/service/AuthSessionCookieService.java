@@ -66,7 +66,9 @@ public class AuthSessionCookieService {
                     "AUTH_COOKIE_ENCRYPTION_KEY must be configured separately in production");
         }
         if (configuredKey == null || configuredKey.isBlank()) {
-            configuredKey = environment.getProperty("JWT_SECRET", "");
+            configuredKey = environment.getProperty(
+                    "JWT_SECRET",
+                    environment.getProperty("jwt.secret", ""));
         }
 
         final byte[] rawKey;

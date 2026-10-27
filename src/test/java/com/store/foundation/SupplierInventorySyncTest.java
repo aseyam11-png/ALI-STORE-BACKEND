@@ -91,7 +91,12 @@ class SupplierInventorySyncTest {
     }
 
     private SupplierInventoryResponse payload(String supplierSku, int quantity, BigDecimal cost, LocalDateTime observedAt) {
+        return payload(null, supplierSku, quantity, cost, observedAt);
+    }
+
+    private SupplierInventoryResponse payload(String supplierProductId, String supplierSku, int quantity, BigDecimal cost, LocalDateTime observedAt) {
         SupplierInventoryResponse.Item item = new SupplierInventoryResponse.Item();
+        item.setSupplierProductId(supplierProductId);
         item.setSupplierSku(supplierSku);
         item.setQuantity(quantity);
         item.setUnitCost(cost);
@@ -138,6 +143,35 @@ class SupplierInventorySyncTest {
         assertEquals(ProductStatus.DRAFT, updatedProduct.getStatus());
         assertNotEquals(ProductStatus.ACTIVE, updatedProduct.getStatus());
     }
+    @Test
+    void sync_prefersSupplierProductIdWhenSupplierSkuChanges() {
+        Product product = createProduct("SYNC-004", new BigDecimal("25.00"));
+        product.setSupplierProductId("EXT-PROD-004");
+        productRepository.save(product);
+        LocalDateTime observedAt = LocalDateTime.now().plusMinutes(1);
+        when(supplierInventoryClient.fetchInventory(supplier))
+                .thenReturn(payload("EXT-PROD-004", "SUP-SYNC-004-RENAMED", 13, new BigDecimal("12.00"), observedAt));
+
+        var report = syncService.syncSupplier(supplier.getId());
+
+        Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        assertEquals(1, report.getMatchedProducts());
+        assertEquals(13, inventory.getQuantity());
+        assertEquals("EXT-PROD-004", productRepository.findById(product.getId()).orElseThrow().getSupplierProductId());
+    }
+
+    @Test
+    void sync_adoptsSupplierProductIdForExistingSkuMapping() {
+        Product product = createProduct("SYNC-005", new BigDecimal("25.00"));
+        LocalDateTime observedAt = LocalDateTime.now().plusMinutes(1);
+        when(supplierInventoryClient.fetchInventory(supplier))
+                .thenReturn(payload("EXT-PROD-005", "SUP-SYNC-005", 7, new BigDecimal("12.00"), observedAt));
+
+        syncService.syncSupplier(supplier.getId());
+
+        assertEquals("EXT-PROD-005", productRepository.findById(product.getId()).orElseThrow().getSupplierProductId());
+    }
+
     @Test
     void staleSupplierSnapshotMakesAvailabilityUnknown() {
         Product product = createProduct("SYNC-003", new BigDecimal("25.00"));

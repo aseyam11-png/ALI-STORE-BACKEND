@@ -38,6 +38,7 @@ public class OpenAiCompatibleClient implements AiProviderClient {
         Map<String, Object> body = Map.of(
                 "model", properties.getModel().trim(),
                 "temperature", 0.2,
+                "max_tokens", 400,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt),
                         Map.of("role", "user", "content", userPrompt)

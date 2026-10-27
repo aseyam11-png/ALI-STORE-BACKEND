@@ -48,9 +48,7 @@ public class SupplierInventorySyncService {
         SupplierInventoryResponse payload = supplierInventoryClient.fetchInventory(supplier);
         LocalDateTime syncedAt = LocalDateTime.now();
 
-        // Apply the snapshot in a short database transaction.
-        return new TransactionTemplate(transactionManager).execute(status ->
-                applyPayload(supplierId, payload, syncedAt));
+        return applyPayload(supplierId, payload, syncedAt);
     }
 
     private SupplierInventorySyncReport applyPayload(
@@ -68,51 +66,41 @@ public class SupplierInventorySyncService {
 
         if (payload.getItems() != null) {
             for (SupplierInventoryResponse.Item item : payload.getItems()) {
-                if (item == null || item.getSupplierSku() == null || item.getSupplierSku().isBlank()) {
+                if (item == null) {
                     rejected++;
-                    errors.add("Rejected inventory item without supplierSku");
+                    errors.add("Rejected null inventory item");
                     continue;
                 }
-
-                String supplierSku = item.getSupplierSku().trim();
+                String supplierProductId = normalizeOptional(item.getSupplierProductId());
+                String supplierSku = normalizeOptional(item.getSupplierSku());
+                if (supplierProductId == null && supplierSku == null) {
+                    rejected++;
+                    errors.add("Rejected inventory item without supplierProductId or supplierSku");
+                    continue;
+                }
+                String itemKey = supplierProductId != null ? supplierProductId : supplierSku;
                 if (item.getQuantity() == null || item.getQuantity() < 0) {
                     rejected++;
-                    errors.add("Rejected " + supplierSku + ": quantity must be >= 0");
+                    errors.add("Rejected " + itemKey + ": quantity must be >= 0");
                     continue;
                 }
-
-                Product product = productRepository
-                        .findBySupplierIdAndSupplierSku(supplier.getId(), supplierSku)
-                        .orElse(null);
-                if (product == null) {
-                    continue;
-                }
-
-                matched++;
-                LocalDateTime observedAt = item.getObservedAt() != null ? item.getObservedAt() : syncedAt;
 
                 try {
-                    InventoryResponse inventoryResponse =
-                            inventoryService.syncSupplierStock(product.getId(), item.getQuantity(), observedAt);
-
-                    // Supplier cost belongs to the same snapshot as stock. If the
-                    // inventory snapshot was stale, do not let its cost overwrite a
-                    // newer source cost.
-                    boolean snapshotApplied = observedAt.equals(inventoryResponse.getLastSyncedAt());
-                    if (snapshotApplied && item.getUnitCost() != null) {
-                        updateSupplierCost(product, item.getUnitCost(), item.getCurrency());
-                        if (product.getStatus() == ProductStatus.ACTIVE) {
-                            pricingService.repriceProduct(product);
-                            if (product.getPrice().compareTo(product.getSupplierCost()) < 0) {
-                                product.setStatus(ProductStatus.DRAFT);
-                            }
-                        }
-                        productRepository.save(product);
+                    ApplyResult result = new TransactionTemplate(transactionManager).execute(
+                            status -> applySku(supplierId, item, syncedAt));
+                    if (result == null || !result.matched()) continue;
+                    matched++;
+                    if (result.updated()) updated++;
+                    if (result.error() != null) {
+                        rejected++;
+                        errors.add("Rejected " + itemKey + ": " + result.error());
                     }
-                    updated++;
-                } catch (BusinessException ex) {
+                } catch (RuntimeException ex) {
+                    // Each SKU has its own transaction. One malformed product/cost must
+                    // not roll back updates already committed for other SKUs in this payload.
                     rejected++;
-                    errors.add("Rejected " + supplierSku + ": " + ex.getMessage());
+                    String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+                    errors.add("Rejected " + itemKey + ": " + message.substring(0, Math.min(200, message.length())));
                 }
             }
         }
@@ -127,6 +115,63 @@ public class SupplierInventorySyncService {
                 .syncedAt(syncedAt)
                 .errors(List.copyOf(errors))
                 .build();
+    }
+
+    private ApplyResult applySku(Long supplierId, SupplierInventoryResponse.Item item, LocalDateTime syncedAt) {
+        Supplier supplier = supplierRepository.findById(supplierId)
+                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + supplierId));
+        if (supplier.getStatus() != SupplierStatus.ACTIVE
+                || !Boolean.TRUE.equals(supplier.getInventorySyncEnabled())) {
+            throw new BusinessException("Supplier is not active for inventory synchronization");
+        }
+
+        String supplierSku = normalizeOptional(item.getSupplierSku());
+        String supplierProductId = normalizeOptional(item.getSupplierProductId());
+        Product product = null;
+        if (supplierProductId != null) {
+            product = productRepository.findBySupplierIdAndSupplierProductId(supplier.getId(), supplierProductId).orElse(null);
+            if (product == null && supplierSku != null) {
+                Product skuMatch = productRepository.findBySupplierIdAndSupplierSku(supplier.getId(), supplierSku).orElse(null);
+                if (skuMatch != null && normalizeOptional(skuMatch.getSupplierProductId()) == null) {
+                    // Adopt a stable supplier ID for a product already matched by its legacy supplier SKU.
+                    skuMatch.setSupplierProductId(supplierProductId);
+                    product = productRepository.save(skuMatch);
+                } else if (skuMatch != null && !supplierProductId.equals(skuMatch.getSupplierProductId())) {
+                    return new ApplyResult(true, false, "Supplier SKU is already mapped to a different supplier product ID");
+                }
+            }
+        } else if (supplierSku != null) {
+            product = productRepository.findBySupplierIdAndSupplierSku(supplier.getId(), supplierSku).orElse(null);
+        }
+        if (product == null) return new ApplyResult(false, false, null);
+
+        LocalDateTime observedAt = item.getObservedAt() != null ? item.getObservedAt() : syncedAt;
+        InventoryResponse response = inventoryService.syncSupplierStock(
+                product.getId(), item.getQuantity(), observedAt);
+
+        // A stale response must not overwrite stock or supplier cost.
+        if (!observedAt.equals(response.getLastSyncedAt())) {
+            return new ApplyResult(true, false, "Ignored an out-of-order supplier snapshot");
+        }
+
+        if (item.getUnitCost() != null) {
+            updateSupplierCost(product, item.getUnitCost(), item.getCurrency());
+            if (product.getStatus() == ProductStatus.ACTIVE) {
+                pricingService.repriceProduct(product);
+                if (product.getPrice().compareTo(product.getSupplierCost()) < 0) {
+                    product.setStatus(ProductStatus.DRAFT);
+                }
+            }
+            productRepository.save(product);
+        }
+        return new ApplyResult(true, true, null);
+    }
+
+    private record ApplyResult(boolean matched, boolean updated, String error) {
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private void updateSupplierCost(Product product, BigDecimal unitCost, String currency) {

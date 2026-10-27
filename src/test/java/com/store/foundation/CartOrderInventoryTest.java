@@ -2,12 +2,16 @@ package com.store.foundation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.auth.service.JwtService;
+import com.store.common.exception.BusinessException;
 import com.store.category.entity.Category;
 import com.store.category.repository.CategoryRepository;
 import com.store.coupon.entity.Coupon;
 import com.store.coupon.repository.CouponRepository;
 import com.store.inventory.entity.Inventory;
+import com.store.order.service.OrderService;
+import com.store.order.entity.OrderStatus;
 import com.store.inventory.repository.InventoryRepository;
+import com.store.inventory.service.InventoryService;
 import com.store.product.entity.Product;
 import com.store.product.enums.ProductStatus;
 import com.store.product.repository.ProductRepository;
@@ -62,7 +66,9 @@ class CartOrderInventoryTest {
     @Autowired private ProductRepository productRepository;
     @Autowired private SupplierRepository supplierRepository;
     @Autowired private InventoryRepository inventoryRepository;
+    @Autowired private InventoryService inventoryService;
     @Autowired private CouponRepository couponRepository;
+    @Autowired private OrderService orderService;
 
     private Role userRole;
     private Role adminRole;
@@ -188,6 +194,78 @@ class CartOrderInventoryTest {
 
         mockMvc.perform(get("/api/v1/orders/" + orderId).header("Authorization", "Bearer " + tokenFor(intruder)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void reserveStock_rejectsProductThatDoesNotMatchOwningOrderLine() throws Exception {
+        User owner = createUser("mismatched-reservation-owner@example.com");
+        Product orderProduct = productWithStock("ORDER-LINE-OWNER-1", 5);
+        Product unrelatedProduct = productWithStock("ORDER-LINE-OTHER-1", 8);
+
+        mockMvc.perform(post("/api/v1/cart/items")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "productId", orderProduct.getId(), "quantity", 2))))
+                .andExpect(status().isOk());
+
+        String orderResponse = mockMvc.perform(post("/api/v1/orders")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Reservation Test Address"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        long orderItemId = objectMapper.readTree(orderResponse)
+                .path("data").path("items").get(0).path("id").asLong();
+        Assertions.assertTrue(orderItemId > 0, "Checkout must return the persisted order-line ID");
+
+        Assertions.assertThrows(BusinessException.class,
+                () -> inventoryService.reserveStock(unrelatedProduct.getId(), 2, orderItemId));
+
+        Assertions.assertEquals(2,
+                inventoryRepository.findByProductId(orderProduct.getId()).orElseThrow().getReservedQuantity(),
+                "A mismatched reservation attempt must not change the owning product's existing reservation");
+        Assertions.assertEquals(0,
+                inventoryRepository.findByProductId(unrelatedProduct.getId()).orElseThrow().getReservedQuantity(),
+                "A mismatched reservation attempt must not reserve stock from another product");
+    }
+
+    @Test
+    void cancellingOneOrderReleasesOnlyItsOwnedInventoryReservation() throws Exception {
+        User first = createUser("reservation-owner-a@example.com");
+        User second = createUser("reservation-owner-b@example.com");
+        Product product = productWithStock("OWNED-RESERVATION-1", 10);
+
+        for (var entry : Map.of(first, 3, second, 4).entrySet()) {
+            mockMvc.perform(post("/api/v1/cart/items").header("Authorization", "Bearer " + tokenFor(entry.getKey()))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "productId", product.getId(), "quantity", entry.getValue()))))
+                    .andExpect(status().isOk());
+        }
+
+        String firstJson = mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(first))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Address A"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String secondJson = mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + tokenFor(second))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Address B"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        long firstOrderId = objectMapper.readTree(firstJson).path("data").path("id").asLong();
+        long secondOrderId = objectMapper.readTree(secondJson).path("data").path("id").asLong();
+        Assertions.assertEquals(7, inventoryRepository.findByProductId(product.getId()).orElseThrow().getReservedQuantity());
+
+        orderService.updateOrderStatus(firstOrderId, OrderStatus.CANCELLED);
+
+        Inventory afterFirstCancellation = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        Assertions.assertEquals(4, afterFirstCancellation.getReservedQuantity(),
+                "cancelling the first order must release its own 3 units, not decrement the second order's 4 units");
+        Assertions.assertEquals(OrderStatus.PENDING, orderService.getOrderById(second.getEmail(), secondOrderId).getStatus());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.store.common.security;
 
+import com.store.auth.service.AccountVersionAware;
 import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.TokenRevocationService;
 import com.store.auth.service.CustomUserDetailsService;
@@ -14,10 +15,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -45,30 +49,70 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (jwt != null) {
+            // A presented token is authoritative: do not let an older session
+            // Authentication bypass database-backed enabled/version checks.
             try {
                 if (tokenRevocationService.isRevoked(jwt)) {
-                    filterChain.doFilter(request, response);
-                    return;
-                }
-
-                String userEmail = jwtService.extractUsername(jwt);
-
-                if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
-
-                    if (jwtService.isTokenValid(jwt, userDetails)) {
-                        UsernamePasswordAuthenticationToken authToken =
-                                new UsernamePasswordAuthenticationToken(
-                                        userDetails,
-                                        null,
-                                        userDetails.getAuthorities()
-                                );
-                        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                        SecurityContextHolder.getContext().setAuthentication(authToken);
+                    SecurityContextHolder.clearContext();
+                } else {
+                    String userEmail = jwtService.extractUsername(jwt);
+                    if (userEmail == null || userEmail.isBlank()) {
+                        SecurityContextHolder.clearContext();
+                    } else {
+                        UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+                        if (jwtService.isTokenValid(jwt, userDetails)) {
+                            UsernamePasswordAuthenticationToken authToken =
+                                    new UsernamePasswordAuthenticationToken(
+                                            userDetails,
+                                            null,
+                                            userDetails.getAuthorities()
+                                    );
+                            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                            SecurityContextHolder.getContext().setAuthentication(authToken);
+                        } else {
+                            SecurityContextHolder.clearContext();
+                        }
                     }
                 }
-            } catch (JwtException | UsernameNotFoundException | SecurityException ex) {
+            } catch (JwtException | IllegalArgumentException | UsernameNotFoundException | SecurityException ex) {
                 SecurityContextHolder.clearContext();
+            }
+        } else {
+            // OAuth2 can establish a server-side SecurityContext. Re-check local account
+            // state even when no JWT is presented, so disabling a local account also
+            // invalidates a surviving session instead of waiting for its original expiry.
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null
+                    && authentication.isAuthenticated()
+                    && !(authentication instanceof AnonymousAuthenticationToken)) {
+                Object principal = authentication.getPrincipal();
+                // Google OAuth success deliberately creates an encrypted JWT cookie and
+                // invalidates the servlet session. A surviving OIDC-only context has no
+                // account-version claim, so it cannot prove it predates a password reset;
+                // clear it and require the database-checked JWT session instead.
+                if (principal instanceof OidcUser) {
+                    SecurityContextHolder.clearContext();
+                } else {
+                    try {
+                        UserDetails current = userDetailsService.loadUserByUsername(authentication.getName());
+                        boolean enabled = current.isEnabled();
+                        boolean versionMatches;
+                        if (current instanceof AccountVersionAware latest) {
+                            // A version-aware local account must not accept an older principal
+                            // that cannot prove which account version authenticated it.
+                            versionMatches = principal instanceof AccountVersionAware previous
+                                    && previous.getAuthVersion() == latest.getAuthVersion();
+                        } else {
+                            // Preserve compatibility only when neither side carries a version.
+                            versionMatches = !(principal instanceof AccountVersionAware);
+                        }
+                        if (!enabled || !versionMatches) {
+                            SecurityContextHolder.clearContext();
+                        }
+                    } catch (UsernameNotFoundException ex) {
+                        SecurityContextHolder.clearContext();
+                    }
+                }
             }
         }
 

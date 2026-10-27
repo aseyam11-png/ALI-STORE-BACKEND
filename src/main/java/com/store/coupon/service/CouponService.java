@@ -61,6 +61,16 @@ public class CouponService {
         }
     }
 
+    /**
+     * Policy: release a coupon use when its order is cancelled before completion
+     * or expires while still pending. The caller locks and transitions the order
+     * in the same transaction, so the release happens once per terminal transition.
+     */
+    public void releaseRedemption(String code) {
+        if (code == null || code.isBlank()) return;
+        couponRepository.findByCode(code).ifPresent(coupon -> couponRepository.releaseRedemption(coupon.getId()));
+    }
+
     public CouponResponse createCoupon(CouponRequest request) {
         if (couponRepository.existsByCode(request.getCode())) {
             throw new ConflictException("Coupon code already exists");

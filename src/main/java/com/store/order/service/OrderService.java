@@ -1,5 +1,7 @@
 package com.store.order.service;
 
+import com.store.admin.dto.AdminOrderItemResponse;
+import com.store.admin.dto.AdminOrderResponse;
 import com.store.cart.entity.Cart;
 import com.store.cart.entity.CartItem;
 import com.store.cart.repository.CartItemRepository;
@@ -33,6 +35,7 @@ import com.store.shipping.entity.Shipment;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -156,7 +159,6 @@ public class OrderService {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
 
-            inventoryService.reserveStock(product.getId(), cartItem.getQuantity());
 
             BigDecimal unitPrice = product.getPrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
@@ -175,6 +177,9 @@ public class OrderService {
 
         order.setItems(orderItems);
         Order savedOrder = orderRepository.save(order);
+        for (OrderItem item : savedOrder.getItems()) {
+            inventoryService.reserveStock(item.getProduct().getId(), item.getQuantity(), item.getId());
+        }
         cartItemRepository.deleteAll(cartItems);
         return mapToResponse(savedOrder);
     }
@@ -191,7 +196,7 @@ public class OrderService {
     @Scheduled(fixedDelayString = "${app.orders.reservation-expiry-poll-ms:60000}")
     @Transactional
     public void expirePendingOrderReservations() {
-        for (Order order : orderRepository.findTop20ExpiredPendingOrdersForUpdate(LocalDateTime.now())) {
+        for (Order order : orderRepository.findExpiredPendingOrdersForUpdate(LocalDateTime.now(), PageRequest.of(0, 20))) {
             expireOrderReservation(order);
         }
     }
@@ -209,18 +214,22 @@ public class OrderService {
 
     private void expireOrderReservation(Order order) {
         releaseOrderReservations(order);
+        fulfillmentService.cancelPendingTasksForOrder(order.getId());
+        couponService.releaseRedemption(order.getCouponCode());
         order.setStatus(OrderStatus.CANCELLED);
         orderRepository.save(order);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<OrderResponse> getUserOrders(String email, Pageable pageable) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        Page<OrderResponse> page = orderRepository.findByUserId(user.getId(), pageable).map(this::mapToResponse);
+        Page<OrderResponse> page = mapOrderPage(orderRepository.findByUserId(user.getId(), pageable));
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
 
+    @Transactional(readOnly = true)
     public OrderResponse getOrderById(String email, Long orderId) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -235,10 +244,34 @@ public class OrderService {
         return mapToResponse(order);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<OrderResponse> getAllOrdersForAdmin(Pageable pageable) {
-        Page<OrderResponse> page = orderRepository.findAll(pageable).map(this::mapToResponse);
+        Page<OrderResponse> page = mapOrderPage(orderRepository.findAll(pageable));
         return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
+    }
+
+    /**
+     * Admin-only order listing with the customer and catalog identifiers needed
+     * by order operations. Kept separate from OrderResponse so customer endpoints
+     * do not receive other users' contact details.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AdminOrderResponse> getAllAdminOrderDetails(Pageable pageable) {
+        Page<AdminOrderResponse> page = mapAdminOrderPage(orderRepository.findAll(pageable));
+        return PageResponse.of(page.getContent(), page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages(), page.isLast());
+    }
+
+    @Transactional(readOnly = true)
+    public AdminOrderResponse getAdminOrderDetails(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository
+                .findByOrderIdOrderByIdAsc(order.getId()).stream()
+                .map(this::mapShipment)
+                .collect(Collectors.toList());
+        return mapToAdminResponse(order, shipmentResponses);
     }
 
     @Transactional
@@ -284,6 +317,8 @@ public class OrderService {
 
         if (newStatus == OrderStatus.CANCELLED) {
             releaseOrderReservations(order);
+            fulfillmentService.cancelPendingTasksForOrder(orderId);
+            couponService.releaseRedemption(order.getCouponCode());
         }
 
         order.setStatus(newStatus);
@@ -307,23 +342,83 @@ public class OrderService {
 
     @Transactional
     public void commitOrderReservations(Order order) {
-        order.getItems().forEach(item ->
-                inventoryService.commitReservedStock(item.getProduct().getId(), item.getQuantity()));
+        order.getItems().forEach(item -> inventoryService.commitReservedStock(item.getId()));
     }
 
     @Transactional
     public void releaseOrderReservations(Order order) {
-        order.getItems().forEach(item -> {
-            try {
-                inventoryService.releaseReservedStock(item.getProduct().getId(), item.getQuantity());
-            } catch (BusinessException ignored) {
-                // Reservation may already have been committed after supplier acceptance.
-                // Cancellation must not corrupt inventory a second time.
-            }
-        });
+        order.getItems().forEach(item -> inventoryService.releaseReservedStock(item.getId()));
+    }
+
+    private Page<AdminOrderResponse> mapAdminOrderPage(Page<Order> orders) {
+        List<Long> orderIds = orders.getContent().stream().map(Order::getId).toList();
+        if (orderIds.isEmpty()) return orders.map(order -> mapToAdminResponse(order, List.of()));
+
+        Map<Long, List<ShipmentSummaryResponse>> shipmentsByOrder = shipmentRepository
+                .findByOrderIdInOrderByOrderIdAscIdAsc(orderIds).stream()
+                .map(shipment -> Map.entry(shipment.getOrderId(), mapShipment(shipment)))
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+
+        return orders.map(order -> mapToAdminResponse(order,
+                shipmentsByOrder.getOrDefault(order.getId(), List.of())));
+    }
+
+    private AdminOrderResponse mapToAdminResponse(
+            Order order, List<ShipmentSummaryResponse> shipmentResponses) {
+        User customer = order.getUser();
+        String customerName = ((customer.getFirstName() == null ? "" : customer.getFirstName()) + " "
+                + (customer.getLastName() == null ? "" : customer.getLastName())).trim();
+
+        List<AdminOrderItemResponse> itemResponses = order.getItems().stream().map(item ->
+                AdminOrderItemResponse.builder()
+                        .id(item.getId())
+                        .productId(item.getProduct().getId())
+                        .productSku(item.getProduct().getSku())
+                        .productName(item.getProduct().getName())
+                        .quantity(item.getQuantity())
+                        .price(item.getUnitPrice())
+                        .subTotal(item.getSubtotal())
+                        .build()
+        ).collect(Collectors.toList());
+
+        return AdminOrderResponse.builder()
+                .id(order.getId())
+                .customerName(customerName)
+                .customerEmail(customer.getEmail())
+                .customerPhone(customer.getPhoneNumber())
+                .status(order.getStatus())
+                .totalAmount(order.getTotalAmount())
+                .currency(order.getCurrency())
+                .couponCode(order.getCouponCode())
+                .discountAmount(order.getDiscountAmount())
+                .shippingAddress(order.getShippingAddress())
+                .createdAt(order.getCreatedAt())
+                .items(itemResponses)
+                .shipments(shipmentResponses)
+                .build();
+    }
+
+    private Page<OrderResponse> mapOrderPage(Page<Order> orders) {
+        List<Long> orderIds = orders.getContent().stream().map(Order::getId).toList();
+        if (orderIds.isEmpty()) return orders.map(order -> mapToResponse(order, List.of()));
+
+        Map<Long, List<ShipmentSummaryResponse>> shipmentsByOrder = shipmentRepository
+                .findByOrderIdInOrderByOrderIdAscIdAsc(orderIds).stream()
+                .map(shipment -> Map.entry(shipment.getOrderId(), mapShipment(shipment)))
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+        return orders.map(order -> mapToResponse(order,
+                shipmentsByOrder.getOrDefault(order.getId(), List.of())));
     }
 
     private OrderResponse mapToResponse(Order order) {
+        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
+                .stream().map(this::mapShipment).collect(Collectors.toList());
+        return mapToResponse(order, shipmentResponses);
+    }
+
+    private OrderResponse mapToResponse(Order order, List<ShipmentSummaryResponse> shipmentResponses) {
         List<OrderItemResponse> itemResponses = order.getItems().stream().map(item ->
                 OrderItemResponse.builder()
                         .id(item.getId())
@@ -334,10 +429,6 @@ public class OrderService {
                         .subTotal(item.getSubtotal())
                         .build()
         ).collect(Collectors.toList());
-
-        List<ShipmentSummaryResponse> shipmentResponses = shipmentRepository.findByOrderIdOrderByIdAsc(order.getId())
-                .stream().map(this::mapShipment)
-                .collect(Collectors.toList());
 
         return OrderResponse.builder()
                 .id(order.getId())

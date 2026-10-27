@@ -5,15 +5,26 @@ import com.store.common.exception.ResourceNotFoundException;
 import com.store.inventory.dto.InventoryResponse;
 import com.store.inventory.dto.UpdateStockRequest;
 import com.store.inventory.entity.Inventory;
+import com.store.inventory.entity.InventoryReservation;
+import com.store.inventory.enums.InventoryReservationStatus;
+import com.store.inventory.repository.InventoryReservationRepository;
 import com.store.inventory.enums.InventorySource;
 import com.store.inventory.enums.PublicAvailability;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
+import com.store.order.entity.OrderItem;
 import lombok.RequiredArgsConstructor;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +34,10 @@ public class InventoryService {
     private long staleAfterMs;
 
     private final InventoryRepository inventoryRepository;
+    private final InventoryReservationRepository reservationRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Transactional
     public Inventory initializeForProduct(Product product) {
@@ -37,6 +52,27 @@ public class InventoryService {
         Inventory inventory = inventoryRepository.findByProductId(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product id: " + productId));
         return mapToResponse(inventory);
+    }
+
+    public java.util.Optional<Inventory> findInventoryEntity(Long productId) {
+        return inventoryRepository.findByProductId(productId);
+    }
+
+    public Map<Long, Inventory> getInventoriesByProductIds(Collection<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) return Map.of();
+        return inventoryRepository.findAllByProductIdIn(productIds).stream()
+                .collect(Collectors.toMap(inv -> inv.getProduct().getId(), Function.identity(), (left, right) -> left));
+    }
+
+    public PublicAvailability getPublicAvailability(Inventory inventory) {
+        if (inventory == null || !isKnown(inventory)) return PublicAvailability.UNKNOWN;
+        return inventory.getQuantity() - inventory.getReservedQuantity() > 0
+                ? PublicAvailability.IN_STOCK : PublicAvailability.OUT_OF_STOCK;
+    }
+
+    public int getAvailableQuantity(Inventory inventory) {
+        if (inventory == null || !isKnown(inventory)) return 0;
+        return Math.max(0, inventory.getQuantity() - inventory.getReservedQuantity());
     }
 
     public int getAvailableQuantity(Long productId) {
@@ -64,12 +100,32 @@ public class InventoryService {
     }
 
     @Transactional
-    public void reserveStock(Long productId, int quantity) {
+    public void reserveStock(Long productId, int quantity, Long orderItemId) {
         if (quantity < 1) throw new BusinessException("Reservation quantity must be at least 1");
+        if (orderItemId == null) throw new BusinessException("An order line is required to own a stock reservation");
+
+        OrderItem orderItem = entityManager.find(OrderItem.class, orderItemId);
+        if (orderItem == null) {
+            throw new BusinessException("Cannot reserve stock for a missing order line " + orderItemId);
+        }
+        if (orderItem.getProduct() == null
+                || !Objects.equals(orderItem.getProduct().getId(), productId)) {
+            throw new BusinessException("Reservation product does not match order line " + orderItemId);
+        }
+        if (!Objects.equals(orderItem.getQuantity(), quantity)) {
+            throw new BusinessException("Reservation quantity does not match order line " + orderItemId);
+        }
+
+        InventoryReservation existing = reservationRepository.findByOrderItemIdForUpdate(orderItemId).orElse(null);
+        if (existing != null) {
+            if (existing.getProduct().getId().equals(productId)
+                    && existing.getQuantity() == quantity
+                    && existing.getStatus() == InventoryReservationStatus.RESERVED) return;
+            throw new BusinessException("An incompatible inventory reservation already exists for order line " + orderItemId);
+        }
 
         Inventory inventory = inventoryRepository.findByProductIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product id: " + productId));
-
         if (!isKnown(inventory)) throw new BusinessException("Inventory is not synchronized for product id: " + productId);
 
         int available = inventory.getQuantity() - inventory.getReservedQuantity();
@@ -78,36 +134,73 @@ public class InventoryService {
         inventory.setReservedQuantity(inventory.getReservedQuantity() + quantity);
         refreshDiscrepancy(inventory);
         inventoryRepository.save(inventory);
+        reservationRepository.save(InventoryReservation.builder()
+                .orderItem(orderItem)
+                .product(inventory.getProduct())
+                .quantity(quantity)
+                .status(InventoryReservationStatus.RESERVED)
+                .build());
     }
 
     @Transactional
-    public void commitReservedStock(Long productId, int quantity) {
-        if (quantity < 1) return;
+    public void commitReservedStock(Long orderItemId) {
+        InventoryReservation reservation = reservationRepository.findByOrderItemIdForUpdate(orderItemId)
+                .orElseThrow(() -> new BusinessException("No owned inventory reservation exists for order line " + orderItemId));
+        if (reservation.getStatus() == InventoryReservationStatus.COMMITTED) return;
+        if (reservation.getStatus() != InventoryReservationStatus.RESERVED) {
+            throw new BusinessException("Inventory reservation has already been released");
+        }
 
+        assertReservationMatchesOrderLine(reservation, orderItemId);
+        Long productId = reservation.getProduct().getId();
+        int quantity = reservation.getQuantity();
         Inventory inventory = inventoryRepository.findByProductIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product id: " + productId));
-
         if (inventory.getReservedQuantity() < quantity || inventory.getQuantity() < quantity) {
-            throw new BusinessException("Reserved stock cannot be committed for product id: " + productId);
+            throw new BusinessException("Owned reserved stock cannot be committed for order line " + orderItemId);
         }
 
         inventory.setReservedQuantity(inventory.getReservedQuantity() - quantity);
-        inventory.setQuantity(Math.max(0, inventory.getQuantity() - quantity));
+        inventory.setQuantity(inventory.getQuantity() - quantity);
         refreshDiscrepancy(inventory);
         inventoryRepository.save(inventory);
+        reservation.setStatus(InventoryReservationStatus.COMMITTED);
+        reservationRepository.save(reservation);
     }
 
     @Transactional
-    public void releaseReservedStock(Long productId, int quantity) {
-        if (quantity < 1) return;
+    public void releaseReservedStock(Long orderItemId) {
+        InventoryReservation reservation = reservationRepository.findByOrderItemIdForUpdate(orderItemId).orElse(null);
+        // Missing ownership data is intentionally not allowed to decrement the aggregate
+        // counter: guessing here can release stock belonging to another order.
+        if (reservation == null || reservation.getStatus() == InventoryReservationStatus.RELEASED
+                || reservation.getStatus() == InventoryReservationStatus.COMMITTED) return;
 
+        assertReservationMatchesOrderLine(reservation, orderItemId);
+        Long productId = reservation.getProduct().getId();
+        int quantity = reservation.getQuantity();
         Inventory inventory = inventoryRepository.findByProductIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product id: " + productId));
+        if (inventory.getReservedQuantity() < quantity) {
+            throw new BusinessException("Owned reserved stock is inconsistent for order line " + orderItemId);
+        }
 
-        int release = Math.min(quantity, inventory.getReservedQuantity());
-        inventory.setReservedQuantity(inventory.getReservedQuantity() - release);
+        inventory.setReservedQuantity(inventory.getReservedQuantity() - quantity);
         refreshDiscrepancy(inventory);
         inventoryRepository.save(inventory);
+        reservation.setStatus(InventoryReservationStatus.RELEASED);
+        reservationRepository.save(reservation);
+    }
+
+    private void assertReservationMatchesOrderLine(InventoryReservation reservation, Long orderItemId) {
+        OrderItem orderItem = reservation.getOrderItem();
+        if (orderItem == null
+                || !Objects.equals(orderItem.getId(), orderItemId)
+                || orderItem.getProduct() == null
+                || !Objects.equals(orderItem.getProduct().getId(), reservation.getProduct().getId())
+                || !Objects.equals(orderItem.getQuantity(), reservation.getQuantity())) {
+            throw new BusinessException("Inventory reservation ownership does not match order line " + orderItemId);
+        }
     }
 
     @Transactional

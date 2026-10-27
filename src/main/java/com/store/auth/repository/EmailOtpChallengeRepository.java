@@ -23,6 +23,12 @@ public interface EmailOtpChallengeRepository extends JpaRepository<EmailOtpChall
             """)
     Optional<EmailOtpChallenge> findForVerification(@Param("challengeId") UUID challengeId);
 
+    /**
+     * Unlocked lookup for inspecting persisted challenge state without taking the
+     * pessimistic lock reserved for active verification and resend operations.
+     */
+    Optional<EmailOtpChallenge> findByChallengeId(UUID challengeId);
+
     Optional<EmailOtpChallenge> findTopByUserIdAndPurposeAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(
             Long userId, EmailOtpPurpose purpose);
 

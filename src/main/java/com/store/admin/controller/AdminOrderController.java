@@ -2,7 +2,7 @@ package com.store.admin.controller;
 
 import com.store.common.response.ApiResponse;
 import com.store.common.response.PageResponse;
-import com.store.order.dto.OrderResponse;
+import com.store.admin.dto.AdminOrderResponse;
 import com.store.order.dto.OrderStatusUpdateRequest;
 import com.store.order.service.OrderService;
 import jakarta.validation.Valid;
@@ -26,14 +26,15 @@ public class AdminOrderController {
     private final OrderService orderService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getAllOrders(Pageable pageable) {
-        return ResponseEntity.ok(ApiResponse.success(orderService.getAllOrdersForAdmin(pageable), "Orders retrieved successfully"));
+    public ResponseEntity<ApiResponse<PageResponse<AdminOrderResponse>>> getAllOrders(Pageable pageable) {
+        return ResponseEntity.ok(ApiResponse.success(orderService.getAllAdminOrderDetails(pageable), "Orders retrieved successfully"));
     }
 
     @PatchMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<OrderResponse>> updateOrderStatus(
+    public ResponseEntity<ApiResponse<AdminOrderResponse>> updateOrderStatus(
             @PathVariable Long id,
             @Valid @RequestBody OrderStatusUpdateRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(orderService.updateOrderStatus(id, request.getStatus()), "Order status updated successfully"));
+        orderService.updateOrderStatus(id, request.getStatus());
+        return ResponseEntity.ok(ApiResponse.success(orderService.getAdminOrderDetails(id), "Order status updated successfully"));
     }
 }

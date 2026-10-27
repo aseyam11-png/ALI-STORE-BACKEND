@@ -36,10 +36,12 @@ class AuthSessionCookieServiceTest {
     @Test
     void tamperedCiphertextIsRejected() {
         String encoded = service.encrypt("sensitive-jwt-token");
-        int lastIndex = encoded.length() - 1;
-        char last = encoded.charAt(lastIndex);
-        char replacement = last == 'A' ? 'B' : 'A';
-        String tampered = encoded.substring(0, lastIndex) + replacement;
+        String[] parts = encoded.split("\\.", -1);
+        String ciphertext = parts[2];
+        char first = ciphertext.charAt(0);
+        char replacement = first == 'A' ? 'B' : 'A';
+        String tampered = parts[0] + "." + parts[1] + "."
+                + replacement + ciphertext.substring(1);
 
         assertThrows(SecurityException.class, () -> service.decrypt(tampered));
     }
