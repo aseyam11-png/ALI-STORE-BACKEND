@@ -2,6 +2,7 @@ package com.store.auth.service;
 
 import com.store.auth.dto.AuthResponse;
 import com.store.auth.dto.EmailOtpChallengeResponse;
+import java.util.Map;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
@@ -45,6 +46,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailOtpService emailOtpService;
     private final LoginAttemptService loginAttemptService;
+    private final AdminLoginGateService adminLoginGateService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -96,6 +98,11 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(com.store.auth.dto.LoginRequest request) {
+        return login(request, "unknown");
+    }
+
+    @Transactional
+    public AuthResponse login(com.store.auth.dto.LoginRequest request, String clientIp) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
         if (loginAttemptService.isLocked(email)) {
@@ -134,29 +141,31 @@ public class AuthService {
             throw new UnauthorizedException("Invalid email or password");
         }
 
+        boolean adminGateVerified = adminLoginGateService.verifyIfAdmin(user, request, clientIp);
+
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
             if (!emailOtpService.isVerificationEnabled()) {
                 prepareDirectSession(user, authenticatedVersion.getAuthVersion());
                 user.setEmailVerified(true);
                 userRepository.save(user);
-                return authenticatedResponse(user);
+                return authenticatedResponse(user, adminGateVerified);
             }
 
             // Do not reset failed-password state until the OTP is completed. If the account
             // is locked concurrently after this snapshot, OTP verification will recheck it.
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION, authenticatedVersion.getAuthVersion());
+                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION, authenticatedVersion.getAuthVersion(), adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
         if (emailOtpService.isLoginOtpEnabled()) {
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, authenticatedVersion.getAuthVersion());
+                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, authenticatedVersion.getAuthVersion(), adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
         prepareDirectSession(user, authenticatedVersion.getAuthVersion());
-        return authenticatedResponse(user);
+        return authenticatedResponse(user, adminGateVerified);
     }
 
     /*
@@ -202,7 +211,7 @@ public class AuthService {
         }
 
         clearLoginAttemptState(user);
-        return authenticatedResponse(user);
+        return authenticatedResponse(user, challenge.isAdminGateVerified());
     }
 
     public EmailOtpChallengeResponse resendEmailCode(String challengeId) {
@@ -353,6 +362,10 @@ public class AuthService {
     }
 
     private AuthResponse authenticatedResponse(User user) {
+        return authenticatedResponse(user, false);
+    }
+
+    private AuthResponse authenticatedResponse(User user, boolean adminGateVerified) {
         var userDetails = new AccountUserDetails(
                 user.getEmail(),
                 user.getPassword(),
@@ -362,7 +375,12 @@ public class AuthService {
                         new SimpleGrantedAuthority(user.getRole().getName())),
                 user.getAuthVersion());
 
-        String jwtToken = jwtService.generateToken(userDetails);
+        Map<String, Object> extraClaims = adminGateVerified
+                && user.getRole() != null
+                && "ROLE_ADMIN".equals(user.getRole().getName())
+                ? Map.of("admin_gate_verified", true)
+                : Collections.emptyMap();
+        String jwtToken = jwtService.generateToken(extraClaims, userDetails);
 
         return AuthResponse.builder()
                 .token(jwtToken)
