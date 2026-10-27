@@ -31,6 +31,13 @@ spring:
   jpa:
     show-sql: false
 
+# Production browser-cookie policy is deployment-specific. Require the operator to
+# choose SameSite for the actual frontend/API site relationship and enable Secure cookies.
+app:
+  auth:
+    cookie-secure: ${AUTH_COOKIE_SECURE}
+    cookie-same-site: ${AUTH_COOKIE_SAME_SITE}
+
 # A real PaymentProvider bean MUST be supplied for this profile - MockPaymentProvider
 # is annotated @Profile("!prod") and will not be available here, so the application
 # fails to start rather than silently accepting fake payments (see payment.provider package).
