@@ -46,7 +46,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String path = request.getRequestURI();
         boolean adminApi = path.equals("/api/v1/admin") || path.startsWith("/api/v1/admin/");
-        Integer maxRequests = adminApi ? 120 : LIMITED_PATHS.get(path);
+        Integer maxRequests;
+        if (adminApi) {
+            maxRequests = Integer.valueOf(120);
+        } else {
+            maxRequests = LIMITED_PATHS.get(path);
+        }
         String limitKeyPath = adminApi ? "/api/v1/admin/*" : path;
         if (maxRequests != null) {
             String key = clientIpResolver.resolve(request) + ":" + limitKeyPath;
