@@ -15,7 +15,6 @@ import com.store.auth.service.TokenRevocationService;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
-import com.store.common.security.SecurityConfig;
 import com.store.user.dto.MeResponse;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
@@ -30,6 +29,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
@@ -46,6 +46,7 @@ public class AuthController {
     private final TokenRevocationService tokenRevocationService;
     private final AuthSessionCookieService cookieService;
     private final ClientRegistrationRepository clientRegistrationRepository;
+    private final CookieCsrfTokenRepository csrfTokenRepository;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
@@ -110,13 +111,17 @@ public class AuthController {
 
     @GetMapping("/csrf")
     public ResponseEntity<Void> csrf(
-            CsrfToken csrfToken,
-            @RequestAttribute(SecurityConfig.RAW_CSRF_TOKEN_ATTRIBUTE) String rawCsrfToken,
+            HttpServletRequest servletRequest,
             HttpServletResponse servletResponse) {
-        // Expose the repository's raw token in a CORS-readable response header as well,
-        // because browser JavaScript cannot read an API-domain cookie when the SPA and API
-        // are cross-origin. The default request attribute is XOR-masked for BREACH defense.
-        servletResponse.setHeader(csrfToken.getHeaderName(), rawCsrfToken);
+        // Use the exact repository configured in SecurityFilterChain. Accessing the
+        // endpoint explicitly materializes a token for the SPA and persists the readable
+        // XSRF-TOKEN cookie before returning its matching header.
+        CsrfToken csrfToken = csrfTokenRepository.loadToken(servletRequest);
+        if (csrfToken == null) {
+            csrfToken = csrfTokenRepository.generateToken(servletRequest);
+            csrfTokenRepository.saveToken(csrfToken, servletRequest, servletResponse);
+        }
+        servletResponse.setHeader("X-XSRF-TOKEN", csrfToken.getToken());
         servletResponse.setHeader("Cache-Control", "no-store");
         return ResponseEntity.noContent().build();
     }
