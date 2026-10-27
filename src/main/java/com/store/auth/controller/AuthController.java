@@ -29,8 +29,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.DeferredCsrfToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Locale;
@@ -46,7 +46,6 @@ public class AuthController {
     private final TokenRevocationService tokenRevocationService;
     private final AuthSessionCookieService cookieService;
     private final ClientRegistrationRepository clientRegistrationRepository;
-    private final CookieCsrfTokenRepository csrfTokenRepository;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
@@ -113,15 +112,16 @@ public class AuthController {
     public ResponseEntity<Void> csrf(
             HttpServletRequest servletRequest,
             HttpServletResponse servletResponse) {
-        // Use the exact repository configured in SecurityFilterChain. Accessing the
-        // endpoint explicitly materializes a token for the SPA and persists the readable
-        // XSRF-TOKEN cookie before returning its matching header.
-        CsrfToken csrfToken = csrfTokenRepository.loadToken(servletRequest);
-        if (csrfToken == null) {
-            csrfToken = csrfTokenRepository.generateToken(servletRequest);
-            csrfTokenRepository.saveToken(csrfToken, servletRequest, servletResponse);
+        // Resolve the deferred token created by Spring Security's CsrfFilter itself.
+        // This guarantees the cookie and response header use the same raw token instance,
+        // rather than generating a second token independently in the controller.
+        DeferredCsrfToken deferredToken = (DeferredCsrfToken) servletRequest.getAttribute(
+                DeferredCsrfToken.class.getName());
+        if (deferredToken == null) {
+            throw new IllegalStateException("Spring Security did not initialize the CSRF token request attribute");
         }
-        servletResponse.setHeader("X-XSRF-TOKEN", csrfToken.getToken());
+        CsrfToken csrfToken = deferredToken.get();
+        servletResponse.setHeader(csrfToken.getHeaderName(), csrfToken.getToken());
         servletResponse.setHeader("Cache-Control", "no-store");
         return ResponseEntity.noContent().build();
     }
