@@ -68,7 +68,7 @@ class EmailOtpServiceSecurityContractTest {
                 .emailVerified(true)
                 .build();
         user.setId(42L);
-        when(userRepository.findById(42L)).thenReturn(Optional.of(user));
+        lenient().when(userRepository.findById(42L)).thenReturn(Optional.of(user));
     }
 
     @Test
