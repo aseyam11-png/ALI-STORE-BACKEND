@@ -45,9 +45,9 @@ class AdminGateJwtAuthorityTest {
     private void runRequest(boolean gateEnabled, boolean gateClaim) throws Exception {
         UserDetails principal = mock(UserDetails.class);
         when(principal.getUsername()).thenReturn("admin@example.test");
-        when(principal.getAuthorities()).thenReturn(List.of(
+        doReturn(List.of(
                 new SimpleGrantedAuthority("ROLE_ADMIN"),
-                new SimpleGrantedAuthority("ROLE_USER")));
+                new SimpleGrantedAuthority("ROLE_USER"))).when(principal).getAuthorities();
         when(userDetailsService.loadUserByUsername("admin@example.test")).thenReturn(principal);
         when(revocationService.isRevoked("test-jwt")).thenReturn(false);
         when(jwtService.extractUsername("test-jwt")).thenReturn("admin@example.test");
