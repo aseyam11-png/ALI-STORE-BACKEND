@@ -50,6 +50,9 @@ public class SecurityConfig {
     // This machine-to-machine webhook authenticates with its dedicated supplier secret.
     // All browser-originated unsafe requests, including anonymous login/register/reset flows,
     // require the XSRF cookie/header pair; non-browser Bearer clients are exempt in the matcher.
+    public static final String RAW_CSRF_TOKEN_ATTRIBUTE =
+            SecurityConfig.class.getName() + ".rawCsrfToken";
+
     private static final Set<String> CSRF_EXEMPT_PATHS = Set.of(
             "/api/v1/integrations/suppliers/shipments/update"
     );
@@ -225,8 +228,11 @@ public class SecurityConfig {
                 HttpServletResponse response,
                 Supplier<CsrfToken> csrfToken) {
             this.xor.handle(request, response, csrfToken);
-            // Materialize the deferred token so CookieCsrfTokenRepository sends XSRF-TOKEN.
-            csrfToken.get();
+            // Materialize the repository token so CookieCsrfTokenRepository sends XSRF-TOKEN.
+            // Keep its raw value separately for the CORS-readable bootstrap header; the
+            // request attribute exposed by the XOR handler is intentionally masked.
+            CsrfToken rawToken = csrfToken.get();
+            request.setAttribute(RAW_CSRF_TOKEN_ATTRIBUTE, rawToken.getToken());
         }
 
         @Override
