@@ -12,6 +12,10 @@ import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.TokenRevocationService;
+import com.store.common.security.ClientIpResolver;
+import com.store.common.security.LoginAttemptGuard;
+import com.store.common.exception.UnauthorizedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
@@ -46,6 +50,8 @@ public class AuthController {
     private final TokenRevocationService tokenRevocationService;
     private final AuthSessionCookieService cookieService;
     private final ClientRegistrationRepository clientRegistrationRepository;
+    private final ClientIpResolver clientIpResolver;
+    private final LoginAttemptGuard loginAttemptGuard;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
@@ -71,8 +77,28 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(
             @Valid @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse servletResponse) {
-        AuthResponse response = authService.login(request);
+        String clientIp = clientIpResolver.resolve(servletRequest);
+        long blockedForMillis = loginAttemptGuard.blockedForMillis(clientIp);
+        if (blockedForMillis > 0L) {
+            return loginRateLimited(blockedForMillis);
+        }
+
+        final AuthResponse response;
+        try {
+            response = authService.login(request, clientIp);
+        } catch (AuthenticationException | UnauthorizedException ex) {
+            long newlyBlockedForMillis = loginAttemptGuard.recordFailure(clientIp);
+            if (newlyBlockedForMillis > 0L) {
+                return loginRateLimited(newlyBlockedForMillis);
+            }
+            // Do not expose whether the primary password, admin passphrase, or CAPTCHA failed.
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("Invalid credentials or security verification failed"));
+        }
+
+        loginAttemptGuard.recordSuccess(clientIp);
         writeSessionCookieIfAuthenticated(servletResponse, response);
 
         HttpStatus status = response.isRequiresEmailVerification()
@@ -84,6 +110,13 @@ public class AuthController {
 
         return ResponseEntity.status(status)
                 .body(ApiResponse.success(response, message));
+    }
+
+    private ResponseEntity<ApiResponse<AuthResponse>> loginRateLimited(long blockedForMillis) {
+        long retryAfterSeconds = Math.max(1L, (blockedForMillis + 999L) / 1000L);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", Long.toString(retryAfterSeconds))
+                .body(ApiResponse.error("Too many failed login attempts. This IP is temporarily blocked."));
     }
 
     @PostMapping("/email/verify")
