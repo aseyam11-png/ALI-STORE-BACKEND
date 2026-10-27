@@ -250,10 +250,22 @@ class AuthSecurityRegressionIntegrationTest {
                 .andExpect(status().isNoContent())
                 .andReturn();
         Cookie tokenCookie = result.getResponse().getCookie("XSRF-TOKEN");
-        assertNotNull(tokenCookie, "CSRF bootstrap must issue XSRF-TOKEN");
+        String tokenCookieHeader = result.getResponse().getHeaders("Set-Cookie").stream()
+                .filter(value -> value.startsWith("XSRF-TOKEN="))
+                .findFirst()
+                .orElse(null);
+        String token = tokenCookie != null
+                ? tokenCookie.getValue()
+                : tokenCookieHeader == null
+                        ? null
+                        : tokenCookieHeader.substring("XSRF-TOKEN=".length()).split(";", 2)[0];
+        assertNotNull(token, "CSRF bootstrap must issue XSRF-TOKEN through the servlet cookie or Set-Cookie header");
+        assertFalse(token.isBlank(), "CSRF bootstrap must issue a non-empty XSRF-TOKEN");
+        assertEquals(token, result.getResponse().getHeader("X-XSRF-TOKEN"),
+                "CSRF response header must match the persisted raw CSRF token");
         return post(path)
-                .cookie(tokenCookie)
-                .header("X-XSRF-TOKEN", tokenCookie.getValue());
+                .cookie(new Cookie("XSRF-TOKEN", token))
+                .header("X-XSRF-TOKEN", token);
     }
 
     private User createUser(String email) {
