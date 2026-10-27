@@ -1,8 +1,8 @@
 # ALI STORE Backend — تقرير الفرع الموحد
 
-**الفرع النهائي:** `integration/ali-store-backend-unified-fixes-20261026`  
-**فرع الأساس:** `integration/all-verified-fixes-20261025`  
-**مصدر الإصلاحات الإضافية التي روجعت ودمجت على مستوى الملفات:** `integration/verified-consolidation-20261025`  
+**الفرع النهائي:** `integration/ali-store-backend-unified-fixes-20261026`
+**فرع الأساس:** `integration/all-verified-fixes-20261025`
+**مصدر الإصلاحات الإضافية التي روجعت ودمجت على مستوى الملفات:** `integration/verified-consolidation-20261025`
 **الحالة:** فرع تجميع مستقل؛ ليس معتمدًا للإنتاج.
 
 ## ما تم في هذا الفرع
