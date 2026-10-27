@@ -27,10 +27,11 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.transaction.TestTransaction;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.MockMvc;
+import jakarta.servlet.http.Cookie;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +42,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -63,10 +63,6 @@ import static org.mockito.Mockito.verify;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
-// SecurityMockMvcRequestPostProcessors.csrf() swaps the CsrfFilter repository via reflection.
-// Do not let that test-only mutation leak into the cached application context used by
-// the cookie-based CSRF integration tests that run after this class.
-@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class FoundationIntegrationTest {
 
     @Autowired
@@ -104,6 +100,40 @@ class FoundationIntegrationTest {
                 .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Administrator role").build()));
     }
 
+    /**
+     * Obtain CSRF through the application's cookie bootstrap endpoint. Avoid Spring Security
+     * Test's csrf() postprocessor, which replaces the shared CsrfFilter repository with its
+     * session-based test repository and can contaminate later integration tests.
+     */
+    private String csrfToken() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        Cookie tokenCookie = result.getResponse().getCookie("XSRF-TOKEN");
+        String tokenCookieHeader = result.getResponse().getHeaders("Set-Cookie").stream()
+                .filter(value -> value.startsWith("XSRF-TOKEN="))
+                .findFirst()
+                .orElse(null);
+        String token = tokenCookie != null
+                ? tokenCookie.getValue()
+                : tokenCookieHeader == null
+                        ? null
+                        : tokenCookieHeader.substring("XSRF-TOKEN=".length()).split(";", 2)[0];
+        Assertions.assertNotNull(token, "CSRF bootstrap must issue XSRF-TOKEN as cookie or Set-Cookie");
+        Assertions.assertFalse(token.isBlank(), "CSRF bootstrap must issue a non-empty XSRF-TOKEN");
+        Assertions.assertEquals(token, result.getResponse().getHeader("X-XSRF-TOKEN"),
+                "CSRF response header must match the raw CSRF cookie token");
+        return token;
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder csrfPost(String path)
+            throws Exception {
+        String token = csrfToken();
+        return post(path)
+                .cookie(new Cookie("XSRF-TOKEN", token))
+                .header("X-XSRF-TOKEN", token);
+    }
+
     private User createUser(String email, Role role) {
         User user = User.builder()
                 .firstName("Test")
@@ -134,7 +164,7 @@ class FoundationIntegrationTest {
 
         ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
 
-        String registrationJson = mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+        String registrationJson = mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(registerBody)))
                 .andExpect(status().isAccepted())
@@ -157,7 +187,7 @@ class FoundationIntegrationTest {
         TestTransaction.flagForCommit();
         TestTransaction.end();
 
-        mockMvc.perform(post("/api/v1/auth/email/verify").with(csrf())
+        mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", challengeId,
@@ -170,7 +200,7 @@ class FoundationIntegrationTest {
         Map<String, String> loginBody = Map.of(
                 "email", testEmail, "password", "Password123");
 
-        String loginJson = mockMvc.perform(post("/api/v1/auth/login").with(csrf())
+        String loginJson = mockMvc.perform(csrfPost("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginBody)))
                 .andExpect(status().isAccepted())
@@ -191,7 +221,7 @@ class FoundationIntegrationTest {
                 org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.LOGIN),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
 
-        mockMvc.perform(post("/api/v1/auth/email/verify").with(csrf())
+        mockMvc.perform(csrfPost("/api/v1/auth/email/verify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "challengeId", loginChallengeId,
@@ -209,7 +239,7 @@ class FoundationIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/v1/auth/logout").with(csrf())
+        mockMvc.perform(post("/api/v1/auth/logout")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
 
@@ -224,7 +254,7 @@ class FoundationIntegrationTest {
                 "firstName", "Ali", "lastName", "Store", "email", "shortpw@example.com",
                 "password", "Short1", "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+        mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -241,7 +271,7 @@ class FoundationIntegrationTest {
                 "firstName", "Ali", "lastName", "Store", "email", "unicodepw@example.com",
                 "password", password, "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+        mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -253,7 +283,7 @@ class FoundationIntegrationTest {
                 "firstName", "Ali", "lastName", "Store", "email", "validbytepw@example.com",
                 "password", "Password123", "phoneNumber", "0599000000");
 
-        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+        mockMvc.perform(csrfPost("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isAccepted());
@@ -286,8 +316,11 @@ class FoundationIntegrationTest {
         MockMultipartFile image = new MockMultipartFile(
                 "image", "query.png", "image/png", new byte[]{1, 2, 3});
 
-        // Pass CSRF first so this contract asserts authentication rather than CSRF rejection.
-        mockMvc.perform(multipart("/api/v1/visual-search").file(image).with(csrf()))
+        // Pass a real cookie/header pair so this contract asserts authentication rather than CSRF rejection.
+        String token = csrfToken();
+        mockMvc.perform(multipart("/api/v1/visual-search").file(image)
+                        .cookie(new Cookie("XSRF-TOKEN", token))
+                        .header("X-XSRF-TOKEN", token))
                 .andExpect(status().isUnauthorized());
     }
 
