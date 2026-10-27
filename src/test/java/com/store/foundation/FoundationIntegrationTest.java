@@ -27,6 +27,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
@@ -62,6 +63,10 @@ import static org.mockito.Mockito.verify;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
+// SecurityMockMvcRequestPostProcessors.csrf() swaps the CsrfFilter repository via reflection.
+// Do not let that test-only mutation leak into the cached application context used by
+// the cookie-based CSRF integration tests that run after this class.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class FoundationIntegrationTest {
 
     @Autowired
