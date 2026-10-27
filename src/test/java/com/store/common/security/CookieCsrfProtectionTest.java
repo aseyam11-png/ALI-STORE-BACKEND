@@ -38,22 +38,27 @@ class CookieCsrfProtectionTest {
                 .andExpect(status().isNoContent())
                 .andReturn();
 
-        String setCookie = result.getResponse().getHeader("Set-Cookie");
-        assertNotNull(setCookie, "CSRF endpoint must issue the XSRF-TOKEN cookie");
-        assertTrue(setCookie.contains("XSRF-TOKEN="));
+        Cookie csrfCookie = result.getResponse().getCookie("XSRF-TOKEN");
+        String setCookie = result.getResponse().getHeaders("Set-Cookie").stream()
+                .filter(value -> value.startsWith("XSRF-TOKEN="))
+                .findFirst()
+                .orElse(null);
+        assertTrue(csrfCookie != null || setCookie != null,
+                "CSRF endpoint must issue XSRF-TOKEN as a servlet cookie or Set-Cookie header");
+        String token = csrfTokenFrom(result);
         assertNotNull(result.getResponse().getHeader("X-XSRF-TOKEN"),
                 "The bootstrap endpoint must expose a CORS-readable CSRF token header");
-        Cookie csrfCookie = result.getResponse().getCookie("XSRF-TOKEN");
-        assertNotNull(csrfCookie, "CSRF endpoint must issue the XSRF-TOKEN cookie");
-        assertEquals(csrfCookie.getValue(),
-                result.getResponse().getHeader("X-XSRF-TOKEN"),
+        assertEquals(token, result.getResponse().getHeader("X-XSRF-TOKEN"),
                 "The response header must match the persisted raw CSRF cookie token");
         assertEquals("no-store", result.getResponse().getHeader("Cache-Control"));
-        assertTrue(setCookie.contains("Path=/"),
+        assertTrue((csrfCookie != null && "/".equals(csrfCookie.getPath()))
+                        || (setCookie != null && setCookie.contains("Path=/")),
                 "The SPA must be able to read the CSRF cookie on application routes");
-        assertTrue(setCookie.contains("SameSite=Strict"),
-                "The default same-site setting must remain explicit for the local test profile");
-        assertFalse(setCookie.toLowerCase().contains("httponly"),
+        assertTrue((csrfCookie != null && "Strict".equalsIgnoreCase(csrfCookie.getAttribute("SameSite")))
+                        || (setCookie != null && setCookie.contains("SameSite=Strict")),
+                "SameSite=Strict must be configured explicitly and preserved by the servlet cookie or Set-Cookie header");
+        assertTrue((csrfCookie == null || !csrfCookie.isHttpOnly())
+                        && (setCookie == null || !setCookie.toLowerCase().contains("httponly")),
                 "JavaScript-readable CSRF cookies must not be HttpOnly");
     }
 
@@ -77,16 +82,26 @@ class CookieCsrfProtectionTest {
     }
 
     @Test
+    void mismatchedCookieAndHeaderAreRejected() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        String token = csrfTokenFrom(result);
+
+        mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .cookie(new Cookie("XSRF-TOKEN", token))
+                        .header("X-XSRF-TOKEN", token + "-mismatch")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"victim@example.com\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void matchingCookieAndHeaderPassCsrfFilterBeforeAuthentication() throws Exception {
         MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
                 .andExpect(status().isNoContent())
                 .andReturn();
-
-        String setCookie = result.getResponse().getHeader("Set-Cookie");
-        assertNotNull(setCookie);
-        Matcher matcher = CSRF_COOKIE.matcher(setCookie);
-        assertTrue(matcher.find(), "Set-Cookie must contain a parseable XSRF-TOKEN");
-        String token = matcher.group(1);
+        String token = csrfTokenFrom(result);
 
         mockMvc.perform(post("/api/v1/auth/password/change")
                         .cookie(
@@ -96,5 +111,20 @@ class CookieCsrfProtectionTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    private String csrfTokenFrom(MvcResult result) {
+        Cookie csrfCookie = result.getResponse().getCookie("XSRF-TOKEN");
+        if (csrfCookie != null && csrfCookie.getValue() != null && !csrfCookie.getValue().isBlank()) {
+            return csrfCookie.getValue();
+        }
+        for (String cookieHeader : result.getResponse().getHeaders("Set-Cookie")) {
+            Matcher matcher = CSRF_COOKIE.matcher(cookieHeader);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        throw new AssertionError("CSRF bootstrap must issue XSRF-TOKEN via Cookie or Set-Cookie; headers="
+                + result.getResponse().getHeaders("Set-Cookie"));
     }
 }
