@@ -45,9 +45,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String path = request.getRequestURI();
-        Integer maxRequests = LIMITED_PATHS.get(path);
+        boolean adminApi = path.equals("/api/v1/admin") || path.startsWith("/api/v1/admin/");
+        Integer maxRequests = adminApi ? 120 : LIMITED_PATHS.get(path);
+        String limitKeyPath = adminApi ? "/api/v1/admin/*" : path;
         if (maxRequests != null) {
-            String key = clientIpResolver.resolve(request) + ":" + path;
+            String key = clientIpResolver.resolve(request) + ":" + limitKeyPath;
             if (!rateLimiter.tryConsume(key, maxRequests, WINDOW_MILLIS)) {
                 writeTooManyRequests(response);
                 return;
