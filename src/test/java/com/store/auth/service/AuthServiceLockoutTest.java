@@ -159,7 +159,7 @@ class AuthServiceLockoutTest {
             user.setLoginLockedUntil(Instant.now().plusSeconds(900));
             user.setFailedLoginAttempts(5);
             return null;
-        }).when(entityManager).refresh(eq(user), eq(LockModeType.PESSIMISTIC_WRITE));
+        }).when(entityManager).refresh(eq(user));
 
         assertThrows(UnauthorizedException.class, () -> authService.login(
                 LoginRequest.builder()
@@ -167,7 +167,7 @@ class AuthServiceLockoutTest {
                         .password("Password123")
                         .build()));
 
-        verify(entityManager).refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        verify(entityManager).refresh(user);
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(jwtService);
         verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
