@@ -54,9 +54,10 @@ class VisualSearchServiceTest {
     }
 
     @Test
-    void legacyConstructorFailsClearlyWhenUsedForAnActualSearch() {
+    void rejectsSearchWhenCandidateServiceIsNotConfigured() {
         VisualSearchService service = new VisualSearchService(
                 Mockito.mock(ProductRepository.class),
+                null,
                 Mockito.mock(VisualImageHashService.class),
                 Mockito.mock(SecureImageFetcher.class),
                 new VisualSearchProperties(10*1024*1024,200,6,2500,10*1024*1024,60));
@@ -64,8 +65,7 @@ class VisualSearchServiceTest {
         MockMultipartFile validMimeFile = new MockMultipartFile(
                 "image", "query.jpg", "image/jpeg", new byte[]{1});
 
-        org.junit.jupiter.api.Assertions.assertThrows(
-                IllegalStateException.class, () -> service.search(validMimeFile));
+        assertThrows(IllegalStateException.class, () -> service.search(validMimeFile));
     }
 
     @Test void rejectsOversizedImageBeforeRepositoryAccess() {
