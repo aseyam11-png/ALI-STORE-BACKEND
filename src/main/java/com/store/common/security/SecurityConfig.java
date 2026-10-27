@@ -74,6 +74,9 @@ public class SecurityConfig {
     @Value("${app.auth.cookie-domain:}")
     private String csrfCookieDomain;
 
+    @Value("${app.security.require-https:false}")
+    private boolean requireHttps;
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -134,7 +137,12 @@ public class SecurityConfig {
                                 .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
                         .addHeaderWriter(new StaticHeadersWriter("Permissions-Policy",
                                 "geolocation=(), camera=(), microphone=(), payment=()"))
+                        .addHeaderWriter(new StaticHeadersWriter("Cache-Control", "no-store"))
                 );
+
+        if (requireHttps) {
+            http.requiresChannel(channel -> channel.anyRequest().requiresSecure());
+        }
 
         return http.build();
     }
