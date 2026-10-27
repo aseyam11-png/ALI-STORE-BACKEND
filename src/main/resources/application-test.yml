@@ -27,7 +27,8 @@ jwt:
 
 app:
   auth:
-    cookie-same-site: Strict
+    cookie-secure: false
+    cookie-same-site: "Strict"
     email-verification-enabled: true
     login-email-otp-enabled: true
     email-code-expiration-seconds: 600
