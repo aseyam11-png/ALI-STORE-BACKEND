@@ -84,4 +84,3 @@ class VisualSearchServiceTest {
         Mockito.verifyNoInteractions(repository);
     }
 }
-
