@@ -50,9 +50,6 @@ public class SecurityConfig {
     // This machine-to-machine webhook authenticates with its dedicated supplier secret.
     // All browser-originated unsafe requests, including anonymous login/register/reset flows,
     // require the XSRF cookie/header pair; non-browser Bearer clients are exempt in the matcher.
-    public static final String RAW_CSRF_TOKEN_ATTRIBUTE =
-            "com.store.common.security.SecurityConfig.rawCsrfToken";
-
     private static final Set<String> CSRF_EXEMPT_PATHS = Set.of(
             "/api/v1/integrations/suppliers/shipments/update"
     );
@@ -78,10 +75,13 @@ public class SecurityConfig {
     private String csrfCookieDomain;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            PasswordEncoder passwordEncoder,
+            CookieCsrfTokenRepository csrfTokenRepository) throws Exception {
         http
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(csrfTokenRepository())
+                        .csrfTokenRepository(csrfTokenRepository)
                         .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
                         .requireCsrfProtectionMatcher(this::requiresCsrfProtection))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -139,7 +139,8 @@ public class SecurityConfig {
         return http.build();
     }
 
-    private CookieCsrfTokenRepository csrfTokenRepository() {
+    @Bean
+    public CookieCsrfTokenRepository csrfTokenRepository() {
         CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         repository.setCookieName("XSRF-TOKEN");
         repository.setHeaderName("X-XSRF-TOKEN");
@@ -228,11 +229,8 @@ public class SecurityConfig {
                 HttpServletResponse response,
                 Supplier<CsrfToken> csrfToken) {
             this.xor.handle(request, response, csrfToken);
-            // Materialize the repository token so CookieCsrfTokenRepository sends XSRF-TOKEN.
-            // Keep its raw value separately for the CORS-readable bootstrap header; the
-            // request attribute exposed by the XOR handler is intentionally masked.
-            CsrfToken rawToken = csrfToken.get();
-            request.setAttribute(RAW_CSRF_TOKEN_ATTRIBUTE, rawToken.getToken());
+            // Preserve Spring Security's deferred-token behavior. The explicit /csrf
+            // bootstrap endpoint materializes the same shared CookieCsrfTokenRepository.
         }
 
         @Override
