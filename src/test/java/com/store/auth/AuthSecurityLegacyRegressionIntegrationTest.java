@@ -74,23 +74,6 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                         })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", user.getEmail()))))
-                .andDo(result -> {
-                    if (result.getResponse().getStatus() == 403) {
-                        jakarta.servlet.http.Cookie[] requestCookies = result.getRequest().getCookies();
-                        String sentCookie = requestCookies == null ? null
-                                : java.util.Arrays.stream(requestCookies)
-                                        .filter(cookie -> "XSRF-TOKEN".equals(cookie.getName()))
-                                        .map(jakarta.servlet.http.Cookie::getValue)
-                                        .findFirst().orElse(null);
-                        String sentHeader = result.getRequest().getHeader("X-XSRF-TOKEN");
-                        System.out.println("CSRF_DIAG status=403 path=" + result.getRequest().getRequestURI()
-                                + " csrfCookiePresent=" + (sentCookie != null)
-                                + " csrfHeaderPresent=" + (sentHeader != null)
-                                + " csrfValuesMatch=" + (sentCookie != null && sentCookie.equals(sentHeader))
-                                + " responseHeaders=" + result.getResponse().getHeaderNames()
-                                + " responseBody=" + result.getResponse().getContentAsString());
-                    }
-                })
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").value(
                         "If an account exists for this email, password reset instructions will be sent."));
