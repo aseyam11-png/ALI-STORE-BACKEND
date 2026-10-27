@@ -108,11 +108,14 @@ public class AuthController {
     }
 
     @GetMapping("/csrf")
-    public ResponseEntity<Void> csrf(CsrfToken csrfToken, HttpServletResponse servletResponse) {
-        // Materialize the deferred token so CookieCsrfTokenRepository sends XSRF-TOKEN.
-        // Expose the raw token in a CORS-readable response header as well, because browser
-        // JavaScript cannot read an API-domain cookie when the SPA and API are cross-origin.
-        servletResponse.setHeader(csrfToken.getHeaderName(), csrfToken.getToken());
+    public ResponseEntity<Void> csrf(
+            CsrfToken csrfToken,
+            @RequestAttribute(SecurityConfig.RAW_CSRF_TOKEN_ATTRIBUTE) String rawCsrfToken,
+            HttpServletResponse servletResponse) {
+        // Expose the repository's raw token in a CORS-readable response header as well,
+        // because browser JavaScript cannot read an API-domain cookie when the SPA and API
+        // are cross-origin. The default request attribute is XOR-masked for BREACH defense.
+        servletResponse.setHeader(csrfToken.getHeaderName(), rawCsrfToken);
         servletResponse.setHeader("Cache-Control", "no-store");
         return ResponseEntity.noContent().build();
     }
