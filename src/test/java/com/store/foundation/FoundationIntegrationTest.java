@@ -181,7 +181,7 @@ class FoundationIntegrationTest {
         ArgumentCaptor<String> loginCodeCaptor = ArgumentCaptor.forClass(String.class);
 
         verify(emailOtpSender).send(
-                org.mockito.ArgumentMatchers.eq("ali@example.com"),
+                org.mockito.ArgumentMatchers.eq(testEmail),
                 loginCodeCaptor.capture(),
                 org.mockito.ArgumentMatchers.eq(EmailOtpPurpose.LOGIN),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
