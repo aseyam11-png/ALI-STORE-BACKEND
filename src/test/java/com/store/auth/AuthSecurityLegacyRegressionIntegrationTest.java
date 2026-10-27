@@ -25,6 +25,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.web.FilterChainProxy;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -50,6 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthSecurityLegacyRegressionIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private FilterChainProxy springSecurityFilterChain;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private RoleRepository roleRepository;
     @Autowired private UserRepository userRepository;
@@ -430,13 +434,38 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 : tokenCookieHeader == null
                         ? null
                         : tokenCookieHeader.substring("XSRF-TOKEN=".length()).split(";", 2)[0];
-        assertNotNull(token, "CSRF bootstrap must issue XSRF-TOKEN through the servlet cookie or Set-Cookie header; status=" + result.getResponse().getStatus() + ", headerNames=" + result.getResponse().getHeaderNames() + ", Set-Cookie=" + result.getResponse().getHeaders("Set-Cookie") + ", X-XSRF-TOKEN=" + result.getResponse().getHeader("X-XSRF-TOKEN") + ", cookies=" + java.util.Arrays.toString(result.getResponse().getCookies()));
+        assertNotNull(token, "CSRF bootstrap must issue XSRF-TOKEN through the servlet cookie or Set-Cookie header; status=" + result.getResponse().getStatus() + ", headerNames=" + result.getResponse().getHeaderNames() + ", Set-Cookie=" + result.getResponse().getHeaders("Set-Cookie") + ", X-XSRF-TOKEN=" + result.getResponse().getHeader("X-XSRF-TOKEN") + ", cookies=" + java.util.Arrays.toString(result.getResponse().getCookies()) + ", filterChains=" + securityChainDiagnostics());
         assertFalse(token.isBlank(), "CSRF bootstrap must issue a non-empty XSRF-TOKEN");
         assertEquals(token, result.getResponse().getHeader("X-XSRF-TOKEN"),
                 "CSRF response header must match the persisted raw CSRF token");
         return post(path)
                 .cookie(new Cookie("XSRF-TOKEN", token))
                 .header("X-XSRF-TOKEN", token);
+    }
+
+    private String securityChainDiagnostics() {
+        MockHttpServletRequest probe = new MockHttpServletRequest("GET", "/api/v1/auth/csrf");
+        return springSecurityFilterChain.getFilterChains().stream()
+                .map(chain -> {
+                    String repositoryClass = "no-csrf-filter";
+                    Object csrfFilter = chain.getFilters().stream()
+                            .filter(CsrfFilter.class::isInstance)
+                            .findFirst()
+                            .orElse(null);
+                    if (csrfFilter != null) {
+                        try {
+                            java.lang.reflect.Field field = CsrfFilter.class.getDeclaredField("tokenRepository");
+                            field.setAccessible(true);
+                            Object repository = field.get(csrfFilter);
+                            repositoryClass = repository == null ? "null" : repository.getClass().getName();
+                        } catch (ReflectiveOperationException ex) {
+                            repositoryClass = "reflection-error:" + ex.getClass().getSimpleName();
+                        }
+                    }
+                    return "matches=" + chain.matches(probe) + ",csrfRepository=" + repositoryClass
+                            + ",filters=" + chain.getFilters().size();
+                })
+                .collect(java.util.stream.Collectors.joining(" || "));
     }
 
     private User createUser(String email) {
