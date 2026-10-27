@@ -430,7 +430,7 @@ class AuthSecurityLegacyRegressionIntegrationTest {
                 : tokenCookieHeader == null
                         ? null
                         : tokenCookieHeader.substring("XSRF-TOKEN=".length()).split(";", 2)[0];
-        assertNotNull(token, "CSRF bootstrap must issue XSRF-TOKEN through the servlet cookie or Set-Cookie header");
+        assertNotNull(token, "CSRF bootstrap must issue XSRF-TOKEN through the servlet cookie or Set-Cookie header; status=" + result.getResponse().getStatus() + ", headerNames=" + result.getResponse().getHeaderNames() + ", Set-Cookie=" + result.getResponse().getHeaders("Set-Cookie") + ", X-XSRF-TOKEN=" + result.getResponse().getHeader("X-XSRF-TOKEN") + ", cookies=" + java.util.Arrays.toString(result.getResponse().getCookies()));
         assertFalse(token.isBlank(), "CSRF bootstrap must issue a non-empty XSRF-TOKEN");
         assertEquals(token, result.getResponse().getHeader("X-XSRF-TOKEN"),
                 "CSRF response header must match the persisted raw CSRF token");
