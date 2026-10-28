@@ -153,6 +153,18 @@ class PostgresConcurrencyIT {
     }
 
     @Test
+    void adminGateMigrationAddsVerifiedFlagAfterFlywayMigrations() {
+        Integer columnCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns " +
+                        "WHERE table_schema = current_schema() " +
+                        "AND table_name = 'email_otp_challenges' " +
+                        "AND column_name = 'admin_gate_verified'",
+                Integer.class);
+        Assertions.assertEquals(1, columnCount,
+                "Flyway must add the persisted administrator-gate verification flag");
+    }
+
+    @Test
     void newDatabaseProductsDefaultToSarAfterFlywayMigrations() {
         String currencyDefault = jdbcTemplate.queryForObject(
                 "SELECT column_default FROM information_schema.columns " +
