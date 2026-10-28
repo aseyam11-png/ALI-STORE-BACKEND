@@ -187,4 +187,28 @@ class SupplierInventorySyncTest {
     }
 
 
+    @Test
+    void sync_supplierQuantityBelowReservationsMarksInventoryUnknownAndBlocksAvailability() {
+        Product product = createProduct("SYNC-006", new BigDecimal("25.00"));
+        Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        inventory.setReservedQuantity(2);
+        inventoryRepository.save(inventory);
+
+        LocalDateTime observedAt = LocalDateTime.now().plusMinutes(1);
+        when(supplierInventoryClient.fetchInventory(supplier))
+                .thenReturn(payload("SUP-SYNC-006", 1, new BigDecimal("12.00"), observedAt));
+
+        var report = syncService.syncSupplier(supplier.getId());
+
+        Inventory updated = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        assertEquals(2, updated.getQuantity(), "Keep the last reconciled quantity");
+        assertEquals(1, updated.getSupplierReportedQuantity());
+        assertEquals(Boolean.TRUE, updated.getInventoryDiscrepancy());
+        assertEquals(observedAt, updated.getLastSyncedAt());
+        assertEquals(1, report.getRejectedItems());
+        assertEquals(com.store.inventory.enums.PublicAvailability.UNKNOWN,
+                inventoryService.getPublicAvailability(product.getId()));
+        assertEquals(0, inventoryService.getAvailableQuantity(product.getId()));
+    }
+
 }
