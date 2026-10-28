@@ -370,12 +370,10 @@ class PaymentFinancialIntegrityTest {
 
 
     @Test
-    void reconciliationExpiresStalePendingReservationBeforeRefundingLateCharge() {
+    void reconciliationExpiresReservationThatElapsesDuringProviderCheckBeforeRefundingLateCharge() {
         User user = user();
         Product product = product("FIN-LATE-EXPIRE-RACE", "FIN-LATE-EXPIRE-RACE-SUP");
         Order order = order(user, product, new BigDecimal("25.00"));
-        order.setReservationExpiresAt(LocalDateTime.now().minusMinutes(1));
-        orderRepository.save(order);
 
         Payment payment = paymentRepository.save(Payment.builder()
                 .orderId(order.getId())
@@ -387,8 +385,14 @@ class PaymentFinancialIntegrityTest {
                 .build());
 
         when(paymentProvider.getChargeStatus(order.getId(), null))
-                .thenReturn(new PaymentProvider.ChargeStatusResult(
-                        true, false, "TXN-LATE-EXPIRE-RACE", "late charge completed after reservation expiry"));
+                .thenAnswer(invocation -> {
+                    // Simulate the reservation deadline passing while the external
+                    // provider status request is in flight.
+                    order.setReservationExpiresAt(LocalDateTime.now().minusMinutes(1));
+                    return new PaymentProvider.ChargeStatusResult(
+                            true, false, "TXN-LATE-EXPIRE-RACE",
+                            "late charge completed after reservation expiry");
+                });
 
         var response = paymentReconciliationService.reconcile(payment.getId());
 
