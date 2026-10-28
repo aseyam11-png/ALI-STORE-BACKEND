@@ -1,6 +1,7 @@
 package com.store.auth.controller;
 
 import com.store.auth.dto.AuthResponse;
+import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.dto.EmailOtpChallengeResponse;
 import com.store.auth.dto.EmailOtpResendRequest;
 import com.store.auth.dto.EmailOtpVerificationRequest;
@@ -12,6 +13,9 @@ import com.store.auth.dto.RegisterRequest;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.AuthSessionCookieService;
 import com.store.auth.service.TokenRevocationService;
+import com.store.common.security.ClientIpResolver;
+import com.store.common.security.LoginAttemptGuard;
+import com.store.common.exception.UnauthorizedException;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.common.response.ApiResponse;
@@ -27,6 +31,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -46,6 +51,8 @@ public class AuthController {
     private final TokenRevocationService tokenRevocationService;
     private final AuthSessionCookieService cookieService;
     private final ClientRegistrationRepository clientRegistrationRepository;
+    private final ClientIpResolver clientIpResolver;
+    private final LoginAttemptGuard loginAttemptGuard;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
@@ -71,8 +78,30 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(
             @Valid @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse servletResponse) {
-        AuthResponse response = authService.login(request);
+        String clientIp = clientIpResolver.resolve(servletRequest);
+        long blockedFor = loginAttemptGuard.blockedForMillis(clientIp);
+        if (blockedFor > 0L) {
+            return loginRateLimited(blockedFor);
+        }
+
+        final AuthResponse response;
+        try {
+            response = authService.login(request, clientIp);
+        } catch (AuthenticationException | UnauthorizedException ex) {
+            long blockedAfterFailure = loginAttemptGuard.recordFailure(clientIp);
+            if (blockedAfterFailure > 0L) {
+                return loginRateLimited(blockedAfterFailure);
+            }
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "Invalid credentials or administrator security verification failed"));
+        }
+
+        if (!response.isRequiresEmailVerification()) {
+            loginAttemptGuard.recordSuccess(clientIp);
+        }
         writeSessionCookieIfAuthenticated(servletResponse, response);
 
         HttpStatus status = response.isRequiresEmailVerification()
@@ -86,12 +115,24 @@ public class AuthController {
                 .body(ApiResponse.success(response, message));
     }
 
+    private ResponseEntity<ApiResponse<AuthResponse>> loginRateLimited(long blockedForMillis) {
+        long retryAfterSeconds = Math.max(1L, (blockedForMillis + 999L) / 1000L);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", Long.toString(retryAfterSeconds))
+                .body(ApiResponse.error(
+                        "Too many failed login attempts. This IP is temporarily blocked."));
+    }
+
     @PostMapping("/email/verify")
     public ResponseEntity<ApiResponse<AuthResponse>> verifyEmail(
             @Valid @RequestBody EmailOtpVerificationRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse servletResponse) {
         AuthResponse response = authService.verifyEmailCode(
                 request.getChallengeId(), request.getCode());
+        if (response.getPurpose() == EmailOtpPurpose.LOGIN) {
+            loginAttemptGuard.recordSuccess(clientIpResolver.resolve(servletRequest));
+        }
         writeSessionCookieIfAuthenticated(servletResponse, response);
 
         return ResponseEntity.ok(ApiResponse.success(

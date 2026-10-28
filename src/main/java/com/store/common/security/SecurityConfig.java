@@ -74,6 +74,9 @@ public class SecurityConfig {
     @Value("${app.auth.cookie-domain:}")
     private String csrfCookieDomain;
 
+    @Value("${app.security.require-https:false}")
+    private boolean requireHttps;
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -115,6 +118,7 @@ public class SecurityConfig {
                                 "/api/v1/categories", "/api/v1/categories/**",
                                 "/api/v1/products", "/api/v1/products/**"
                         ).permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
@@ -135,6 +139,10 @@ public class SecurityConfig {
                         .addHeaderWriter(new StaticHeadersWriter("Permissions-Policy",
                                 "geolocation=(), camera=(), microphone=(), payment=()"))
                 );
+
+        if (requireHttps) {
+            http.requiresChannel(channel -> channel.anyRequest().requiresSecure());
+        }
 
         return http.build();
     }
