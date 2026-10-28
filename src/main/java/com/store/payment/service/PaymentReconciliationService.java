@@ -83,8 +83,6 @@ public class PaymentReconciliationService {
                 payment.setProviderError(result.message());
                 paymentRepository.save(payment);
 
-                Order order = orderRepository.findById(payment.getOrderId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
                 if (order.getStatus() == OrderStatus.PENDING) {
                     orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
                 }
