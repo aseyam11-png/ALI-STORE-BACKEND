@@ -20,6 +20,16 @@ class ProductionProfileConfigurationTest {
     }
 
     @Test
+    void productionRequiresExplicitFrontendAuthRedirects() throws Exception {
+        String yaml = Files.readString(
+                Path.of("src/main/resources/application-prod.yml"));
+
+        assertTrue(yaml.contains("frontend-success-redirect: ${FRONTEND_AUTH_SUCCESS_REDIRECT}"));
+        assertTrue(yaml.contains("frontend-failure-redirect: ${FRONTEND_AUTH_FAILURE_REDIRECT}"));
+        assertFalse(yaml.contains("frontend-success-redirect: ${FRONTEND_AUTH_SUCCESS_REDIRECT:"));
+    }
+
+    @Test
     void productionProfileExistsAsExplicitDeploymentConfiguration() {
         assertTrue(Files.exists(
                 Path.of("src/main/resources/application-prod.yml")));
