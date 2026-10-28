@@ -74,12 +74,15 @@ public class AdminLoginGateService {
 
         String captchaToken = request.getCaptchaToken();
         String secondPassword = request.getAdminGatePassword();
-        if (isBlank(secondPassword)
+        // Verify Turnstile before checking the passphrase hash. This keeps the
+        // external verification cost on both wrong- and right-passphrase attempts,
+        // avoiding a timing signal that could help guess the secondary passphrase.
+        if (isBlank(captchaToken)
+                || !verifyTurnstile(captchaToken, clientIp)
+                || isBlank(secondPassword)
                 || secondPassword.getBytes(StandardCharsets.UTF_8).length < 16
                 || secondPassword.getBytes(StandardCharsets.UTF_8).length > 72
-                || !safePasswordMatches(secondPassword, passwordHash)
-                || isBlank(captchaToken)
-                || !verifyTurnstile(captchaToken, clientIp)) {
+                || !safePasswordMatches(secondPassword, passwordHash)) {
             throw new BadCredentialsException("Invalid credentials or security verification failed");
         }
 
