@@ -31,7 +31,23 @@ public class SupplierInventoryWorker {
                 .filter(supplier -> Boolean.TRUE.equals(supplier.getInventorySyncEnabled()))
                 .forEach(supplier -> {
                     try {
-                        syncService.syncSupplier(supplier.getId());
+                        var report = syncService.syncSupplier(supplier.getId());
+                        if (report != null && report.getRejectedItems() > 0) {
+                            log.warn("Supplier inventory sync completed with rejected items: supplier={} received={} matched={} updated={} rejected={} errors={}",
+                                    supplier.getExternalCode(),
+                                    report.getReceivedItems(),
+                                    report.getMatchedProducts(),
+                                    report.getUpdatedProducts(),
+                                    report.getRejectedItems(),
+                                    report.getErrors().stream().limit(10).toList());
+                        } else if (report != null) {
+                            log.info("Supplier inventory sync completed: supplier={} received={} matched={} updated={} rejected={}",
+                                    supplier.getExternalCode(),
+                                    report.getReceivedItems(),
+                                    report.getMatchedProducts(),
+                                    report.getUpdatedProducts(),
+                                    report.getRejectedItems());
+                        }
                     } catch (RuntimeException ex) {
                         // One broken supplier must not stop synchronization for all other suppliers.
                         log.warn("Supplier inventory sync failed for supplier {}: {}",

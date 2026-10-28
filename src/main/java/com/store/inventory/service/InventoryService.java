@@ -220,13 +220,21 @@ public class InventoryService {
         }
 
         if (quantity < inventory.getReservedQuantity()) {
-            throw new BusinessException("Supplier quantity cannot be lower than currently reserved stock");
+            // Preserve the supplier's latest observation, but do not replace the last
+            // reconciled quantity with a value that contradicts active reservations.
+            // isKnown() fails closed while this discrepancy remains unresolved.
+            inventory.setSource(InventorySource.SUPPLIER_SYNC);
+            inventory.setLastSyncedAt(effectiveSyncTime);
+            inventory.setSupplierReportedQuantity(quantity);
+            inventory.setInventoryDiscrepancy(true);
+            return mapToResponse(inventoryRepository.save(inventory));
         }
 
         inventory.setQuantity(quantity);
         inventory.setSource(InventorySource.SUPPLIER_SYNC);
         inventory.setLastSyncedAt(effectiveSyncTime);
         inventory.setSupplierReportedQuantity(quantity);
+        inventory.setInventoryDiscrepancy(false);
         refreshDiscrepancy(inventory);
         return mapToResponse(inventoryRepository.save(inventory));
     }
@@ -251,6 +259,7 @@ public class InventoryService {
     }
 
     private boolean isKnown(Inventory inventory) {
+        if (Boolean.TRUE.equals(inventory.getInventoryDiscrepancy())) return false;
         if (inventory.getSource() == InventorySource.MANUAL) return true;
         if (inventory.getLastSyncedAt() == null) return false;
 
@@ -260,6 +269,11 @@ public class InventoryService {
     }
 
     private void refreshDiscrepancy(Inventory inventory) {
+        // Reservation releases must not clear a supplier discrepancy and accidentally
+        // make the old, higher quantity sellable again. Only a fresh compatible supplier
+        // snapshot (or an explicit manual stock update) may clear this flag.
+        if (Boolean.TRUE.equals(inventory.getInventoryDiscrepancy())) return;
+
         Integer supplierReported = inventory.getSupplierReportedQuantity();
         inventory.setInventoryDiscrepancy(
                 supplierReported != null

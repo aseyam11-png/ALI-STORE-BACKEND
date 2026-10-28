@@ -153,6 +153,10 @@ public class SupplierInventorySyncService {
         if (!observedAt.equals(response.getLastSyncedAt())) {
             return new ApplyResult(true, false, "Ignored an out-of-order supplier snapshot");
         }
+        if (Boolean.TRUE.equals(response.getInventoryDiscrepancy())) {
+            return new ApplyResult(true, false,
+                    "Supplier quantity is below currently reserved stock; availability is blocked pending reconciliation");
+        }
 
         if (item.getUnitCost() != null) {
             updateSupplierCost(product, item.getUnitCost(), item.getCurrency());
