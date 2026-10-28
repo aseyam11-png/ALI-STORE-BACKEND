@@ -37,6 +37,13 @@ app:
   auth:
     cookie-secure: ${AUTH_COOKIE_SECURE}
     cookie-same-site: ${AUTH_COOKIE_SAME_SITE}
+  security:
+    require-https: true
+    admin-gate:
+      enabled: true
+      password-hash: ${ADMIN_GATE_PASSWORD_HASH:}
+      turnstile-secret: ${TURNSTILE_SECRET_KEY:}
+      turnstile-hostname: ${TURNSTILE_HOSTNAME:}
 
 # A real PaymentProvider bean MUST be supplied for this profile - MockPaymentProvider
 # is annotated @Profile("!prod") and will not be available here, so the application
