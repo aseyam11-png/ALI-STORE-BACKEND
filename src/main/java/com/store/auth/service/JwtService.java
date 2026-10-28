@@ -55,6 +55,18 @@ public class JwtService {
         return extractClaim(token, Claims::getSubject);
     }
 
+    /** Returns true only for a signed JWT carrying the explicit admin-gate proof. */
+    public boolean isAdminGateVerified(String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(extractAllClaims(token).get("admin_gate_verified", Boolean.class));
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
