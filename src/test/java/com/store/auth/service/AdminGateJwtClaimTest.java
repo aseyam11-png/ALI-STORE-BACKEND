@@ -23,7 +23,7 @@ class AdminGateJwtClaimTest {
     @Test
     void onlySignedTokenWithExplicitGateClaimIsAccepted() {
         JwtService service = jwtService();
-        User admin = User.withUsername("admin@example.invalid")
+        var admin = User.withUsername("admin@example.invalid")
                 .password("unused")
                 .authorities("ROLE_ADMIN")
                 .build();
