@@ -59,5 +59,11 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Diagnose real-PostgreSQL runner prerequisites
+        run: |
+          java -version
+          docker version
+          docker info
+
       - name: Run real PostgreSQL concurrency tests
         run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test
