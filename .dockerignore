@@ -13,3 +13,4 @@ target
 # Trigger fresh Preview build using the restored Vercel container framework.
 # Test Spring lazy initialization against Vercel container startup deadline.
 # Rebuild Preview after deferring Spring Data repository bootstrap.
+# Trigger diagnostic Preview deployment after health component visibility setting.
