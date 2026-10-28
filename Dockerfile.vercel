@@ -14,7 +14,8 @@ RUN addgroup -S spring && adduser -S spring -G spring
 COPY --from=build --chown=spring:spring /workspace/target/ecommerce-backend-0.0.1-SNAPSHOT.jar /app/app.jar
 
 USER spring:spring
-ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+# Favor fast startup for Vercel cold starts; JIT can optimize hot paths after startup.
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1"
 EXPOSE 80
 
 # Vercel's container runtime routes HTTP traffic to PORT (80 by default).
