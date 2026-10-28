@@ -179,10 +179,16 @@ public class SupplierInventorySyncService {
             throw new BusinessException("Supplier cost must be greater than zero for " + product.getSku());
         }
 
-        if (currency != null && !currency.isBlank()
-                && !currency.equalsIgnoreCase(product.getCurrency())) {
+        String normalizedCurrency = normalizeOptional(currency);
+        if (normalizedCurrency == null) {
+            throw new BusinessException("Supplier cost currency is required for SKU " + product.getSupplierSku());
+        }
+
+        String productCurrency = normalizeOptional(product.getCurrency());
+        if (productCurrency == null
+                || !normalizedCurrency.equalsIgnoreCase(productCurrency)) {
             throw new BusinessException("Currency mismatch for supplier SKU " + product.getSupplierSku()
-                    + ": supplier=" + currency + ", product=" + product.getCurrency());
+                    + ": supplier=" + normalizedCurrency + ", product=" + productCurrency);
         }
 
         product.setSupplierCost(unitCost);
