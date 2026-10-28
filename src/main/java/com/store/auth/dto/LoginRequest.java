@@ -20,7 +20,7 @@ public class LoginRequest {
     private String email;
 
     @NotBlank(message = "Password is required")
-    @ValidPasswordLength
+    @ValidPasswordLength(min = 1)
     private String password;
 
     // Required only when the authenticated account has ROLE_ADMIN in production.
