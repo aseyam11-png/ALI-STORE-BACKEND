@@ -36,6 +36,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             Map.entry("/api/v1/ai/discover", 8)
     );
     private static final long WINDOW_MILLIS = 60_000L;
+    private static final int ADMIN_API_MAX_REQUESTS = 120;
 
     private final RateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
@@ -46,8 +47,18 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String path = request.getRequestURI();
         Integer maxRequests = LIMITED_PATHS.get(path);
+        boolean adminApi = path.equals("/api/v1/admin") || path.startsWith("/api/v1/admin/");
+        String rateLimitKey = path;
+
+        // Keep any stricter endpoint-specific limit. Other admin routes share a
+        // dedicated per-IP bucket so spreading requests across paths does not bypass it.
+        if (adminApi && (maxRequests == null || maxRequests > ADMIN_API_MAX_REQUESTS)) {
+            maxRequests = ADMIN_API_MAX_REQUESTS;
+            rateLimitKey = "/api/v1/admin/*";
+        }
+
         if (maxRequests != null) {
-            String key = clientIpResolver.resolve(request) + ":" + path;
+            String key = clientIpResolver.resolve(request) + ":" + rateLimitKey;
             if (!rateLimiter.tryConsume(key, maxRequests, WINDOW_MILLIS)) {
                 writeTooManyRequests(response);
                 return;
