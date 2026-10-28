@@ -215,7 +215,7 @@ class PaymentFinancialIntegrityTest {
     }
 
     @Test
-    void lateSuccessfulReconciliationAfterCancellationCreatesIdempotentRefundIntent() {
+    void lateSuccessfulReconciliationAfterExpiredReservationCreatesIdempotentRefundIntent() {
         User user = user();
         Product product = product("FIN-LATE-CANCEL", "FIN-LATE-CANCEL-SUP");
         Order order = order(user, product, new BigDecimal("25.00"));
@@ -229,7 +229,12 @@ class PaymentFinancialIntegrityTest {
                 .collectionStatus(PaymentCollectionStatus.NOT_REQUIRED)
                 .build());
 
-        orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
+        order.setReservationExpiresAt(LocalDateTime.now().minusMinutes(1));
+        orderRepository.save(order);
+        orderService.expirePendingOrderReservations();
+        Assertions.assertEquals(OrderStatus.CANCELLED,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+
         when(paymentProvider.getChargeStatus(order.getId(), null))
                 .thenReturn(new PaymentProvider.ChargeStatusResult(
                         true, false, "TXN-LATE-1", "provider confirms a late successful charge"));
