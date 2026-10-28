@@ -34,12 +34,19 @@ spring:
 # Production browser-cookie policy is deployment-specific. Require the operator to
 # choose SameSite for the actual frontend/API site relationship and enable Secure cookies.
 app:
+  # Production must never inherit the localhost CORS default from application.yml.
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
   auth:
     # Require deployed frontend URLs; never inherit localhost defaults in production.
     frontend-success-redirect: ${FRONTEND_AUTH_SUCCESS_REDIRECT}
     frontend-failure-redirect: ${FRONTEND_AUTH_FAILURE_REDIRECT}
     cookie-secure: ${AUTH_COOKIE_SECURE}
     cookie-same-site: ${AUTH_COOKIE_SAME_SITE}
+    # Both must be configured in production; administrator login fails closed otherwise.
+    admin-gate-password-hash: ${ADMIN_GATE_PASSWORD_HASH}
+    turnstile-secret-key: ${CLOUDFLARE_TURNSTILE_SECRET_KEY}
+    turnstile-expected-hostname: ${TURNSTILE_EXPECTED_HOSTNAME:}
 
 # A real PaymentProvider bean MUST be supplied for this profile - MockPaymentProvider
 # is annotated @Profile("!prod") and will not be available here, so the application
