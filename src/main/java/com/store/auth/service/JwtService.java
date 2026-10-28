@@ -79,6 +79,21 @@ public class JwtService {
         return builder.signWith(getSignInKey()).compact();
     }
 
+    /**
+     * Returns true only for a signed token explicitly minted after the secondary
+     * administrator gate succeeded. Invalid or malformed tokens fail closed.
+     */
+    public boolean isAdminGateVerified(String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(extractAllClaims(token).get("admin_gate_verified", Boolean.class));
+        } catch (JwtException | IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
     public boolean isTokenValid(String token, UserDetails userDetails) {
         if (token == null || token.isBlank() || userDetails == null) {
             return false;
