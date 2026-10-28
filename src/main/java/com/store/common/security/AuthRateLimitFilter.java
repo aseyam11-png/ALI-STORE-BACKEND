@@ -46,8 +46,14 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String path = request.getRequestURI();
         Integer maxRequests = LIMITED_PATHS.get(path);
+        String rateLimitPath = path;
+        if (path.equals("/api/v1/admin") || path.startsWith("/api/v1/admin/")) {
+            // Shared admin bucket: the ceiling applies across admin endpoints, not per URL.
+            maxRequests = 120;
+            rateLimitPath = "/api/v1/admin";
+        }
         if (maxRequests != null) {
-            String key = clientIpResolver.resolve(request) + ":" + path;
+            String key = clientIpResolver.resolve(request) + ":" + rateLimitPath;
             if (!rateLimiter.tryConsume(key, maxRequests, WINDOW_MILLIS)) {
                 writeTooManyRequests(response);
                 return;
