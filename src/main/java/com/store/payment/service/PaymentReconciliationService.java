@@ -46,16 +46,16 @@ public class PaymentReconciliationService {
             return map(payment);
         }
 
-        // The reservation may have elapsed before the scheduled expiry worker has
-        // persisted CANCELLED. Resolve that state while holding the order lock, before
-        // contacting the provider, so a late successful charge is routed to refund.
-        if (order.getStatus() == OrderStatus.PENDING) {
-            orderService.expireIfReservationElapsed(order);
-        }
-
         try {
             PaymentProvider.ChargeStatusResult result =
                     paymentProvider.getChargeStatus(payment.getOrderId(), payment.getTransactionId());
+
+            // Provider lookup can take long enough for the reservation to expire while
+            // the request is in flight. Resolve expiry after the provider response, while
+            // still holding the order lock, before deciding between fulfillment and refund.
+            if (order.getStatus() == OrderStatus.PENDING) {
+                orderService.expireIfReservationElapsed(order);
+            }
 
             if (result != null && result.completed()) {
                 if (result.transactionId() == null || result.transactionId().isBlank()) {
