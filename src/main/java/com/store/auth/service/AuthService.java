@@ -45,6 +45,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailOtpService emailOtpService;
     private final LoginAttemptService loginAttemptService;
+    private final AdminLoginGateService adminLoginGateService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -132,6 +133,18 @@ public class AuthService {
             // The password may have been changed/reset or the account locked/disabled
             // between the primary credential check and the fresh database read.
             throw new UnauthorizedException("Invalid email or password");
+        }
+
+        if (isAdministrator(user)) {
+            // Enforce the separate factors before issuing any email-OTP challenge or session.
+            // Count failures independently of this transaction so failed admin-gate attempts
+            // still contribute to the persistent account lockout even though login returns 401.
+            try {
+                adminLoginGateService.verify(request.getAdminGatePassword(), request.getTurnstileToken());
+            } catch (UnauthorizedException ex) {
+                loginAttemptService.recordFailure(email);
+                throw new UnauthorizedException("Invalid email or password");
+            }
         }
 
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
@@ -291,6 +304,12 @@ public class AuthService {
         user.setLastFailedLoginAt(null);
         user.setAuthVersion(user.getAuthVersion() + 1L);
         userRepository.save(user);
+    }
+
+    private boolean isAdministrator(User user) {
+        return user != null
+                && user.getRole() != null
+                && "ROLE_ADMIN".equalsIgnoreCase(user.getRole().getName());
     }
 
     private void prepareDirectSession(User user, long expectedAuthVersion) {

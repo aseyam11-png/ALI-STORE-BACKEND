@@ -47,6 +47,7 @@ class AuthServiceLockoutTest {
     @Mock private AuthenticationManager authenticationManager;
     @Mock private EmailOtpService emailOtpService;
     @Mock private LoginAttemptService loginAttemptService;
+    @Mock private AdminLoginGateService adminLoginGateService;
     @Mock private EntityManager entityManager;
 
     private AuthService authService;
@@ -60,7 +61,8 @@ class AuthServiceLockoutTest {
                 jwtService,
                 authenticationManager,
                 emailOtpService,
-                loginAttemptService);
+                loginAttemptService,
+                adminLoginGateService);
         ReflectionTestUtils.setField(authService, "entityManager", entityManager);
     }
 
@@ -173,5 +175,50 @@ class AuthServiceLockoutTest {
         verify(emailOtpService, never()).issueChallenge(any(User.class), any(EmailOtpPurpose.class));
         verify(emailOtpService, never()).issueChallenge(
                 any(User.class), any(EmailOtpPurpose.class), anyLong());
+    }
+
+
+    @Test
+    void failedAdministratorSecondFactorIsCountedAndCannotIssueOtpOrSession() {
+        Role adminRole = Role.builder()
+                .name("ROLE_ADMIN")
+                .description("Administrator")
+                .build();
+        User user = User.builder()
+                .firstName("Store")
+                .lastName("Admin")
+                .email(EMAIL)
+                .password("encoded-password")
+                .isEnabled(true)
+                .emailVerified(true)
+                .role(adminRole)
+                .build();
+        AccountUserDetails authenticatedPrincipal = new AccountUserDetails(
+                EMAIL,
+                "encoded-password",
+                true,
+                true,
+                List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")),
+                0L);
+
+        when(loginAttemptService.isLocked(EMAIL)).thenReturn(false);
+        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                .thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                        authenticatedPrincipal, null, authenticatedPrincipal.getAuthorities()));
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(user));
+        org.mockito.Mockito.doThrow(new UnauthorizedException("Invalid email or password"))
+                .when(adminLoginGateService).verify("incorrect-gate-password", "invalid-turnstile-token");
+
+        assertThrows(UnauthorizedException.class, () -> authService.login(
+                LoginRequest.builder()
+                        .email(EMAIL)
+                        .password("Password123")
+                        .adminGatePassword("incorrect-gate-password")
+                        .turnstileToken("invalid-turnstile-token")
+                        .build()));
+
+        verify(adminLoginGateService).verify("incorrect-gate-password", "invalid-turnstile-token");
+        verify(loginAttemptService).recordFailure(EMAIL);
+        verifyNoInteractions(jwtService, emailOtpService);
     }
 }

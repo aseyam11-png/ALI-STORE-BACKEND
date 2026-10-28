@@ -7,6 +7,7 @@ import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.auth.service.AccountUserDetails;
+import com.store.auth.service.AdminLoginGateService;
 import com.store.auth.service.AuthService;
 import com.store.auth.service.EmailOtpSender;
 import com.store.auth.service.EmailOtpService;
@@ -62,6 +63,34 @@ class AuthSecurityRegressionIntegrationTest {
 
     @MockBean
     private EmailOtpSender emailOtpSender;
+
+    @MockBean
+    private AdminLoginGateService adminLoginGateService;
+
+    @Test
+    void administratorPasswordLoginChecksSecondaryPasswordAndTurnstileBeforeIssuingOtp() throws Exception {
+        User admin = createUser(uniqueEmail("admin-gate"));
+        Role adminRole = roleRepository.findByName("ROLE_ADMIN")
+                .orElseGet(() -> roleRepository.save(
+                        Role.builder().name("ROLE_ADMIN").description("Store administrator").build()));
+        admin.setRole(adminRole);
+        userRepository.saveAndFlush(admin);
+        clearInvocations(adminLoginGateService, emailOtpSender);
+
+        mockMvc.perform(csrfPost("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "email", admin.getEmail(),
+                                "password", "Password123",
+                                "adminGatePassword", "SeparateAdminPassword123!",
+                                "turnstileToken", "turnstile-response-token"))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.requiresEmailVerification").value(true))
+                .andExpect(jsonPath("$.data.purpose").value("LOGIN"));
+
+        verify(adminLoginGateService).verify(
+                "SeparateAdminPassword123!", "turnstile-response-token");
+    }
 
     @Test
     void passwordAndOtpLoginCreatesHttpOnlyCookieAndDoesNotExposeJwt() throws Exception {
