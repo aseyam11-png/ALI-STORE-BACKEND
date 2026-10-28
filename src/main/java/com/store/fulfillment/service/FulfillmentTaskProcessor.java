@@ -197,7 +197,8 @@ public class FulfillmentTaskProcessor {
         task.setLastError(safeMessage(ex));
         if (order.getStatus() == com.store.order.entity.OrderStatus.CANCELLED) {
             task.setStatus(FulfillmentTaskStatus.CANCELLED);
-        } else if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+        } else if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING
+                && order.getStatus() != com.store.order.entity.OrderStatus.SHIPPED) {
             task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
             task.setLastError("Supplier submission failed after local order status changed to "
                     + order.getStatus() + ": " + safeMessage(ex));
