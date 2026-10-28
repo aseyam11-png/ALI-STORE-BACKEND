@@ -3,6 +3,9 @@ package com.store.supplier.service;
 import com.store.common.exception.BusinessException;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.entity.SupplierStatus;
+import com.store.supplier.repository.SupplierRepository;
+
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -14,13 +17,15 @@ import static org.mockito.Mockito.when;
 
 class SupplierReadinessServiceTest {
 
+    private SupplierRepository supplierRepository;
     private SupplierCredentialResolver credentialResolver;
     private SupplierReadinessService readinessService;
 
     @BeforeEach
     void setUp() {
+        supplierRepository = mock(SupplierRepository.class);
         credentialResolver = mock(SupplierCredentialResolver.class);
-        readinessService = new SupplierReadinessService(credentialResolver);
+        readinessService = new SupplierReadinessService(supplierRepository, credentialResolver);
         ReflectionTestUtils.setField(readinessService, "fulfillmentEnabled", true);
     }
 
@@ -29,7 +34,7 @@ class SupplierReadinessServiceTest {
         Supplier supplier = readySupplier();
         when(credentialResolver.resolveFulfillmentToken(supplier)).thenReturn("test-token");
 
-        assertDoesNotThrow(() -> readinessService.assertReady(supplier));
+        assertDoesNotThrow(() -> readinessService.assertReady(1L));
     }
 
     @Test
@@ -37,7 +42,7 @@ class SupplierReadinessServiceTest {
         ReflectionTestUtils.setField(readinessService, "fulfillmentEnabled", false);
         Supplier supplier = readySupplier();
 
-        assertThrows(BusinessException.class, () -> readinessService.assertReady(supplier));
+        assertThrows(BusinessException.class, () -> readinessService.assertReady(1L));
     }
 
     @Test
@@ -52,15 +57,15 @@ class SupplierReadinessServiceTest {
     void assertReady_rejectsMissingEndpointOrCredential() {
         Supplier withoutEndpoint = readySupplier();
         withoutEndpoint.setApiBaseUrl(" ");
-        assertThrows(BusinessException.class, () -> readinessService.assertReady(withoutEndpoint));
+        assertThrows(BusinessException.class, () -> readinessService.assertReady(1L));
 
         Supplier withoutCredential = readySupplier();
         when(credentialResolver.resolveFulfillmentToken(withoutCredential)).thenReturn(" ");
-        assertThrows(BusinessException.class, () -> readinessService.assertReady(withoutCredential));
+        assertThrows(BusinessException.class, () -> readinessService.assertReady(1L));
     }
 
     private Supplier readySupplier() {
-        return Supplier.builder()
+        Supplier supplier = Supplier.builder()
                 .externalCode("READY-TEST")
                 .name("Ready Test Supplier")
                 .status(SupplierStatus.ACTIVE)
@@ -68,5 +73,8 @@ class SupplierReadinessServiceTest {
                 .inventorySyncEnabled(true)
                 .apiBaseUrl("https://supplier.example")
                 .build();
+        when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
+        when(credentialResolver.resolveFulfillmentToken(supplier)).thenReturn("test-token");
+        return supplier;
     }
 }
