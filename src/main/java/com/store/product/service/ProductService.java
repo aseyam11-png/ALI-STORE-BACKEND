@@ -36,12 +36,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ProductService {
-    private static final String DEFAULT_CURRENCY = "USD";
+    private static final String STORE_CURRENCY = "SAR";
+    private static final String DEFAULT_CURRENCY = STORE_CURRENCY;
     private static final int MAX_PAGE_SIZE = 100;
 
     private final ProductRepository productRepository;
@@ -53,6 +55,7 @@ public class ProductService {
 
     @Transactional
     public ProductAdminResponse createProduct(ProductRequest request) {
+        String currency = normalizeStoreCurrency(request.getCurrency());
         String requestedSku = normalizeOptional(request.getSku());
         if (requestedSku != null && productRepository.existsBySku(requestedSku)) {
             throw new ConflictException("Product with this SKU already exists");
@@ -92,10 +95,6 @@ public class ProductService {
         if (productRepository.existsBySlug(slug)) {
             throw new ConflictException("Product slug already exists: " + slug);
         }
-
-        String currency = request.getCurrency() != null && !request.getCurrency().isBlank()
-                ? request.getCurrency().toUpperCase()
-                : DEFAULT_CURRENCY;
 
         Product product = Product.builder()
                 .name(request.getName().trim())
@@ -143,7 +142,8 @@ public class ProductService {
 
         Specification<Product> spec = Specification.where(ProductSpecifications.hasStatus(ProductStatus.ACTIVE))
                 .and(ProductSpecifications.hasActiveCategory())
-                .and(ProductSpecifications.hasActiveSupplier());
+                .and(ProductSpecifications.hasActiveSupplier())
+                .and(ProductSpecifications.hasCurrency(STORE_CURRENCY));
         if (q != null && !q.isBlank()) spec = spec.and(ProductSpecifications.matchesQuery(q));
         if (categoryId != null) spec = spec.and(ProductSpecifications.inCategory(categoryId));
         if (brandId != null) spec = spec.and(ProductSpecifications.hasBrand(brandId));
@@ -190,6 +190,7 @@ public class ProductService {
 
     private boolean isPubliclyAvailableToCustomers(Product product) {
         if (product.getStatus() != ProductStatus.ACTIVE
+                || !STORE_CURRENCY.equalsIgnoreCase(normalizeOptional(product.getCurrency()))
                 || product.getCategory() == null
                 || !Boolean.TRUE.equals(product.getCategory().getActive())) {
             return false;
@@ -218,13 +219,27 @@ public class ProductService {
 
     @Transactional
     public ProductAdminResponse updateProduct(Long id, ProductUpdateRequest request) {
+        String requestedCurrency = normalizeOptional(request.getCurrency()) == null
+                ? null
+                : normalizeStoreCurrency(request.getCurrency());
         Product product = productRepository.findById(id).orElseThrow(() ->
                 new ResourceNotFoundException("Product not found with id: " + id));
+
+        boolean migratingLegacyCurrency = requestedCurrency != null
+                && !STORE_CURRENCY.equalsIgnoreCase(normalizeOptional(product.getCurrency()));
+        if (migratingLegacyCurrency) {
+            if (request.getPrice() == null) {
+                throw new BusinessException("Migrating a legacy product to SAR requires an explicitly reviewed SAR selling price");
+            }
+            if (product.getSupplierCost() != null && request.getSupplierCost() == null) {
+                throw new BusinessException("Migrating a legacy product to SAR requires an explicitly reviewed SAR supplier cost");
+            }
+        }
 
         if (request.getName() != null && !request.getName().isBlank()) product.setName(request.getName().trim());
         if (request.getDescription() != null) product.setDescription(request.getDescription());
         if (request.getPrice() != null) product.setPrice(request.getPrice());
-        if (request.getCurrency() != null && !request.getCurrency().isBlank()) product.setCurrency(request.getCurrency().toUpperCase());
+        if (requestedCurrency != null) product.setCurrency(requestedCurrency);
         if (request.getCategoryId() != null) product.setCategory(categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + request.getCategoryId())));
         if (request.getBrandId() != null) product.setBrand(brandRepository.findById(request.getBrandId())
@@ -248,7 +263,7 @@ public class ProductService {
             if (request.getStatus() == ProductStatus.ACTIVE) validatePublishable(product);
             product.setStatus(request.getStatus());
         }
-        if (request.getSupplierCost() != null && product.getSupplierCost() != null) {
+        if (request.getSupplierCost() != null && product.getSupplierCost() != null && !migratingLegacyCurrency) {
             pricingService.repriceProduct(product);
         }
 
@@ -271,6 +286,15 @@ public class ProductService {
 
     private String normalizeOptional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String normalizeStoreCurrency(String currency) {
+        if (currency == null || currency.isBlank()) return DEFAULT_CURRENCY;
+        String normalized = currency.trim().toUpperCase(Locale.ROOT);
+        if (!STORE_CURRENCY.equals(normalized)) {
+            throw new BusinessException("ALI STORE catalog prices must use SAR");
+        }
+        return normalized;
     }
 
     private String generateUniqueStoreSku(Long productId) {
@@ -307,6 +331,9 @@ public class ProductService {
     }
 
     private void validatePublishable(Product product) {
+        if (!STORE_CURRENCY.equalsIgnoreCase(normalizeOptional(product.getCurrency()))) {
+            throw new BusinessException("Product cannot be published until its selling price and supplier cost are reconciled to SAR");
+        }
         if (product.getSupplier() == null || product.getSupplierSku() == null || product.getSupplierSku().isBlank()
                 || product.getSupplierCost() == null || product.getSupplierCost().signum() <= 0) {
             throw new BusinessException("Product cannot be active without a mapped supplier and supplier cost");

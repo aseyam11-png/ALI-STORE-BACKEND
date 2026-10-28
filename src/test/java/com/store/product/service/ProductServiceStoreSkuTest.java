@@ -6,6 +6,8 @@ import com.store.category.repository.CategoryRepository;
 import com.store.inventory.service.InventoryService;
 import com.store.product.dto.ProductAdminResponse;
 import com.store.product.dto.ProductRequest;
+import com.store.product.dto.ProductUpdateRequest;
+import com.store.common.exception.BusinessException;
 import com.store.product.entity.Product;
 import com.store.product.repository.ProductRepository;
 import com.store.pricing.service.PricingService;
@@ -20,10 +22,12 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -59,12 +63,31 @@ class ProductServiceStoreSkuTest {
         request.setName("Generated SKU product");
         request.setCategoryId(10L);
         request.setPrice(new BigDecimal("29.99"));
-        request.setCurrency("USD");
-
         ProductAdminResponse response = productService.createProduct(request);
 
         assertEquals("ALI-00000042", response.getSku());
+        assertEquals("SAR", response.getCurrency());
         verify(productRepository, times(2)).save(any(Product.class));
         verify(inventoryService).initializeForProduct(any(Product.class));
+    }
+
+    @Test
+    void createProductRejectsNonSarCurrencyBeforeAnyWrite() {
+        ProductRequest request = new ProductRequest();
+        request.setCurrency("USD");
+
+        assertThrows(BusinessException.class, () -> productService.createProduct(request));
+        verifyNoInteractions(productRepository, categoryRepository, brandRepository,
+                supplierRepository, inventoryService, pricingService);
+    }
+
+    @Test
+    void updateProductRejectsNonSarCurrencyBeforeLoadingProduct() {
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setCurrency("USD");
+
+        assertThrows(BusinessException.class, () -> productService.updateProduct(42L, request));
+        verifyNoInteractions(productRepository, categoryRepository, brandRepository,
+                supplierRepository, inventoryService, pricingService);
     }
 }

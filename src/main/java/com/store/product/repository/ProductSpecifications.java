@@ -21,6 +21,11 @@ public final class ProductSpecifications {
         return (root, query, cb) -> cb.equal(root.get("status"), status);
     }
 
+    public static Specification<Product> hasCurrency(String currency) {
+        String normalized = currency == null ? "" : currency.trim().toUpperCase(java.util.Locale.ROOT);
+        return (root, query, cb) -> cb.equal(cb.upper(cb.trim(root.<String>get("currency"))), normalized);
+    }
+
     public static Specification<Product> hasActiveCategory() {
         return (root, query, cb) -> cb.isTrue(root.get("category").get("active"));
     }

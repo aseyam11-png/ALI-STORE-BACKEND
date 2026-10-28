@@ -144,15 +144,15 @@ class CatalogSecurityTest {
     @Test
     void archivedProduct_hiddenFromListing_and_notResolvableById() throws Exception {
         Product active = productRepository.save(Product.builder()
-                .name("Active One").slug("active-one").price(BigDecimal.TEN).currency("USD").sku("ACT-1")
+                .name("Active One").slug("active-one").price(BigDecimal.TEN).currency("SAR").sku("ACT-1")
                 .status(ProductStatus.ACTIVE).category(category).supplier(supplier)
                 .supplierSku("CATALOG-ACT-1").supplierCost(BigDecimal.ONE).build());
         Product archived = productRepository.save(Product.builder()
-                .name("Archived One").slug("archived-one").price(BigDecimal.TEN).currency("USD").sku("ARC-1")
+                .name("Archived One").slug("archived-one").price(BigDecimal.TEN).currency("SAR").sku("ARC-1")
                 .status(ProductStatus.ARCHIVED).category(category).supplier(supplier)
                 .supplierSku("CATALOG-ARC-1").supplierCost(BigDecimal.ONE).build());
         Product draft = productRepository.save(Product.builder()
-                .name("Draft One").slug("draft-one").price(BigDecimal.TEN).currency("USD").sku("DRF-1")
+                .name("Draft One").slug("draft-one").price(BigDecimal.TEN).currency("SAR").sku("DRF-1")
                 .status(ProductStatus.DRAFT).category(category).supplier(supplier)
                 .supplierSku("CATALOG-DRF-1").supplierCost(BigDecimal.ONE).build());
 
@@ -193,7 +193,7 @@ class CatalogSecurityTest {
                 .name("Inactive Supplier Product")
                 .slug("inactive-supplier-product")
                 .price(new BigDecimal("25.00"))
-                .currency("USD")
+                .currency("SAR")
                 .sku("SUP-DIS-1")
                 .status(ProductStatus.ACTIVE)
                 .category(category)
@@ -205,7 +205,7 @@ class CatalogSecurityTest {
                 .name("Incomplete Supplier Mapping")
                 .slug("incomplete-supplier-mapping")
                 .price(new BigDecimal("25.00"))
-                .currency("USD")
+                .currency("SAR")
                 .sku("MAP-DIS-1")
                 .status(ProductStatus.ACTIVE)
                 .category(category)
@@ -217,7 +217,7 @@ class CatalogSecurityTest {
                 .name("Inactive Category Product")
                 .slug("inactive-category-product")
                 .price(new BigDecimal("25.00"))
-                .currency("USD")
+                .currency("SAR")
                 .sku("CAT-DIS-1")
                 .status(ProductStatus.ACTIVE)
                 .category(inactiveCategory)
@@ -261,10 +261,10 @@ class CatalogSecurityTest {
     @Test
     void productSearch_filtersByPriceRange() throws Exception {
         productRepository.save(Product.builder().name("Cheap").slug("cheap-x").price(new BigDecimal("10.00"))
-                .currency("USD").sku("CHEAP-1").status(ProductStatus.ACTIVE).category(category)
+                .currency("SAR").sku("CHEAP-1").status(ProductStatus.ACTIVE).category(category)
                 .supplier(supplier).supplierSku("CATALOG-CHEAP-1").supplierCost(new BigDecimal("3.00")).build());
         productRepository.save(Product.builder().name("Expensive").slug("expensive-x").price(new BigDecimal("500.00"))
-                .currency("USD").sku("EXP-1").status(ProductStatus.ACTIVE).category(category)
+                .currency("SAR").sku("EXP-1").status(ProductStatus.ACTIVE).category(category)
                 .supplier(supplier).supplierSku("CATALOG-EXP-1").supplierCost(new BigDecimal("100.00")).build());
 
         mockMvc.perform(get("/api/v1/products").param("minPrice", "100").param("maxPrice", "1000"))
