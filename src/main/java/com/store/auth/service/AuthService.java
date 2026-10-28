@@ -137,7 +137,14 @@ public class AuthService {
 
         if (isAdministrator(user)) {
             // Enforce the separate factors before issuing any email-OTP challenge or session.
-            adminLoginGateService.verify(request.getAdminGatePassword(), request.getTurnstileToken());
+            // Count failures independently of this transaction so failed admin-gate attempts
+            // still contribute to the persistent account lockout even though login returns 401.
+            try {
+                adminLoginGateService.verify(request.getAdminGatePassword(), request.getTurnstileToken());
+            } catch (UnauthorizedException ex) {
+                loginAttemptService.recordFailure(email);
+                throw new UnauthorizedException("Invalid email or password");
+            }
         }
 
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
