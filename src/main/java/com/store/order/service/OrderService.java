@@ -29,11 +29,13 @@ import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.repository.PaymentRepository;
 import com.store.payment.service.RefundService;
+import com.store.supplier.service.SupplierReadinessService;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -75,6 +77,9 @@ public class OrderService {
     private final ShipmentRepository shipmentRepository;
     private final FulfillmentService fulfillmentService;
     private final RefundService refundService;
+
+    @Autowired
+    private SupplierReadinessService supplierReadinessService;
 
     @Transactional
     public OrderResponse createOrder(String email, OrderRequest request, String idempotencyKey) {
@@ -158,7 +163,7 @@ public class OrderService {
                     || product.getSupplierCost() == null) {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
-
+            supplierReadinessService.assertReady(product.getSupplier().getId());
 
             BigDecimal unitPrice = product.getPrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
@@ -304,6 +309,9 @@ public class OrderService {
                             || item.getSupplierUnitCost().signum() <= 0)) {
                 throw new BusinessException("Order cannot enter fulfillment without a valid external supplier mapping");
             }
+
+            order.getItems().forEach(item -> supplierReadinessService.assertReady(
+                    item.getSupplier() == null ? null : item.getSupplier().getId()));
 
             Payment payment = paymentRepository.findByOrderId(orderId)
                     .orElseThrow(() -> new BusinessException("Order cannot start fulfillment before a payment method is recorded"));

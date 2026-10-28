@@ -36,3 +36,7 @@ app:
     email-code-resend-cooldown-seconds: 60
   cors:
     allowed-origins: http://localhost:3000
+  fulfillment:
+    # Dummy credentials used only by tests; never used in production.
+    enabled: true
+    api-token: test-only-fulfillment-token
