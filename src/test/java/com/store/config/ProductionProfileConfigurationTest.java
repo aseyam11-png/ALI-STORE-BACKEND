@@ -20,8 +20,14 @@ class ProductionProfileConfigurationTest {
     }
 
     @Test
-    void productionProfileExistsAsExplicitDeploymentConfiguration() {
-        assertTrue(Files.exists(
-                Path.of("src/main/resources/application-prod.yml")));
+    void productionProfileExistsAsExplicitDeploymentConfiguration() throws Exception {
+        Path path = Path.of("src/main/resources/application-prod.yml");
+        assertTrue(Files.exists(path));
+        String yaml = Files.readString(path);
+        assertTrue(yaml.contains("require-https: true"));
+        assertTrue(yaml.contains("enabled: true"));
+        assertTrue(yaml.contains("ADMIN_GATE_PASSWORD_HASH"));
+        assertTrue(yaml.contains("TURNSTILE_SECRET_KEY"));
+        assertTrue(yaml.contains("TURNSTILE_HOSTNAME"));
     }
 }
