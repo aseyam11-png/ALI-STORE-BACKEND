@@ -95,6 +95,7 @@ public class AuthService {
         return pendingVerificationResponse(user, challenge);
     }
 
+    @Transactional
     public AuthResponse login(com.store.auth.dto.LoginRequest request) {
         return login(request, "unknown");
     }
