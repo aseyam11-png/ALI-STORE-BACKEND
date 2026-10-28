@@ -37,6 +37,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final AuthSessionCookieService cookieService;
     private final TokenRevocationService tokenRevocationService;
 
+    @Value("${app.security.admin-gate.enabled:false}")
+    private boolean adminGateEnabled;
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -61,11 +64,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     } else {
                         UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
                         if (jwtService.isTokenValid(jwt, userDetails)) {
+                            var grantedAuthorities = userDetails.getAuthorities();
+                            if (adminGateEnabled && !jwtService.isAdminGateVerified(jwt)) {
+                                grantedAuthorities = grantedAuthorities.stream()
+                                        .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                                        .toList();
+                            }
                             UsernamePasswordAuthenticationToken authToken =
                                     new UsernamePasswordAuthenticationToken(
                                             userDetails,
                                             null,
-                                            userDetails.getAuthorities()
+                                            grantedAuthorities
                                     );
                             authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                             SecurityContextHolder.getContext().setAuthentication(authToken);
@@ -113,6 +122,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         SecurityContextHolder.clearContext();
                     }
                 }
+            }
+
+            // Without a signed JWT proof, an existing servlet/OAuth context must not
+            // retain ROLE_ADMIN when the production gate is enabled.
+            Authentication current = SecurityContextHolder.getContext().getAuthentication();
+            if (adminGateEnabled && current != null && current.isAuthenticated()
+                    && current.getAuthorities().stream()
+                    .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()))) {
+                var reducedAuthorities = current.getAuthorities().stream()
+                        .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                        .toList();
+                var reduced = new UsernamePasswordAuthenticationToken(
+                        current.getPrincipal(), current.getCredentials(), reducedAuthorities);
+                reduced.setDetails(current.getDetails());
+                SecurityContextHolder.getContext().setAuthentication(reduced);
             }
         }
 
