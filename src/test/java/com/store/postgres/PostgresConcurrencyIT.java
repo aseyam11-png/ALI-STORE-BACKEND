@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -96,6 +97,7 @@ class PostgresConcurrencyIT {
     }
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private RoleRepository roleRepository;
     @Autowired private UserRepository userRepository;
@@ -134,7 +136,7 @@ class PostgresConcurrencyIT {
                 .externalCode("SUP-" + sku).name("Test Supplier " + sku).build());
         Product product = productRepository.save(Product.builder()
                 .name("Product " + sku).slug("product-" + sku.toLowerCase()).price(new BigDecimal("25.00"))
-                .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category)
+                .currency("SAR").sku(sku).status(ProductStatus.ACTIVE).category(category)
                 .supplier(supplier).supplierSku("SUP-SKU-" + sku).supplierCost(new BigDecimal("10.00")).build());
         inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0)
                 .lowStockThreshold(5).source(InventorySource.MANUAL).lastSyncedAt(java.time.LocalDateTime.now()).build());
@@ -148,6 +150,17 @@ class PostgresConcurrencyIT {
         // is itself the verification. Confirms real PostgreSQL syntax compatibility (this
         // repo's migrations were previously only exercised via H2's PostgreSQL-compat mode).
         Assertions.assertTrue(postgres.isRunning());
+    }
+
+    @Test
+    void newDatabaseProductsDefaultToSarAfterFlywayMigrations() {
+        String currencyDefault = jdbcTemplate.queryForObject(
+                "SELECT column_default FROM information_schema.columns " +
+                        "WHERE table_schema = current_schema() AND table_name = 'products' AND column_name = 'currency'",
+                String.class);
+        Assertions.assertNotNull(currencyDefault);
+        Assertions.assertTrue(currencyDefault.contains("SAR"),
+                "The database default for newly inserted product rows must be SAR");
     }
 
     @Test
