@@ -187,4 +187,41 @@ class SupplierInventorySyncTest {
     }
 
 
+    @Test
+    void sync_rejectsSupplierCostWhenCurrencyIsMissingWithoutPartialUpdate() {
+        Product product = createProduct("SYNC-007", new BigDecimal("25.00"));
+        LocalDateTime previousSyncAt = inventoryRepository.findByProductId(product.getId()).orElseThrow().getLastSyncedAt();
+        LocalDateTime observedAt = LocalDateTime.now().plusMinutes(1);
+        SupplierInventoryResponse payload = payload(
+                "SUP-SYNC-007", 9, new BigDecimal("12.50"), observedAt);
+        payload.getItems().get(0).setCurrency(null);
+        when(supplierInventoryClient.fetchInventory(supplier)).thenReturn(payload);
+
+        var report = syncService.syncSupplier(supplier.getId());
+
+        Product unchangedProduct = productRepository.findById(product.getId()).orElseThrow();
+        Inventory unchangedInventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        assertEquals(new BigDecimal("10.00"), unchangedProduct.getSupplierCost());
+        assertEquals(2, unchangedInventory.getQuantity(),
+                "The SKU transaction must roll back stock when its cost payload is invalid");
+        assertEquals(previousSyncAt, unchangedInventory.getLastSyncedAt());
+        assertEquals(1, report.getRejectedItems());
+    }
+
+    @Test
+    void sync_rejectsSupplierCostWhenCurrencyDoesNotMatchProduct() {
+        Product product = createProduct("SYNC-008", new BigDecimal("25.00"));
+        LocalDateTime observedAt = LocalDateTime.now().plusMinutes(1);
+        SupplierInventoryResponse payload = payload(
+                "SUP-SYNC-008", 9, new BigDecimal("12.50"), observedAt);
+        payload.getItems().get(0).setCurrency("EUR");
+        when(supplierInventoryClient.fetchInventory(supplier)).thenReturn(payload);
+
+        var report = syncService.syncSupplier(supplier.getId());
+
+        Product unchangedProduct = productRepository.findById(product.getId()).orElseThrow();
+        assertEquals(new BigDecimal("10.00"), unchangedProduct.getSupplierCost());
+        assertEquals(1, report.getRejectedItems());
+    }
+
 }

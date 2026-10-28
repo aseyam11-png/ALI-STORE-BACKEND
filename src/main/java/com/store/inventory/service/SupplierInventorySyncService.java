@@ -145,6 +145,12 @@ public class SupplierInventorySyncService {
         }
         if (product == null) return new ApplyResult(false, false, null);
 
+        // Validate the complete cost contract before mutating inventory. This keeps a
+        // malformed price/currency record from partially updating the same SKU.
+        if (item.getUnitCost() != null) {
+            validateSupplierCost(product, item.getUnitCost(), item.getCurrency());
+        }
+
         LocalDateTime observedAt = item.getObservedAt() != null ? item.getObservedAt() : syncedAt;
         InventoryResponse response = inventoryService.syncSupplierStock(
                 product.getId(), item.getQuantity(), observedAt);
@@ -175,17 +181,25 @@ public class SupplierInventorySyncService {
     }
 
     private void updateSupplierCost(Product product, BigDecimal unitCost, String currency) {
+        validateSupplierCost(product, unitCost, currency);
+        product.setSupplierCost(unitCost);
+    }
+
+    private void validateSupplierCost(Product product, BigDecimal unitCost, String currency) {
         if (unitCost.signum() <= 0) {
             throw new BusinessException("Supplier cost must be greater than zero for " + product.getSku());
         }
 
-        if (currency != null && !currency.isBlank()
-                && !currency.equalsIgnoreCase(product.getCurrency())) {
-            throw new BusinessException("Currency mismatch for supplier SKU " + product.getSupplierSku()
-                    + ": supplier=" + currency + ", product=" + product.getCurrency());
+        String normalizedCurrency = normalizeOptional(currency);
+        if (normalizedCurrency == null) {
+            throw new BusinessException("Supplier cost currency is required for SKU " + product.getSupplierSku());
         }
 
-        product.setSupplierCost(unitCost);
-
+        String productCurrency = normalizeOptional(product.getCurrency());
+        if (productCurrency == null
+                || !normalizedCurrency.equalsIgnoreCase(productCurrency)) {
+            throw new BusinessException("Currency mismatch for supplier SKU " + product.getSupplierSku()
+                    + ": supplier=" + normalizedCurrency + ", product=" + productCurrency);
+        }
     }
 }
