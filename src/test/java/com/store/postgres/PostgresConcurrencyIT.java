@@ -94,6 +94,10 @@ class PostgresConcurrencyIT {
         // application.yml requires JWT_SECRET with no default, and this test activates no
         // profile that would otherwise supply one.
         registry.add("jwt.secret", () -> "dGVzdGNvbnRhaW5lcnMtcG9zdGdyZXMtaXQtc2lnbmluZy1rZXktbm90LWZvci1wcm9kdWN0aW9uLXVzZQ==");
+        // Explicitly enable the checkout readiness precondition only in this test class.
+        // No real supplier requests are made by these database concurrency tests.
+        registry.add("app.fulfillment.enabled", () -> "true");
+        registry.add("app.fulfillment.api-token", () -> "postgres-it-test-token");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -133,7 +137,11 @@ class PostgresConcurrencyIT {
         Category category = categoryRepository.save(Category.builder()
                 .name("Category-" + sku).slug("category-" + sku.toLowerCase()).active(true).build());
         Supplier supplier = supplierRepository.save(Supplier.builder()
-                .externalCode("SUP-" + sku).name("Test Supplier " + sku).build());
+                .externalCode("SUP-" + sku).name("Test Supplier " + sku)
+                .status(com.store.supplier.entity.SupplierStatus.ACTIVE)
+                .fulfillmentEnabled(true)
+                .apiBaseUrl("https://supplier.example")
+                .build());
         Product product = productRepository.save(Product.builder()
                 .name("Product " + sku).slug("product-" + sku.toLowerCase()).price(new BigDecimal("25.00"))
                 .currency("SAR").sku(sku).status(ProductStatus.ACTIVE).category(category)
