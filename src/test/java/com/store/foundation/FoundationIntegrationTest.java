@@ -9,6 +9,8 @@ import com.store.category.repository.CategoryRepository;
 import com.store.inventory.entity.Inventory;
 import com.store.inventory.repository.InventoryRepository;
 import com.store.product.entity.Product;
+import com.store.product.enums.ProductStatus;
+import com.store.product.service.ProductService;
 import com.store.product.repository.ProductRepository;
 import com.store.supplier.entity.Supplier;
 import com.store.supplier.repository.SupplierRepository;
@@ -35,6 +37,7 @@ import jakarta.servlet.http.Cookie;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.Map;
 
@@ -81,6 +84,8 @@ class FoundationIntegrationTest {
     private CategoryRepository categoryRepository;
     @Autowired
     private ProductRepository productRepository;
+    @Autowired
+    private ProductService productService;
     @Autowired
     private SupplierRepository supplierRepository;
     @Autowired
@@ -574,6 +579,64 @@ class FoundationIntegrationTest {
         mockMvc.perform(get("/api/v1/b2b")
                         .header("Authorization", "Bearer " + tokenFor(regular)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void productCreationRejectsNonSarCurrency() throws Exception {
+        User admin = createUser("currency-admin@example.com", adminRole);
+        Category category = categoryRepository.save(Category.builder()
+                .name("Currency Test").slug("currency-test").active(true).build());
+
+        Map<String, Object> body = Map.of(
+                "name", "USD Catalog Product",
+                "price", 99.00,
+                "currency", "USD",
+                "categoryId", category.getId());
+
+        long existingProducts = productRepository.count();
+        mockMvc.perform(post("/api/v1/products")
+                        .header("Authorization", "Bearer " + tokenFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().is4xxClientError());
+
+        Assertions.assertEquals(existingProducts, productRepository.count(),
+                "A rejected non-SAR product must not be persisted");
+    }
+
+    @Test
+    void publicCatalogHidesLegacyProductsUntilTheirCurrencyIsReconciled() {
+        Category category = categoryRepository.save(Category.builder()
+                .name("Legacy Currency").slug("legacy-currency").active(true).build());
+        Supplier supplier = supplierRepository.findByExternalCode("SAR-CONTRACT-SUPPLIER")
+                .orElseGet(() -> supplierRepository.save(Supplier.builder()
+                        .externalCode("SAR-CONTRACT-SUPPLIER")
+                        .name("SAR Contract Supplier")
+                        .status(com.store.supplier.entity.SupplierStatus.ACTIVE)
+                        .fulfillmentEnabled(true)
+                        .inventorySyncEnabled(true)
+                        .build()));
+
+        Product legacyProduct = productRepository.save(Product.builder()
+                .name("Legacy USD Product")
+                .slug("legacy-usd-product")
+                .price(new BigDecimal("99.00"))
+                .currency("USD")
+                .sku("LEGACY-USD-001")
+                .status(ProductStatus.ACTIVE)
+                .category(category)
+                .supplier(supplier)
+                .supplierSku("SUP-LEGACY-USD-001")
+                .supplierCost(new BigDecimal("20.00"))
+                .build());
+
+        var page = productService.searchProducts("", null, null, null, null, null, "relevance", 0, 20);
+        Assertions.assertFalse(page.getContent().stream()
+                        .anyMatch(product -> product.getId().equals(legacyProduct.getId())),
+                "Public catalog search must not return a product priced in an unsupported currency");
+        Assertions.assertThrows(com.store.common.exception.ResourceNotFoundException.class,
+                () -> productService.getProductById(legacyProduct.getId()),
+                "Legacy products must remain hidden from product-detail responses until reconciled");
     }
 
     @Test
