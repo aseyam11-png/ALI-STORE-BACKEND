@@ -27,6 +27,10 @@ public class HttpSupplierFulfillmentClient implements SupplierFulfillmentClient 
 
     @Override
     public SupplierFulfillmentResponse submit(Supplier supplier, SupplierFulfillmentRequest request) {
+        if (supplier == null
+                || supplier.getStatus() != com.store.supplier.entity.SupplierStatus.ACTIVE) {
+            throw new IllegalStateException("Supplier is not active for fulfillment");
+        }
         if (!Boolean.TRUE.equals(supplier.getFulfillmentEnabled())) {
             throw new IllegalStateException("Supplier fulfillment is disabled");
         }
