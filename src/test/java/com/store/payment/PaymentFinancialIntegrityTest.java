@@ -367,4 +367,37 @@ class PaymentFinancialIntegrityTest {
 
         return orderRepository.save(order);
     }
+
+
+    @Test
+    void reconciliationExpiresStalePendingReservationBeforeRefundingLateCharge() {
+        User user = user();
+        Product product = product("FIN-LATE-EXPIRE-RACE", "FIN-LATE-EXPIRE-RACE-SUP");
+        Order order = order(user, product, new BigDecimal("25.00"));
+        order.setReservationExpiresAt(LocalDateTime.now().minusMinutes(1));
+        orderRepository.save(order);
+
+        Payment payment = paymentRepository.save(Payment.builder()
+                .orderId(order.getId())
+                .amount(new BigDecimal("25.00"))
+                .method(PaymentMethod.CREDIT_CARD)
+                .status(PaymentStatus.REQUIRES_RECONCILIATION)
+                .idempotencyKey("order-" + order.getId())
+                .collectionStatus(PaymentCollectionStatus.NOT_REQUIRED)
+                .build());
+
+        when(paymentProvider.getChargeStatus(order.getId(), null))
+                .thenReturn(new PaymentProvider.ChargeStatusResult(
+                        true, false, "TXN-LATE-EXPIRE-RACE", "late charge completed after reservation expiry"));
+
+        var response = paymentReconciliationService.reconcile(payment.getId());
+
+        Assertions.assertEquals(PaymentStatus.REFUND_PENDING, response.getStatus());
+        Assertions.assertEquals(OrderStatus.CANCELLED,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+        var refund = refundRepository.findByIdempotencyKey(
+                "order:" + order.getId() + ":cancellation").orElseThrow();
+        Assertions.assertEquals(RefundStatus.PENDING, refund.getStatus());
+        Assertions.assertEquals(new BigDecimal("25.00"), refund.getAmount());
+    }
 }
