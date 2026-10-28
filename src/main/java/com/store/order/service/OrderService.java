@@ -326,7 +326,9 @@ public class OrderService {
 
         if (newStatus == OrderStatus.CANCELLED) {
             Payment payment = paymentRepository.findByOrderId(orderId).orElse(null);
-            if (payment != null && payment.getStatus() == PaymentStatus.COMPLETED
+            if (payment != null
+                    && (payment.getStatus() == PaymentStatus.COMPLETED
+                    || payment.getStatus() == PaymentStatus.REFUND_PENDING)
                     && payment.getMethod() != PaymentMethod.CASH_ON_DELIVERY) {
                 refundService.prepareOrderCancellationRefund(
                         orderId, "Order cancelled before fulfillment completion");
@@ -338,6 +340,56 @@ public class OrderService {
         }
 
         return mapToResponse(saved);
+    }
+
+    /**
+     * Coordinates the financial and operational consequences of a cancelled supplier
+     * shipment. Partial cancellations refund only that supplier's partition; when every
+     * shipment is cancelled, the remaining refundable payment balance is returned and
+     * order-level reservations/coupon usage are released once.
+     *
+     * ShipmentService calls this only after persisting the CANCELLED shipment state.
+     */
+    @Transactional
+    public void handleSupplierShipmentCancellation(Long orderId, Long shipmentId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+        List<Shipment> shipments = shipmentRepository.findByOrderIdOrderByIdAsc(orderId);
+        Shipment cancelledShipment = shipments.stream()
+                .filter(shipment -> shipmentId.equals(shipment.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Shipment not found for order: " + orderId));
+
+        if (cancelledShipment.getStatus() != com.store.shipping.entity.ShipmentStatus.CANCELLED) {
+            throw new BusinessException("Supplier shipment cancellation must be persisted before financial reconciliation");
+        }
+
+        boolean allCancelled = !shipments.isEmpty()
+                && shipments.stream().allMatch(shipment ->
+                        shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.CANCELLED);
+
+        if (!allCancelled) {
+            refundService.prepareCancelledShipmentRefund(shipmentId);
+            return;
+        }
+
+        boolean newlyCancelled = order.getStatus() != OrderStatus.CANCELLED;
+        if (newlyCancelled) {
+            releaseOrderReservations(order);
+            fulfillmentService.cancelPendingTasksForOrder(orderId);
+            couponService.releaseRedemption(order.getCouponCode());
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(order);
+        }
+
+        Payment payment = paymentRepository.findByOrderId(orderId).orElse(null);
+        if (payment != null
+                && (payment.getStatus() == PaymentStatus.COMPLETED
+                || payment.getStatus() == PaymentStatus.REFUND_PENDING)
+                && payment.getMethod() != PaymentMethod.CASH_ON_DELIVERY) {
+            refundService.prepareOrderCancellationRefund(
+                    orderId, "All supplier shipments for the order were cancelled");
+        }
     }
 
     @Transactional
