@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -36,6 +37,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final Environment environment;
     private final AuthSessionCookieService cookieService;
     private final TokenRevocationService tokenRevocationService;
+
+    @Value("${app.security.admin-gate.enabled:false}")
+    private boolean adminGateEnabled;
 
     @Override
     protected void doFilterInternal(
@@ -61,11 +65,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     } else {
                         UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
                         if (jwtService.isTokenValid(jwt, userDetails)) {
+                            var grantedAuthorities = userDetails.getAuthorities();
+                            boolean isAdmin = grantedAuthorities.stream()
+                                    .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                            if (adminGateEnabled && isAdmin && !jwtService.isAdminGateVerified(jwt)) {
+                                // Legacy/password-only and OAuth-issued tokens cannot retain admin privileges.
+                                grantedAuthorities = grantedAuthorities.stream()
+                                        .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                                        .toList();
+                            }
                             UsernamePasswordAuthenticationToken authToken =
                                     new UsernamePasswordAuthenticationToken(
                                             userDetails,
                                             null,
-                                            userDetails.getAuthorities()
+                                            grantedAuthorities
                                     );
                             authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                             SecurityContextHolder.getContext().setAuthentication(authToken);
@@ -85,6 +98,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (authentication != null
                     && authentication.isAuthenticated()
                     && !(authentication instanceof AnonymousAuthenticationToken)) {
+                if (adminGateEnabled && authentication.getAuthorities().stream()
+                        .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()))) {
+                    // A server-side context without the signed JWT claim cannot prove the admin gate passed.
+                    var reducedAuthorities = authentication.getAuthorities().stream()
+                            .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                            .toList();
+                    var reducedAuthentication = new UsernamePasswordAuthenticationToken(
+                            authentication.getPrincipal(), authentication.getCredentials(), reducedAuthorities);
+                    reducedAuthentication.setDetails(authentication.getDetails());
+                    SecurityContextHolder.getContext().setAuthentication(reducedAuthentication);
+                    authentication = reducedAuthentication;
+                }
                 Object principal = authentication.getPrincipal();
                 // Google OAuth success deliberately creates an encrypted JWT cookie and
                 // invalidates the servlet session. A surviving OIDC-only context has no
