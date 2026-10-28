@@ -65,6 +65,9 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private List<String> allowedOrigins;
 
+    @Value("${app.security.require-https:false}")
+    private boolean requireHttps;
+
     @Value("${app.auth.cookie-secure:false}")
     private boolean csrfCookieSecure;
 
@@ -136,6 +139,10 @@ public class SecurityConfig {
                         .addHeaderWriter(new StaticHeadersWriter("Permissions-Policy",
                                 "geolocation=(), camera=(), microphone=(), payment=()"))
                 );
+
+        if (requireHttps) {
+            http.requiresChannel(channel -> channel.anyRequest().requiresSecure());
+        }
 
         return http.build();
     }
