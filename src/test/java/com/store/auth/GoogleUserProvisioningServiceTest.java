@@ -5,6 +5,7 @@ import com.store.common.exception.BusinessException;
 import com.store.user.entity.AuthProvider;
 import com.store.user.entity.Role;
 import com.store.user.entity.User;
+import com.store.user.entity.UserIdentity;
 import com.store.user.repository.RoleRepository;
 import com.store.user.repository.UserIdentityRepository;
 import com.store.user.repository.UserRepository;
