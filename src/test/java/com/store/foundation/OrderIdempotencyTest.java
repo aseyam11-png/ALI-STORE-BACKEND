@@ -84,6 +84,7 @@ class OrderIdempotencyTest {
                         .status(com.store.supplier.entity.SupplierStatus.ACTIVE)
                         .fulfillmentEnabled(true)
                         .inventorySyncEnabled(true)
+                        .apiBaseUrl("https://supplier.example")
                         .build()));
     }
 
