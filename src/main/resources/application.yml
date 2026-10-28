@@ -59,6 +59,12 @@ jwt:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  security:
+    admin-gate:
+      enabled: ${ADMIN_GATE_ENABLED:false}
+      password-hash: ${ADMIN_GATE_PASSWORD_HASH:}
+      turnstile-secret: ${TURNSTILE_SECRET_KEY:}
+      turnstile-hostname: ${TURNSTILE_HOSTNAME:}
   ai:
     enabled: ${AI_ENABLED:false}
     base-url: ${AI_BASE_URL:}
