@@ -35,6 +35,9 @@ spring:
 # choose SameSite for the actual frontend/API site relationship and enable Secure cookies.
 app:
   auth:
+    # Require deployed frontend URLs; never inherit localhost defaults in production.
+    frontend-success-redirect: ${FRONTEND_AUTH_SUCCESS_REDIRECT}
+    frontend-failure-redirect: ${FRONTEND_AUTH_FAILURE_REDIRECT}
     cookie-secure: ${AUTH_COOKIE_SECURE}
     cookie-same-site: ${AUTH_COOKIE_SAME_SITE}
 
