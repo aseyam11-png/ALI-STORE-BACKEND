@@ -269,6 +269,11 @@ public class InventoryService {
     }
 
     private void refreshDiscrepancy(Inventory inventory) {
+        // Reservation releases must not clear a supplier discrepancy and accidentally
+        // make the old, higher quantity sellable again. Only a fresh compatible supplier
+        // snapshot (or an explicit manual stock update) may clear this flag.
+        if (Boolean.TRUE.equals(inventory.getInventoryDiscrepancy())) return;
+
         Integer supplierReported = inventory.getSupplierReportedQuantity();
         inventory.setInventoryDiscrepancy(
                 supplierReported != null
