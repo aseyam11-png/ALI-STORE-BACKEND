@@ -50,7 +50,7 @@ class SupplierReadinessServiceTest {
         Supplier supplier = readySupplier();
         supplier.setStatus(SupplierStatus.INACTIVE);
 
-        assertThrows(BusinessException.class, () -> readinessService.assertReady(supplier));
+        assertThrows(BusinessException.class, () -> readinessService.assertReady(1L));
     }
 
     @Test
