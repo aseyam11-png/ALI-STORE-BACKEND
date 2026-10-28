@@ -83,10 +83,10 @@ class OrderServiceSupplierCancellationTest {
         when(orderRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
+        Shipment firstCancelled = shipment(100L, ShipmentStatus.CANCELLED);
+        Shipment finalCancelled = shipment(101L, ShipmentStatus.CANCELLED);
         when(shipmentRepository.findByOrderIdOrderByIdAsc(10L))
-                .thenReturn(List.of(
-                        shipment(100L, ShipmentStatus.CANCELLED),
-                        shipment(101L, ShipmentStatus.CANCELLED)));
+                .thenReturn(List.of(firstCancelled, finalCancelled));
 
         Payment payment = mock(Payment.class);
         when(payment.getStatus()).thenReturn(PaymentStatus.REFUND_PENDING);
