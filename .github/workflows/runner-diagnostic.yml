@@ -1,0 +1,29 @@
+name: GitHub Actions Runner Provisioning Diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostics/actions-runner-provisioning-20261028
+
+permissions:
+  contents: read
+
+jobs:
+  runner-diagnostic:
+    name: Hosted runner check (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-latest
+          - ubuntu-22.04
+    steps:
+      - name: Confirm runner started
+        run: |
+          echo "Runner startup diagnostic"
+          echo "UTC timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Runner OS: $RUNNER_OS"
+          uname -a
+          id
