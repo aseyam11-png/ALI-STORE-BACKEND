@@ -56,6 +56,17 @@ class ClientIpResolverTest {
     }
 
     @Test
+    void walksForwardedChainFromRightAndSkipsConfiguredProxies() {
+        ClientIpResolver resolver = new ClientIpResolver("10.0.0.5,10.0.0.6");
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRemoteAddr()).thenReturn("10.0.0.6");
+        when(request.getHeader("X-Forwarded-For"))
+                .thenReturn("198.51.100.77, 203.0.113.9, 10.0.0.5");
+
+        assertEquals("203.0.113.9", resolver.resolve(request));
+    }
+
+    @Test
     void whenTrustedProxySendsNoForwardedForHeader_fallsBackToRemoteAddr() {
         ClientIpResolver resolver = new ClientIpResolver("10.0.0.5");
         HttpServletRequest request = mock(HttpServletRequest.class);
