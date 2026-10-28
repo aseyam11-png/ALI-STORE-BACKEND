@@ -163,7 +163,7 @@ public class OrderService {
                     || product.getSupplierCost() == null) {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
-            supplierReadinessService.assertReady(product.getSupplier());
+            supplierReadinessService.assertReady(product.getSupplier().getId());
 
             BigDecimal unitPrice = product.getPrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
@@ -310,7 +310,8 @@ public class OrderService {
                 throw new BusinessException("Order cannot enter fulfillment without a valid external supplier mapping");
             }
 
-            order.getItems().forEach(item -> supplierReadinessService.assertReady(item.getSupplier()));
+            order.getItems().forEach(item -> supplierReadinessService.assertReady(
+                    item.getSupplier() == null ? null : item.getSupplier().getId()));
 
             Payment payment = paymentRepository.findByOrderId(orderId)
                     .orElseThrow(() -> new BusinessException("Order cannot start fulfillment before a payment method is recorded"));
