@@ -10,3 +10,4 @@ target
 *.log
 
 # Rebuild the Vercel Preview container after syncing the isolated Neon preview credentials.
+# Trigger fresh Preview build using the restored Vercel container framework.
