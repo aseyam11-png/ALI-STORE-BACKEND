@@ -147,19 +147,19 @@ public class AuthService {
                 prepareDirectSession(user, authenticatedVersion.getAuthVersion());
                 user.setEmailVerified(true);
                 userRepository.save(user);
-                return authenticatedResponse(user);
+                return authenticatedResponse(user, adminGateVerified);
             }
 
             // Do not reset failed-password state until the OTP is completed. If the account
             // is locked concurrently after this snapshot, OTP verification will recheck it.
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION, authenticatedVersion.getAuthVersion());
+                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION, authenticatedVersion.getAuthVersion(), adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
         if (emailOtpService.isLoginOtpEnabled()) {
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, authenticatedVersion.getAuthVersion());
+                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, authenticatedVersion.getAuthVersion(), adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
