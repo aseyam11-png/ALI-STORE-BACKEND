@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -36,6 +37,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final Environment environment;
     private final AuthSessionCookieService cookieService;
     private final TokenRevocationService tokenRevocationService;
+
+    @Value("${app.security.admin-gate.enabled:false}")
+    private boolean adminGateEnabled;
 
     @Override
     protected void doFilterInternal(
@@ -61,11 +65,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     } else {
                         UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
                         if (jwtService.isTokenValid(jwt, userDetails)) {
+                            var grantedAuthorities = userDetails.getAuthorities();
+                            boolean isAdministrator = grantedAuthorities.stream()
+                                    .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                            if (adminGateEnabled && isAdministrator && !jwtService.isAdminGateVerified(jwt)) {
+                                grantedAuthorities = grantedAuthorities.stream()
+                                        .filter(authority -> !"ROLE_ADMIN".equals(authority.getAuthority()))
+                                        .toList();
+                            }
                             UsernamePasswordAuthenticationToken authToken =
                                     new UsernamePasswordAuthenticationToken(
                                             userDetails,
                                             null,
-                                            userDetails.getAuthorities()
+                                            grantedAuthorities
                                     );
                             authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                             SecurityContextHolder.getContext().setAuthentication(authToken);
@@ -106,7 +118,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             // Preserve compatibility only when neither side carries a version.
                             versionMatches = !(principal instanceof AccountVersionAware);
                         }
-                        if (!enabled || !versionMatches) {
+                        boolean sessionHasAdminAuthority = authentication.getAuthorities().stream()
+                                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                        if (!enabled || !versionMatches || (adminGateEnabled && sessionHasAdminAuthority)) {
+                            // A server-side session has no signed admin-gate JWT proof, so never
+                            // preserve ROLE_ADMIN through the session-only compatibility path.
                             SecurityContextHolder.clearContext();
                         }
                     } catch (UsernameNotFoundException ex) {

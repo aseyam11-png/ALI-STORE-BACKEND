@@ -53,4 +53,8 @@ public class EmailOtpChallenge extends BaseEntity {
 
     @Column(name = "revoked_at")
     private Instant revokedAt;
+
+    @Column(name = "admin_gate_verified", nullable = false)
+    @Builder.Default
+    private boolean adminGateVerified = false;
 }
