@@ -47,6 +47,9 @@ public class GoogleUserProvisioningService {
 
         if (identity != null) {
             User existing = identity.getUser();
+            if (isAdministrator(existing)) {
+                throw new BusinessException("Administrator accounts must use the administrator login flow");
+            }
             if (!Boolean.TRUE.equals(existing.getIsEnabled())) {
                 throw new BusinessException("User account is disabled");
             }
@@ -74,6 +77,12 @@ public class GoogleUserProvisioningService {
 
             user = userRepository.save(user);
         } else {
+            // Admin accounts must never gain a Google identity while the secondary
+            // administrator login gate is not part of the active mainline flow.
+            if (isAdministrator(user)) {
+                throw new BusinessException("Administrator accounts must use the administrator login flow");
+            }
+
             // Do not bind a verified Google identity to a local account whose email
             // has not yet been verified. Otherwise a third party who pre-created the
             // local account could make the real Google owner inherit the attacker's
@@ -102,6 +111,12 @@ public class GoogleUserProvisioningService {
                 .build());
 
         return user;
+    }
+
+    private boolean isAdministrator(User user) {
+        return user != null
+                && user.getRole() != null
+                && "ROLE_ADMIN".equalsIgnoreCase(user.getRole().getName());
     }
 
     private String generateRandomPassword() {
