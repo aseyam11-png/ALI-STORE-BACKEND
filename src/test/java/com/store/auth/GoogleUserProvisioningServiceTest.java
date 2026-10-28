@@ -86,6 +86,70 @@ class GoogleUserProvisioningServiceTest {
     }
 
     @Test
+    void existingGoogleIdentityLinkedToAdministratorCannotAuthenticate() {
+        GoogleUserProvisioningService service =
+                new GoogleUserProvisioningService(
+                        userRepository, identityRepository, roleRepository, passwordEncoder);
+        User admin = User.builder()
+                .firstName("Store")
+                .lastName("Admin")
+                .email("admin@example.com")
+                .password("existing-hash")
+                .role(Role.builder().name("ROLE_ADMIN").build())
+                .isEnabled(true)
+                .emailVerified(true)
+                .build();
+        UserIdentity identity = UserIdentity.builder()
+                .user(admin)
+                .provider(AuthProvider.GOOGLE)
+                .providerSubject("admin-google-subject")
+                .providerEmail("admin@example.com")
+                .build();
+
+        when(oidcUser.getSubject()).thenReturn("admin-google-subject");
+        when(oidcUser.getEmail()).thenReturn("admin@example.com");
+        when(oidcUser.getClaims()).thenReturn(Map.of("email_verified", true));
+        when(identityRepository.findByProviderAndProviderSubject(
+                AuthProvider.GOOGLE, "admin-google-subject"))
+                .thenReturn(Optional.of(identity));
+
+        assertThrows(BusinessException.class, () -> service.provision(oidcUser));
+        verify(userRepository, never()).save(any(User.class));
+        verify(identityRepository, never()).save(any());
+        verifyNoInteractions(roleRepository, passwordEncoder);
+    }
+
+    @Test
+    void googleCannotLinkToAnExistingAdministratorByMatchingEmail() {
+        GoogleUserProvisioningService service =
+                new GoogleUserProvisioningService(
+                        userRepository, identityRepository, roleRepository, passwordEncoder);
+        User admin = User.builder()
+                .firstName("Store")
+                .lastName("Admin")
+                .email("admin@example.com")
+                .password("existing-hash")
+                .role(Role.builder().name("ROLE_ADMIN").build())
+                .isEnabled(true)
+                .emailVerified(true)
+                .build();
+
+        when(oidcUser.getSubject()).thenReturn("new-admin-google-subject");
+        when(oidcUser.getEmail()).thenReturn("admin@example.com");
+        when(oidcUser.getClaims()).thenReturn(Map.of("email_verified", true));
+        when(identityRepository.findByProviderAndProviderSubject(
+                AuthProvider.GOOGLE, "new-admin-google-subject"))
+                .thenReturn(Optional.empty());
+        when(userRepository.findByEmailIgnoreCase("admin@example.com"))
+                .thenReturn(Optional.of(admin));
+
+        assertThrows(BusinessException.class, () -> service.provision(oidcUser));
+        verify(userRepository, never()).save(any(User.class));
+        verify(identityRepository, never()).save(any());
+        verifyNoInteractions(roleRepository, passwordEncoder);
+    }
+
+    @Test
     void verifiedGoogleIdentityCannotLinkToPreexistingUnverifiedLocalAccount() {
         GoogleUserProvisioningService service =
                 new GoogleUserProvisioningService(
