@@ -164,7 +164,7 @@ public class AuthService {
         }
 
         prepareDirectSession(user, authenticatedVersion.getAuthVersion());
-        return authenticatedResponse(user);
+        return authenticatedResponse(user, adminGateVerified);
     }
 
     /*
