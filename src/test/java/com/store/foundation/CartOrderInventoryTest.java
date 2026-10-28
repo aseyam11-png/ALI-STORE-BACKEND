@@ -86,7 +86,8 @@ class CartOrderInventoryTest {
                         Category.builder().name("General").slug("general").active(true).build()));
         supplier = supplierRepository.findByExternalCode("TEST-SUPPLIER")
                 .orElseGet(() -> supplierRepository.save(
-                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build()));
+                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier")
+                                .apiBaseUrl("https://supplier.example").build()));
     }
 
     private User createUser(String email) {
