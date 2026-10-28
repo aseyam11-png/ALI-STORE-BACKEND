@@ -88,6 +88,11 @@ class CartOrderInventoryTest {
                 .orElseGet(() -> supplierRepository.save(
                         Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier")
                                 .apiBaseUrl("https://supplier.example").build()));
+        // Other integration tests share the H2 database; normalize an existing fixture too.
+        supplier.setStatus(com.store.supplier.entity.SupplierStatus.ACTIVE);
+        supplier.setFulfillmentEnabled(true);
+        supplier.setApiBaseUrl("https://supplier.example");
+        supplierRepository.save(supplier);
     }
 
     private User createUser(String email) {
