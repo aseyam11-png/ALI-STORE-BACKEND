@@ -379,6 +379,16 @@ public class OrderService {
                         shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.CANCELLED);
 
         if (!allCancelled) {
+            // Release only reservations owned by order lines assigned to this cancelled
+            // supplier shipment. Other supplier partitions must remain reserved/fulfillable.
+            Long cancelledSupplierId = cancelledShipment.getSupplier() == null
+                    ? null : cancelledShipment.getSupplier().getId();
+            if (cancelledSupplierId != null) {
+                order.getItems().stream()
+                        .filter(item -> item.getSupplier() != null
+                                && cancelledSupplierId.equals(item.getSupplier().getId()))
+                        .forEach(item -> inventoryService.releaseReservedStock(item.getId()));
+            }
             refundService.prepareCancelledShipmentRefund(shipmentId);
             return;
         }
