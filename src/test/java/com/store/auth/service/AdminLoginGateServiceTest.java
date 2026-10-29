@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -43,6 +44,18 @@ class AdminLoginGateServiceTest {
         assertThrows(ServiceUnavailableException.class,
                 () -> gate.verifyIfAdmin(admin, new LoginRequest(), "198.51.100.20"));
         verifyNoInteractions(turnstileVerifier);
+    }
+
+    @Test
+    void productionProfileCannotStartWithAdministratorGateDisabled() {
+        ReflectionTestUtils.setField(gate, "enabled", false);
+        Environment environment = mock(Environment.class);
+        when(environment.getActiveProfiles()).thenReturn(new String[]{"prod"});
+        ReflectionTestUtils.setField(gate, "environment", environment);
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class, gate::validateProductionConfiguration);
+        assertTrue(error.getMessage().contains("must remain enabled in the prod profile"));
     }
 
     @Test
