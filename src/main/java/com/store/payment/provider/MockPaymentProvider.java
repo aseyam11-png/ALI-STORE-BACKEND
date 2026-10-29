@@ -20,7 +20,7 @@ import java.util.UUID;
  * what has actually been verified, so it is intentionally left undone.
  */
 @Component
-@Profile("!prod")
+@Profile({"dev", "test"})
 public class MockPaymentProvider implements PaymentProvider {
 
     @Override

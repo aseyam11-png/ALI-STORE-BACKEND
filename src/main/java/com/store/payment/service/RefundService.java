@@ -82,7 +82,8 @@ public class RefundService {
 
         if (payment == null
                 || payment.getMethod() == PaymentMethod.CASH_ON_DELIVERY
-                || payment.getStatus() != PaymentStatus.COMPLETED) {
+                || (payment.getStatus() != PaymentStatus.COMPLETED
+                && payment.getStatus() != PaymentStatus.REFUND_PENDING)) {
             return null;
         }
 
@@ -110,7 +111,7 @@ public class RefundService {
         return prepareRefund(
                 payment,
                 refundAmount,
-                "Supplier fulfillment failed for shipment " + shipmentId,
+                "Supplier shipment was cancelled or could not be fulfilled: " + shipmentId,
                 "order:" + order.getId() + ":shipment:" + shipmentId + ":fulfillment-failure");
     }
 

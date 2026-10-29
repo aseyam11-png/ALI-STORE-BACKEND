@@ -86,7 +86,13 @@ class CartOrderInventoryTest {
                         Category.builder().name("General").slug("general").active(true).build()));
         supplier = supplierRepository.findByExternalCode("TEST-SUPPLIER")
                 .orElseGet(() -> supplierRepository.save(
-                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build()));
+                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier")
+                                .apiBaseUrl("https://supplier.example").build()));
+        // Other integration tests share the H2 database; normalize an existing fixture too.
+        supplier.setStatus(com.store.supplier.entity.SupplierStatus.ACTIVE);
+        supplier.setFulfillmentEnabled(true);
+        supplier.setApiBaseUrl("https://supplier.example");
+        supplierRepository.save(supplier);
     }
 
     private User createUser(String email) {

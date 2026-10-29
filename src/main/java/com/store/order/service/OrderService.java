@@ -29,11 +29,13 @@ import com.store.payment.entity.PaymentMethod;
 import com.store.payment.entity.PaymentStatus;
 import com.store.payment.repository.PaymentRepository;
 import com.store.payment.service.RefundService;
+import com.store.supplier.service.SupplierReadinessService;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -76,6 +78,9 @@ public class OrderService {
     private final FulfillmentService fulfillmentService;
     private final RefundService refundService;
 
+    @Autowired
+    private SupplierReadinessService supplierReadinessService;
+
     @Transactional
     public OrderResponse createOrder(String email, OrderRequest request, String idempotencyKey) {
         User user = userRepository.findByEmail(email)
@@ -106,6 +111,9 @@ public class OrderService {
         String orderCurrency = cartItems.get(0).getProduct().getCurrency();
         if (orderCurrency == null || orderCurrency.isBlank()) {
             throw new BusinessException("Product currency is not configured");
+        }
+        if (!"SAR".equalsIgnoreCase(orderCurrency.trim())) {
+            throw new BusinessException("ALI STORE only accepts orders priced in SAR");
         }
 
         boolean mixedCurrency = cartItems.stream()
@@ -158,7 +166,7 @@ public class OrderService {
                     || product.getSupplierCost() == null) {
                 throw new BusinessException("Product is not configured for supplier fulfillment: " + product.getId());
             }
-
+            supplierReadinessService.assertReady(product.getSupplier().getId());
 
             BigDecimal unitPrice = product.getPrice();
             BigDecimal itemSubtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
@@ -305,6 +313,9 @@ public class OrderService {
                 throw new BusinessException("Order cannot enter fulfillment without a valid external supplier mapping");
             }
 
+            order.getItems().forEach(item -> supplierReadinessService.assertReady(
+                    item.getSupplier() == null ? null : item.getSupplier().getId()));
+
             Payment payment = paymentRepository.findByOrderId(orderId)
                     .orElseThrow(() -> new BusinessException("Order cannot start fulfillment before a payment method is recorded"));
 
@@ -326,7 +337,9 @@ public class OrderService {
 
         if (newStatus == OrderStatus.CANCELLED) {
             Payment payment = paymentRepository.findByOrderId(orderId).orElse(null);
-            if (payment != null && payment.getStatus() == PaymentStatus.COMPLETED
+            if (payment != null
+                    && (payment.getStatus() == PaymentStatus.COMPLETED
+                    || payment.getStatus() == PaymentStatus.REFUND_PENDING)
                     && payment.getMethod() != PaymentMethod.CASH_ON_DELIVERY) {
                 refundService.prepareOrderCancellationRefund(
                         orderId, "Order cancelled before fulfillment completion");
@@ -338,6 +351,55 @@ public class OrderService {
         }
 
         return mapToResponse(saved);
+    }
+
+    /**
+     * Reconciles order state and money after a supplier shipment is cancelled.
+     * A partial cancellation refunds only that supplier partition; when all shipments
+     * are cancelled, remaining reservations, pending tasks, coupon usage and refundable
+     * payment balance are reconciled once.
+     */
+    @Transactional
+    public void handleSupplierShipmentCancellation(Long orderId, Long shipmentId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+        java.util.List<com.store.shipping.entity.Shipment> shipments =
+                shipmentRepository.findByOrderIdOrderByIdAsc(orderId);
+        com.store.shipping.entity.Shipment cancelledShipment = shipments.stream()
+                .filter(shipment -> shipmentId.equals(shipment.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Shipment not found for order: " + orderId));
+
+        if (cancelledShipment.getStatus() != com.store.shipping.entity.ShipmentStatus.CANCELLED) {
+            throw new BusinessException("Supplier shipment cancellation must be persisted before financial reconciliation");
+        }
+
+        boolean allCancelled = !shipments.isEmpty()
+                && shipments.stream().allMatch(shipment ->
+                        shipment.getStatus() == com.store.shipping.entity.ShipmentStatus.CANCELLED);
+
+        if (!allCancelled) {
+            refundService.prepareCancelledShipmentRefund(shipmentId);
+            return;
+        }
+
+        boolean newlyCancelled = order.getStatus() != OrderStatus.CANCELLED;
+        if (newlyCancelled) {
+            releaseOrderReservations(order);
+            fulfillmentService.cancelPendingTasksForOrder(orderId);
+            couponService.releaseRedemption(order.getCouponCode());
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(order);
+        }
+
+        Payment payment = paymentRepository.findByOrderId(orderId).orElse(null);
+        if (payment != null
+                && (payment.getStatus() == PaymentStatus.COMPLETED
+                || payment.getStatus() == PaymentStatus.REFUND_PENDING)
+                && payment.getMethod() != PaymentMethod.CASH_ON_DELIVERY) {
+            refundService.prepareOrderCancellationRefund(
+                    orderId, "All supplier shipments for the order were cancelled");
+        }
     }
 
     @Transactional

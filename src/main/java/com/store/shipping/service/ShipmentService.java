@@ -5,6 +5,7 @@ import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.ResourceNotFoundException;
 import com.store.order.entity.Order;
 import com.store.order.repository.OrderRepository;
+import com.store.order.service.OrderService;
 import com.store.shipping.dto.ShipmentRequest;
 import com.store.shipping.dto.ShipmentResponse;
 import com.store.shipping.entity.Shipment;
@@ -47,6 +48,7 @@ public class ShipmentService {
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
     private final SupplierRepository supplierRepository;
+    private final OrderService orderService;
 
     @Transactional
     public ShipmentResponse createShipment(ShipmentRequest request) {
@@ -127,6 +129,9 @@ public class ShipmentService {
 
         ShipmentResponse response = mapToResponse(shipmentRepository.save(shipment));
         synchronizeOrderStatus(shipment.getOrderId());
+        if (newStatus == ShipmentStatus.CANCELLED) {
+            orderService.handleSupplierShipmentCancellation(shipment.getOrderId(), shipment.getId());
+        }
         return response;
     }
 
@@ -160,9 +165,8 @@ public class ShipmentService {
 
         if (allDelivered) {
             order.setStatus(com.store.order.entity.OrderStatus.DELIVERED);
-        } else if (allCancelled) {
-            order.setStatus(com.store.order.entity.OrderStatus.CANCELLED);
-        } else if (anyInTransit && order.getStatus() == com.store.order.entity.OrderStatus.PROCESSING) {
+        } else if (!allCancelled && anyInTransit
+                && order.getStatus() == com.store.order.entity.OrderStatus.PROCESSING) {
             order.setStatus(com.store.order.entity.OrderStatus.SHIPPED);
         }
 
@@ -230,6 +234,9 @@ public class ShipmentService {
 
         ShipmentResponse response = mapToResponse(shipmentRepository.save(shipment));
         synchronizeOrderStatus(shipment.getOrderId());
+        if (newStatus == ShipmentStatus.CANCELLED) {
+            orderService.handleSupplierShipmentCancellation(shipment.getOrderId(), shipment.getId());
+        }
         return response;
     }
 

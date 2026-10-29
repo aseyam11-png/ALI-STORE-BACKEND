@@ -40,6 +40,7 @@ jobs:
 
   postgres-concurrency:
     name: Real PostgreSQL concurrency suite
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     needs: unit
     timeout-minutes: 30
@@ -58,6 +59,12 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+
+      - name: Diagnose real-PostgreSQL runner prerequisites
+        run: |
+          java -version
+          docker version
+          docker info
 
       - name: Run real PostgreSQL concurrency tests
         run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test

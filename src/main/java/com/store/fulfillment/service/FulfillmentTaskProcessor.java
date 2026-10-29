@@ -8,6 +8,12 @@ import com.store.fulfillment.entity.FulfillmentTask;
 import com.store.fulfillment.entity.FulfillmentTaskStatus;
 import com.store.fulfillment.repository.FulfillmentTaskRepository;
 import com.store.inventory.service.InventoryService;
+import com.store.coupon.service.CouponService;
+import com.store.payment.entity.Payment;
+import com.store.payment.entity.PaymentMethod;
+import com.store.payment.entity.PaymentStatus;
+import com.store.payment.repository.PaymentRepository;
+import com.store.payment.service.RefundService;
 import com.store.order.entity.Order;
 import com.store.order.entity.OrderItem;
 import com.store.order.repository.OrderRepository;
@@ -33,6 +39,9 @@ public class FulfillmentTaskProcessor {
     private final ShipmentRepository shipmentRepository;
     private final InventoryService inventoryService;
     private final SupplierFulfillmentClient supplierFulfillmentClient;
+    private final PaymentRepository paymentRepository;
+    private final RefundService refundService;
+    private final CouponService couponService;
     private final PlatformTransactionManager transactionManager;
 
     public void processTask(Long taskId) {
@@ -188,17 +197,61 @@ public class FulfillmentTaskProcessor {
         task.setLastError(safeMessage(ex));
         if (order.getStatus() == com.store.order.entity.OrderStatus.CANCELLED) {
             task.setStatus(FulfillmentTaskStatus.CANCELLED);
-        } else if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING) {
+        } else if (order.getStatus() != com.store.order.entity.OrderStatus.PROCESSING
+                && order.getStatus() != com.store.order.entity.OrderStatus.SHIPPED) {
             task.setStatus(FulfillmentTaskStatus.RECONCILIATION_REQUIRED);
             task.setLastError("Supplier submission failed after local order status changed to "
                     + order.getStatus() + ": " + safeMessage(ex));
         } else if (task.getAttempts() >= MAX_ATTEMPTS) {
             task.setStatus(FulfillmentTaskStatus.FAILED);
+            reconcileTerminalSupplierFailure(order, task);
+            task.setLastError("Supplier fulfillment definitively failed after " + MAX_ATTEMPTS
+                    + " attempts; cancellation/refund reconciliation was applied. " + safeMessage(ex));
         } else {
             task.setStatus(FulfillmentTaskStatus.PENDING);
             task.setNextAttemptAt(LocalDateTime.now().plusMinutes(Math.min(30, task.getAttempts() * 2L)));
         }
         taskRepository.save(task);
+    }
+
+    /**
+     * Handles a definite, terminal supplier failure only. Unknown external outcomes
+     * continue through RECONCILIATION_REQUIRED and must never trigger an automatic refund.
+     */
+    private void reconcileTerminalSupplierFailure(Order order, FulfillmentTask task) {
+        Shipment shipment = task.getShipment();
+        shipment.setStatus(ShipmentStatus.CANCELLED);
+        shipmentRepository.save(shipment);
+
+        boolean allShipmentsCancelled = shipmentRepository
+                .findByOrderIdOrderByIdAsc(order.getId()).stream()
+                .allMatch(candidate -> candidate.getStatus() == ShipmentStatus.CANCELLED);
+
+        if (!allShipmentsCancelled) {
+            order.getItems().stream()
+                    .filter(item -> item.getSupplier() != null
+                            && item.getSupplier().getId().equals(shipment.getSupplier().getId()))
+                    .forEach(item -> inventoryService.releaseReservedStock(item.getId()));
+            refundService.prepareCancelledShipmentRefund(shipment.getId());
+            return;
+        }
+
+        // Full order cancellation: release every remaining reservation, stop pending work,
+        // release the coupon, and refund only the remaining balance after earlier partial refunds.
+        order.getItems().forEach(item -> inventoryService.releaseReservedStock(item.getId()));
+        taskRepository.cancelPendingForOrder(order.getId());
+        couponService.releaseRedemption(order.getCouponCode());
+        order.setStatus(com.store.order.entity.OrderStatus.CANCELLED);
+        orderRepository.save(order);
+
+        Payment payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
+        if (payment != null
+                && payment.getMethod() != PaymentMethod.CASH_ON_DELIVERY
+                && (payment.getStatus() == PaymentStatus.COMPLETED
+                || payment.getStatus() == PaymentStatus.REFUND_PENDING)) {
+            refundService.prepareOrderCancellationRefund(
+                    order.getId(), "All supplier shipments were cancelled after terminal fulfillment failure");
+        }
     }
 
     private void markSupplierOutcomeUnknown(Long taskId, SupplierOutcomeUnknownException ex) {
