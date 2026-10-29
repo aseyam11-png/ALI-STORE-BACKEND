@@ -109,7 +109,7 @@ class OrderIdempotencyTest {
                 .name("Idempotency Product")
                 .slug("idempotency-product")
                 .price(new BigDecimal("25.00"))
-                .currency("USD")
+                .currency("SAR")
                 .sku("IDEMP-001")
                 .status(ProductStatus.ACTIVE)
                 .category(category)
