@@ -6,6 +6,7 @@ import com.store.coupon.service.CouponService;
 import com.store.fulfillment.service.FulfillmentService;
 import com.store.inventory.service.InventoryService;
 import com.store.order.entity.Order;
+import com.store.order.entity.OrderItem;
 import com.store.order.entity.OrderStatus;
 import com.store.order.repository.OrderRepository;
 import com.store.payment.entity.Payment;
@@ -16,6 +17,7 @@ import com.store.payment.service.RefundService;
 import com.store.shipping.entity.Shipment;
 import com.store.shipping.entity.ShipmentStatus;
 import com.store.shipping.repository.ShipmentRepository;
+import com.store.supplier.entity.Supplier;
 import com.store.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +31,7 @@ import static org.mockito.Mockito.*;
 class OrderServiceSupplierCancellationTest {
 
     @Test
-    void partialShipmentCancellationRefundsOnlyThatShipment() {
+    void partialShipmentCancellationReleasesOnlyItsReservationAndRefundsThatShipment() {
         OrderRepository orderRepository = mock(OrderRepository.class);
         CartRepository cartRepository = mock(CartRepository.class);
         CartItemRepository cartItemRepository = mock(CartItemRepository.class);
@@ -45,8 +47,23 @@ class OrderServiceSupplierCancellationTest {
         when(order.getStatus()).thenReturn(OrderStatus.PROCESSING);
         when(orderRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(order));
 
+        Supplier cancelledSupplier = mock(Supplier.class);
+        when(cancelledSupplier.getId()).thenReturn(20L);
+        Supplier remainingSupplier = mock(Supplier.class);
+        when(remainingSupplier.getId()).thenReturn(21L);
+
         Shipment cancelled = shipment(100L, ShipmentStatus.CANCELLED);
+        when(cancelled.getSupplier()).thenReturn(cancelledSupplier);
         Shipment inProgress = shipment(101L, ShipmentStatus.IN_TRANSIT);
+
+        OrderItem cancelledLine = mock(OrderItem.class);
+        when(cancelledLine.getId()).thenReturn(501L);
+        when(cancelledLine.getSupplier()).thenReturn(cancelledSupplier);
+        OrderItem remainingLine = mock(OrderItem.class);
+        when(remainingLine.getId()).thenReturn(502L);
+        when(remainingLine.getSupplier()).thenReturn(remainingSupplier);
+        when(order.getItems()).thenReturn(List.of(cancelledLine, remainingLine));
+
         when(shipmentRepository.findByOrderIdOrderByIdAsc(10L))
                 .thenReturn(List.of(cancelled, inProgress));
 
@@ -57,6 +74,8 @@ class OrderServiceSupplierCancellationTest {
 
         service.handleSupplierShipmentCancellation(10L, 100L);
 
+        verify(inventoryService).releaseReservedStock(501L);
+        verify(inventoryService, never()).releaseReservedStock(502L);
         verify(refundService).prepareCancelledShipmentRefund(100L);
         verify(refundService, never()).prepareOrderCancellationRefund(any(), any());
         verify(couponService, never()).releaseRedemption(any());
