@@ -1,6 +1,6 @@
 # Vercel Container Runtime image for the Spring Boot API.
 # The app defaults to the fail-closed production profile. Configure the required
-# database/JWT/redirect settings and a real PaymentProvider before production use.
+# database/JWT/redirect settings; online payments remain declined until a real gateway exists.
 FROM maven:3.9.9-eclipse-temurin-17 AS build
 
 WORKDIR /workspace
