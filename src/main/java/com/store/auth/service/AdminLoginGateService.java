@@ -5,7 +5,9 @@ import com.store.common.exception.ServiceUnavailableException;
 import com.store.user.entity.User;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -33,9 +35,21 @@ public class AdminLoginGateService {
     @Value("${app.security.admin-gate.turnstile-hostname:}")
     private String expectedHostname;
 
+    @Autowired
+    private Environment environment;
+
     @PostConstruct
     void validateProductionConfiguration() {
-        if (enabled
+        boolean productionProfile = environment != null
+                && java.util.Arrays.stream(environment.getActiveProfiles())
+                        .anyMatch(profile -> "prod".equalsIgnoreCase(profile));
+
+        if (productionProfile && !enabled) {
+            throw new IllegalStateException(
+                    "The administrator security gate must remain enabled in the prod profile");
+        }
+
+        if ((enabled || productionProfile)
                 && (isBlank(passwordHash)
                 || !passwordHash.matches("\\$2[aby]\\$12\\$[./A-Za-z0-9]{53}")
                 || isBlank(turnstileSecret)
