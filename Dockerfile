@@ -5,7 +5,9 @@ FROM maven:3.9.9-eclipse-temurin-17 AS build
 
 WORKDIR /workspace
 COPY . .
-RUN bash ./mvnw -B -DskipTests package
+# Run the full default Maven test suite during the image build; only the explicitly named
+# PostgresConcurrencyIT is reserved for the dedicated Docker-backed CI job.
+RUN bash ./mvnw -B package
 
 FROM eclipse-temurin:17-jre-alpine
 
