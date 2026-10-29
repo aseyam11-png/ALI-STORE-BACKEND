@@ -15,7 +15,7 @@ server:
   # only trusts X-Forwarded-Proto/-For when the IMMEDIATE TCP peer matches its
   # internal-proxies pattern. Unset here, that pattern falls back to Tomcat's own
   # built-in default (RFC1918 private ranges + loopback only) - safe for the common
-  # case of a load balancer/ingress on a private subnet in front of this app. If this
+  # case of a load balancer/ingress on a private subnet in front of the app. If this
   # is ever deployed with a proxy NOT on a private address, override
   # server.tomcat.remoteip.internal-proxies explicitly to match the real deployment,
   # rather than relying on this default.
@@ -41,6 +41,6 @@ app:
     cookie-secure: ${AUTH_COOKIE_SECURE}
     cookie-same-site: ${AUTH_COOKIE_SAME_SITE}
 
-# A real PaymentProvider bean MUST be supplied for this profile - MockPaymentProvider
-# is annotated @Profile("!prod") and will not be available here, so the application
-# fails to start rather than silently accepting fake payments (see payment.provider package).
+# Until a real online payment gateway is integrated, UnavailablePaymentProvider
+# explicitly declines online charges. It never reports a successful payment.
+# Cash on delivery remains a separate flow; do not enable the development mock in prod.
