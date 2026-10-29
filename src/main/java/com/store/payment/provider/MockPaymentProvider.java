@@ -8,10 +8,9 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Development/test-only stand-in for a real payment gateway. Deliberately
- * excluded from the "prod" profile: a production deployment with no real
- * {@link PaymentProvider} bean configured will fail to start rather than
- * silently accept fake payments.
+ * Development/test-only stand-in for a real payment gateway.
+ * Deliberately excluded from the "prod" profile so a real charge is never
+ * simulated as successful in production.
  *
  * Does NOT implement real idempotency-key deduplication (no persistent state,
  * every call "succeeds") - a real gateway integration must actually honor
