@@ -117,7 +117,7 @@ class CartOrderInventoryTest {
     private Product productWithStock(String sku, int quantity) {
         Product product = productRepository.save(Product.builder()
                 .name("Product " + sku).slug("product-" + sku.toLowerCase()).price(new BigDecimal("25.00"))
-                .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category)
+                .currency("SAR").sku(sku).status(ProductStatus.ACTIVE).category(category)
                 .supplier(supplier).supplierSku("SUP-" + sku).supplierCost(new BigDecimal("10.00")).build());
         inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0).lowStockThreshold(5)
                 .source(InventorySource.MANUAL).lastSyncedAt(java.time.LocalDateTime.now()).build());
