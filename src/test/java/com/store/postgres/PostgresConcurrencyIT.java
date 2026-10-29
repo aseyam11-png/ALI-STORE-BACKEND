@@ -65,12 +65,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * during ordinary `mvn test` - it only runs when explicitly requested
  * (`mvn test -Dtest=PostgresConcurrencyIT`), because it requires a working Docker daemon.
  *
- * STATUS IN THIS REPOSITORY'S DEVELOPMENT ENVIRONMENT: attempted and BLOCKED. Docker
- * Desktop is installed but fails to start ("Docker Desktop is unable to start") - most
- * likely because this sandboxed session has no nested virtualization available. This class
- * has not been executed here; it is provided ready-to-run for any environment with a
- * working Docker daemon (local dev machine, CI runner). Do not treat its presence as proof
- * these races were verified against real PostgreSQL - see the stabilization report.
+ * This test is intentionally run separately from the default Surefire suite because it
+ * requires a working Docker daemon. Run it with:
+ *   ./mvnw -B -Dtest=PostgresConcurrencyIT test
+ * The CI workflow includes a dedicated real-PostgreSQL job. Test results must be judged from
+ * the workflow run for the exact commit; the existence of this class alone is not proof that
+ * the database race checks passed.
  */
 @Testcontainers
 @ActiveProfiles("test")
