@@ -203,6 +203,31 @@ class CartOrderInventoryTest {
     }
 
     @Test
+    void orderCreation_rejectsSupplierThatIsNotReadyBeforeReservingStock() throws Exception {
+        User owner = createUser("supplier-not-ready@example.com");
+        supplier.setFulfillmentEnabled(false);
+        supplierRepository.save(supplier);
+        Product product = productWithStock("SUPPLIER-NOT-READY-1", 5);
+
+        mockMvc.perform(post("/api/v1/cart/items")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("productId", product.getId(), "quantity", 2))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/orders")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Readiness Test Address"))))
+                .andExpect(status().isBadRequest());
+
+        Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        Assertions.assertEquals(0, inventory.getReservedQuantity(),
+                "An order with an unready supplier must be rejected before stock is reserved");
+    }
+
+    @Test
     void reserveStock_rejectsProductThatDoesNotMatchOwningOrderLine() throws Exception {
         User owner = createUser("mismatched-reservation-owner@example.com");
         Product orderProduct = productWithStock("ORDER-LINE-OWNER-1", 5);
