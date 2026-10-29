@@ -39,17 +39,38 @@ jobs:
           cache: maven
 
       - name: Run Maven test suite
-        run: bash ./mvnw -B test
+        shell: bash
+        run: |
+          set +e
+          bash ./mvnw -B test > maven-test-output.log 2>&1
+          test_status=$?
+          {
+            echo "### Maven test diagnostic summary"
+            echo '```text'
+            if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-test-output.log | tail -n 120; then
+              :
+            else
+              tail -n 80 maven-test-output.log
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-test-output.log | tail -n 120; then
+            :
+          else
+            tail -n 80 maven-test-output.log
+          fi
+          exit "$test_status"
 
-      - name: Upload Maven unit/integration reports for failed-run diagnosis
+      - name: Upload Maven unit/integration diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-maven-unit-reports-${{ github.run_id }}
+          name: backend-maven-unit-diagnostics-${{ github.run_id }}
           path: |
+            maven-test-output.log
             target/surefire-reports/
             target/failsafe-reports/
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 3
 
   postgres-concurrency:
@@ -77,15 +98,36 @@ jobs:
           cache: maven
 
       - name: Run real PostgreSQL concurrency tests
-        run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test
+        shell: bash
+        run: |
+          set +e
+          bash ./mvnw -B -Dtest=PostgresConcurrencyIT test > maven-postgres-output.log 2>&1
+          test_status=$?
+          {
+            echo "### PostgreSQL concurrency diagnostic summary"
+            echo '```text'
+            if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-postgres-output.log | tail -n 120; then
+              :
+            else
+              tail -n 80 maven-postgres-output.log
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-postgres-output.log | tail -n 120; then
+            :
+          else
+            tail -n 80 maven-postgres-output.log
+          fi
+          exit "$test_status"
 
-      - name: Upload PostgreSQL concurrency reports for failed-run diagnosis
+      - name: Upload PostgreSQL concurrency diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-postgres-test-reports-${{ github.run_id }}
+          name: backend-postgres-diagnostics-${{ github.run_id }}
           path: |
+            maven-postgres-output.log
             target/surefire-reports/
             target/failsafe-reports/
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 3
