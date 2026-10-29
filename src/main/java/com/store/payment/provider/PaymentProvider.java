@@ -6,12 +6,11 @@ import java.math.BigDecimal;
 
 /**
  * Abstraction over an actual payment gateway. No real gateway is integrated
- * in this phase (explicitly deferred) - this interface exists so that
- * charging money is never hardcoded to "always succeeds" again. Production
- * deployments must supply a real implementation as a Spring bean; if none is
- * configured, the application fails to start rather than silently faking
- * successful payments (see {@link MockPaymentProvider}, which is only active
- * outside the "prod" profile).
+ * in this phase, so online charges must never be reported as successful until
+ * a real provider is configured. In non-production environments,
+ * {@link MockPaymentProvider} is used for explicit development/test simulation.
+ * In production, {@link UnavailablePaymentProvider} allows unrelated APIs to
+ * start while safely declining online payment attempts.
  */
 public interface PaymentProvider {
 
