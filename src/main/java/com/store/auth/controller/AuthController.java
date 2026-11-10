@@ -86,6 +86,14 @@ public class AuthController {
                 .body(ApiResponse.success(response, message));
     }
 
+    @PostMapping("/admin/login")
+    public ResponseEntity<ApiResponse<AuthResponse>> adminLogin(
+            @Valid @RequestBody LoginRequest request) {
+        AuthResponse response = authService.adminLogin(request);
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                response, "Administrator verification code sent to the registered email"));
+    }
+
     @PostMapping("/email/verify")
     public ResponseEntity<ApiResponse<AuthResponse>> verifyEmail(
             @Valid @RequestBody EmailOtpVerificationRequest request,
@@ -98,6 +106,17 @@ public class AuthController {
                 response, "Email verification completed successfully"));
     }
 
+    @PostMapping("/admin/email/verify")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyAdminLoginCode(
+            @Valid @RequestBody EmailOtpVerificationRequest request,
+            HttpServletResponse servletResponse) {
+        AuthResponse response = authService.verifyAdminLoginCode(
+                request.getChallengeId(), request.getCode());
+        writeSessionCookieIfAuthenticated(servletResponse, response);
+        return ResponseEntity.ok(ApiResponse.success(
+                response, "Administrator sign-in completed successfully"));
+    }
+
     @PostMapping("/email/resend")
     public ResponseEntity<ApiResponse<EmailOtpChallengeResponse>> resendEmailCode(
             @Valid @RequestBody EmailOtpResendRequest request) {
@@ -106,6 +125,15 @@ public class AuthController {
 
         return ResponseEntity.ok(ApiResponse.success(
                 response, "A new verification code was sent to your email"));
+    }
+
+    @PostMapping("/admin/email/resend")
+    public ResponseEntity<ApiResponse<EmailOtpChallengeResponse>> resendAdminLoginCode(
+            @Valid @RequestBody EmailOtpResendRequest request) {
+        EmailOtpChallengeResponse response =
+                authService.resendAdminLoginCode(request.getChallengeId());
+        return ResponseEntity.ok(ApiResponse.success(
+                response, "A new administrator sign-in code was sent to your email"));
     }
 
     @GetMapping("/csrf")
