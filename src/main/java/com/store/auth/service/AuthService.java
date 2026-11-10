@@ -227,6 +227,12 @@ public class AuthService {
         // context. Refresh under a row lock so concurrent failed logins cannot set a lock
         // that this transaction misses before it consumes the OTP and mints a JWT.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        // Re-check the authority after the locked refresh. A role change racing with
+        // OTP verification must not turn a customer challenge into an admin session.
+        if (isAdministrator(user)) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired verification challenge");
+        }
         if (challenge.getAuthVersion() != user.getAuthVersion()) {
             // The account changed after EmailOtpService's first version check. Permanently
             // invalidate this challenge and commit that invalidation rather than repeatedly
