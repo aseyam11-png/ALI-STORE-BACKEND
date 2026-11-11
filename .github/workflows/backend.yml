@@ -21,6 +21,9 @@ jobs:
     timeout-minutes: 25
     env:
       JWT_SECRET: dGVzdC1wcm9kdWN0aW9uLXNpZ25pbmcta2V5LWZvci1jaS1vbmx5LWRvLW5vdC11c2UtaW4tcHJvZHVjdGlvbg==
+      # Test-only keys for any tests that activate the production profile.
+      AUTH_COOKIE_ENCRYPTION_KEY: Y2ktb25seS1jb29raWUtZW5jcnlwdGlvbi1rZXktMzItYnl0ZXM=
+      AUTH_OTP_HASH_SECRET: Y2ktb25seS1vdHAtZGF0YS1oYXNoLWtleS1mb3ItdGVzdHMtMzItYnl0ZXM=
       JWT_EXPIRATION: 3600000
       CORS_ALLOWED_ORIGINS: http://localhost:3000
       AUTH_COOKIE_SECURE: false
@@ -36,7 +39,39 @@ jobs:
           cache: maven
 
       - name: Run Maven test suite
-        run: bash ./mvnw -B test
+        shell: bash
+        run: |
+          set +e
+          bash ./mvnw -B test > maven-test-output.log 2>&1
+          test_status=$?
+          {
+            echo "### Maven test diagnostic summary"
+            echo '```text'
+            if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-test-output.log | tail -n 120; then
+              :
+            else
+              tail -n 80 maven-test-output.log
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-test-output.log | tail -n 120; then
+            :
+          else
+            tail -n 80 maven-test-output.log
+          fi
+          exit "$test_status"
+
+      - name: Upload Maven unit/integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-maven-unit-diagnostics-${{ github.run_id }}
+          path: |
+            maven-test-output.log
+            target/surefire-reports/
+            target/failsafe-reports/
+          if-no-files-found: warn
+          retention-days: 3
 
   postgres-concurrency:
     name: Real PostgreSQL concurrency suite
@@ -45,6 +80,9 @@ jobs:
     timeout-minutes: 30
     env:
       JWT_SECRET: dGVzdC1wcm9kdWN0aW9uLXNpZ25pbmcta2V5LWZvci1jaS1vbmx5LWRvLW5vdC11c2UtaW4tcHJvZHVjdGlvbg==
+      # Test-only keys for any tests that activate the production profile.
+      AUTH_COOKIE_ENCRYPTION_KEY: Y2ktb25seS1jb29raWUtZW5jcnlwdGlvbi1rZXktMzItYnl0ZXM=
+      AUTH_OTP_HASH_SECRET: Y2ktb25seS1vdHAtZGF0YS1oYXNoLWtleS1mb3ItdGVzdHMtMzItYnl0ZXM=
       JWT_EXPIRATION: 3600000
       CORS_ALLOWED_ORIGINS: http://localhost:3000
       AUTH_COOKIE_SECURE: false
@@ -60,4 +98,36 @@ jobs:
           cache: maven
 
       - name: Run real PostgreSQL concurrency tests
-        run: bash ./mvnw -B -Dtest=PostgresConcurrencyIT test
+        shell: bash
+        run: |
+          set +e
+          bash ./mvnw -B -Dtest=PostgresConcurrencyIT test > maven-postgres-output.log 2>&1
+          test_status=$?
+          {
+            echo "### PostgreSQL concurrency diagnostic summary"
+            echo '```text'
+            if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-postgres-output.log | tail -n 120; then
+              :
+            else
+              tail -n 80 maven-postgres-output.log
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -E '\[ERROR\]|BUILD FAILURE|Failures:|Errors:|There are test failures|COMPILATION ERROR|Failed to execute' maven-postgres-output.log | tail -n 120; then
+            :
+          else
+            tail -n 80 maven-postgres-output.log
+          fi
+          exit "$test_status"
+
+      - name: Upload PostgreSQL concurrency diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-postgres-diagnostics-${{ github.run_id }}
+          path: |
+            maven-postgres-output.log
+            target/surefire-reports/
+            target/failsafe-reports/
+          if-no-files-found: warn
+          retention-days: 3

@@ -12,8 +12,7 @@ class ProductionProfileConfigurationTest {
 
     @Test
     void applicationYamlDoesNotForceDevelopmentProfile() throws Exception {
-        String yaml = Files.readString(
-                Path.of("src/main/resources/application.yml"));
+        String yaml = Files.readString(Path.of("src/main/resources/application.yml")).replace("\r\n", "\n");
 
         assertTrue(yaml.contains("profiles:\n    default: dev"));
         assertFalse(yaml.contains("profiles:\n    active: dev"));
