@@ -55,7 +55,7 @@ class ProductionProfileConfigurationTest {
         String sql = Files.readString(migration);
         assertTrue(sql.contains("admin_gate_verified"));
         assertTrue(Files.exists(Path.of(
-                "src/main/resources/db/migration/V21__store_currency_sar_default.sql")));
+                "src/main/resources/db/migration/V21__default_catalog_currency_to_sar.sql")));
         assertFalse(Files.exists(Path.of(
                 "src/main/resources/db/migration/V17__admin_gate_verified_otp_and_security.sql")));
     }
