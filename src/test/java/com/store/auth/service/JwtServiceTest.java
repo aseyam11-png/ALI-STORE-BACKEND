@@ -50,6 +50,22 @@ class JwtServiceTest {
     }
 
     @Test
+    void recognizesOnlySignedTokensWithAdminGateProof() {
+        String secret = Base64.getEncoder().encodeToString("g".repeat(32).getBytes());
+        JwtService service = newService(secret);
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        AccountUserDetails admin = new AccountUserDetails(
+                "admin@example.com", "hash", true, true, authorities, 0L);
+
+        String ordinaryToken = service.generateToken(admin);
+        String verifiedToken = service.generateToken(Map.of("admin_gate_verified", true), admin);
+
+        assertFalse(service.isAdminGateVerified(ordinaryToken));
+        assertTrue(service.isAdminGateVerified(verifiedToken));
+        assertFalse(service.isAdminGateVerified("not-a-valid-token"));
+    }
+
+    @Test
     void rejectsJwtImmediatelyWhenAccountIsDisabled() {
         String secret = Base64.getEncoder().encodeToString("a".repeat(32).getBytes());
         JwtService service = newService(secret);
