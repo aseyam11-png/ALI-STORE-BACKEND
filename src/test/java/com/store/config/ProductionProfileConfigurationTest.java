@@ -20,6 +20,7 @@ class ProductionProfileConfigurationTest {
         assertTrue(yaml.contains("ADMIN_GATE_PASSWORD_HASH"));
         assertTrue(yaml.contains("TURNSTILE_SECRET_KEY"));
         assertTrue(yaml.contains("TURNSTILE_HOSTNAME"));
+        assertTrue(yaml.contains("login-email-otp-enabled: ${AUTH_LOGIN_EMAIL_OTP_ENABLED:true}"));
     }
 
     @Test
