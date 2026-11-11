@@ -134,6 +134,10 @@ public class AuthService {
             throw new UnauthorizedException("Invalid email or password");
         }
 
+        if (isAdministrator(user)) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
             if (!emailOtpService.isVerificationEnabled()) {
                 prepareDirectSession(user, authenticatedVersion.getAuthVersion());
@@ -159,6 +163,46 @@ public class AuthService {
         return authenticatedResponse(user);
     }
 
+    /**
+     * Administrator sign-in is deliberately separate from customer sign-in.
+     * No authenticated response or session cookie is returned before the dedicated
+     * ADMIN_LOGIN challenge is consumed successfully.
+     */
+    @Transactional
+    public AuthResponse adminLogin(com.store.auth.dto.LoginRequest request) {
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (loginAttemptService.isLocked(email)) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
+        Authentication primaryAuthentication;
+        try {
+            primaryAuthentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(email, request.getPassword()));
+        } catch (AuthenticationException ex) {
+            loginAttemptService.recordFailure(email);
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
+        User user = userRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+        entityManager.refresh(user);
+        Object principal = primaryAuthentication.getPrincipal();
+        if (!(principal instanceof AccountVersionAware versionAware)
+                || versionAware.getAuthVersion() != user.getAuthVersion()
+                || !Boolean.TRUE.equals(user.getIsEnabled())
+                || (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now()))
+                || !isAdministrator(user)
+                || !Boolean.TRUE.equals(user.getEmailVerified())) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
+        EmailOtpChallengeResponse challenge = emailOtpService.issueChallenge(
+                user, EmailOtpPurpose.ADMIN_LOGIN, versionAware.getAuthVersion());
+        return pendingVerificationResponse(user, challenge);
+    }
+
     /*
      * Keep the OTP consumption and email-verified state change atomic, but commit
      * expected BusinessException outcomes so wrong-code counters are never rolled back.
@@ -173,10 +217,22 @@ public class AuthService {
                 EmailOtpPurpose.LOGIN);
         User user = challenge.getUser();
 
+        // A generic customer OTP can never authenticate an administrator.
+        if (isAdministrator(user)) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired verification challenge");
+        }
+
         // The challenge query may already have loaded this User into the persistence
         // context. Refresh under a row lock so concurrent failed logins cannot set a lock
         // that this transaction misses before it consumes the OTP and mints a JWT.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        // Re-check the authority after the locked refresh. A role change racing with
+        // OTP verification must not turn a customer challenge into an admin session.
+        if (isAdministrator(user)) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired verification challenge");
+        }
         if (challenge.getAuthVersion() != user.getAuthVersion()) {
             // The account changed after EmailOtpService's first version check. Permanently
             // invalidate this challenge and commit that invalidation rather than repeatedly
@@ -205,9 +261,36 @@ public class AuthService {
         return authenticatedResponse(user);
     }
 
+    @Transactional(noRollbackFor = BusinessException.class)
+    public AuthResponse verifyAdminLoginCode(String challengeId, String code) {
+        UUID parsedChallengeId = parseChallengeId(challengeId);
+        EmailOtpChallenge challenge = emailOtpService.verifyChallenge(
+                parsedChallengeId, code, EmailOtpPurpose.ADMIN_LOGIN);
+        User user = challenge.getUser();
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+
+        if (challenge.getAuthVersion() != user.getAuthVersion()
+                || !Boolean.TRUE.equals(user.getIsEnabled())
+                || !Boolean.TRUE.equals(user.getEmailVerified())
+                || !isAdministrator(user)
+                || (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now()))) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired administrator verification challenge");
+        }
+
+        clearLoginAttemptState(user);
+        return authenticatedResponse(user);
+    }
+
     public EmailOtpChallengeResponse resendEmailCode(String challengeId) {
         UUID parsedChallengeId = parseChallengeId(challengeId);
         return emailOtpService.resend(parsedChallengeId);
+    }
+
+    public EmailOtpChallengeResponse resendAdminLoginCode(String challengeId) {
+        UUID parsedChallengeId = parseChallengeId(challengeId);
+        return emailOtpService.resendAdminLogin(parsedChallengeId);
     }
 
     /**
@@ -350,6 +433,11 @@ public class AuthService {
                 .expiresInSeconds(challenge.getExpiresInSeconds())
                 .purpose(challenge.getPurpose())
                 .build();
+    }
+
+    private boolean isAdministrator(User user) {
+        return user != null && user.getRole() != null
+                && "ROLE_ADMIN".equalsIgnoreCase(user.getRole().getName());
     }
 
     private AuthResponse authenticatedResponse(User user) {

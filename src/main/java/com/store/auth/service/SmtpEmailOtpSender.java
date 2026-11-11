@@ -3,7 +3,6 @@ package com.store.auth.service;
 import com.store.auth.entity.EmailOtpPurpose;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.core.env.Environment;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -19,7 +18,6 @@ public class SmtpEmailOtpSender implements EmailOtpSender {
     private final JavaMailSender mailSender;
     private final Environment environment;
 
-    @Async("authEmailExecutor")
     @Override
     public void send(String recipient, String code, EmailOtpPurpose purpose, Duration validFor) {
         String from = environment.getProperty("app.mail.from", "");
@@ -30,12 +28,14 @@ public class SmtpEmailOtpSender implements EmailOtpSender {
 
         String subject = switch (purpose) {
             case LOGIN -> "ALI STORE - رمز تسجيل الدخول";
+            case ADMIN_LOGIN -> "ALI STORE - رمز دخول الإدارة";
             case PASSWORD_RESET -> "ALI STORE - إعادة تعيين كلمة المرور";
             case EMAIL_VERIFICATION -> "ALI STORE - تأكيد البريد الإلكتروني";
         };
 
         String action = switch (purpose) {
             case LOGIN -> "إكمال تسجيل الدخول";
+            case ADMIN_LOGIN -> "إكمال تسجيل الدخول إلى لوحة الإدارة";
             case PASSWORD_RESET -> "إعادة تعيين كلمة المرور";
             case EMAIL_VERIFICATION -> "تأكيد البريد الإلكتروني";
         };
