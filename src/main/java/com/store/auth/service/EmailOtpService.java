@@ -314,6 +314,20 @@ public class EmailOtpService {
 
     @Transactional
     public EmailOtpChallengeResponse resend(UUID challengeId) {
+        return resendInternal(
+                challengeId,
+                EmailOtpPurpose.EMAIL_VERIFICATION,
+                EmailOtpPurpose.LOGIN,
+                EmailOtpPurpose.PASSWORD_RESET);
+    }
+
+    @Transactional
+    public EmailOtpChallengeResponse resendAdminLogin(UUID challengeId) {
+        return resendInternal(challengeId, EmailOtpPurpose.ADMIN_LOGIN);
+    }
+
+    private EmailOtpChallengeResponse resendInternal(
+            UUID challengeId, EmailOtpPurpose... allowedPurposes) {
         // Do not expose whether a submitted handle belongs to a real email/account.
         // Unknown, expired, consumed, revoked, and cooldown-limited challenges share
         // the same public error; a genuinely resendable challenge returns a new handle.
@@ -323,6 +337,12 @@ public class EmailOtpService {
         Instant now = Instant.now();
         User challengeUser = current.getUser();
         entityManager.refresh(challengeUser);
+
+        if (allowedPurposes == null
+                || Arrays.stream(allowedPurposes).noneMatch(purpose -> purpose == current.getPurpose())) {
+            throw new BusinessException("Verification request is invalid or cannot be resent yet");
+        }
+
         if (current.getAuthVersion() != challengeUser.getAuthVersion()) {
             current.setRevokedAt(now);
             challengeRepository.save(current);
@@ -339,7 +359,11 @@ public class EmailOtpService {
         }
 
         try {
-            return issueChallengeInternal(current.getUser(), current.getPurpose(), current.getAuthVersion(), current.isAdminGateVerified());
+            return issueChallengeInternal(
+                    current.getUser(),
+                    current.getPurpose(),
+                    current.getAuthVersion(),
+                    current.isAdminGateVerified());
         } catch (RuntimeException ex) {
             // If the account version changed between the initial check and replacement
             // issuance, persist invalidation of the stale challenge before normalizing
