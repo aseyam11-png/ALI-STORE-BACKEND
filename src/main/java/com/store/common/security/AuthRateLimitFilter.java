@@ -24,9 +24,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private static final Map<String, Integer> LIMITED_PATHS = Map.ofEntries(
             Map.entry("/api/v1/auth/login", 10),
+            Map.entry("/api/v1/auth/admin/login", 10),
             Map.entry("/api/v1/auth/register", 10),
             Map.entry("/api/v1/auth/email/verify", 5),
             Map.entry("/api/v1/auth/email/resend", 3),
+            Map.entry("/api/v1/auth/admin/email/verify", 5),
+            Map.entry("/api/v1/auth/admin/email/resend", 3),
             Map.entry("/api/v1/auth/password/forgot", 3),
             Map.entry("/api/v1/auth/password/reset", 5),
             Map.entry("/api/v1/auth/password/change", 5),
