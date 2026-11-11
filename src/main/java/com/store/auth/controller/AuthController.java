@@ -123,6 +123,60 @@ public class AuthController {
                         "Too many failed login attempts. This IP is temporarily blocked."));
     }
 
+    @PostMapping("/admin/login")
+    public ResponseEntity<ApiResponse<AuthResponse>> adminLogin(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse) {
+        String clientIp = clientIpResolver.resolve(servletRequest);
+        long blockedFor = loginAttemptGuard.blockedForMillis(clientIp);
+        if (blockedFor > 0L) {
+            return loginRateLimited(blockedFor);
+        }
+
+        final AuthResponse response;
+        try {
+            response = authService.adminLogin(request, clientIp);
+        } catch (AuthenticationException | UnauthorizedException ex) {
+            long blockedAfterFailure = loginAttemptGuard.recordFailure(clientIp);
+            if (blockedAfterFailure > 0L) {
+                return loginRateLimited(blockedAfterFailure);
+            }
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "Invalid credentials or administrator security verification failed"));
+        }
+
+        if (!response.isRequiresEmailVerification()) {
+            loginAttemptGuard.recordSuccess(clientIp);
+        }
+        writeSessionCookieIfAuthenticated(servletResponse, response);
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                response, "Administrator verification code sent to the registered email"));
+    }
+
+    @PostMapping("/admin/email/verify")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyAdminLoginCode(
+            @Valid @RequestBody EmailOtpVerificationRequest request,
+            HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse) {
+        AuthResponse response = authService.verifyAdminLoginCode(
+                request.getChallengeId(), request.getCode());
+        loginAttemptGuard.recordSuccess(clientIpResolver.resolve(servletRequest));
+        writeSessionCookieIfAuthenticated(servletResponse, response);
+        return ResponseEntity.ok(ApiResponse.success(
+                response, "Administrator sign-in completed successfully"));
+    }
+
+    @PostMapping("/admin/email/resend")
+    public ResponseEntity<ApiResponse<EmailOtpChallengeResponse>> resendAdminLoginCode(
+            @Valid @RequestBody EmailOtpResendRequest request) {
+        EmailOtpChallengeResponse response =
+                authService.resendAdminLoginCode(request.getChallengeId());
+        return ResponseEntity.ok(ApiResponse.success(
+                response, "A new administrator sign-in code was sent to your email"));
+    }
+
     @PostMapping("/email/verify")
     public ResponseEntity<ApiResponse<AuthResponse>> verifyEmail(
             @Valid @RequestBody EmailOtpVerificationRequest request,
