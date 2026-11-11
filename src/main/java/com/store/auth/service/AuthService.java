@@ -45,6 +45,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailOtpService emailOtpService;
     private final LoginAttemptService loginAttemptService;
+    private final AdminLoginGateService adminLoginGateService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -96,6 +97,11 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(com.store.auth.dto.LoginRequest request) {
+        return login(request, "unknown");
+    }
+
+    @Transactional
+    public AuthResponse login(com.store.auth.dto.LoginRequest request, String clientIp) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
         if (loginAttemptService.isLocked(email)) {
@@ -134,29 +140,81 @@ public class AuthService {
             throw new UnauthorizedException("Invalid email or password");
         }
 
+        // Administrator accounts must use the dedicated endpoint and purpose-bound OTP.
+        if (isAdministrator(user)) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
+        boolean adminGateVerified =
+                adminLoginGateService.verifyIfAdmin(user, request, clientIp);
+
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
             if (!emailOtpService.isVerificationEnabled()) {
                 prepareDirectSession(user, authenticatedVersion.getAuthVersion());
                 user.setEmailVerified(true);
                 userRepository.save(user);
-                return authenticatedResponse(user);
+                return authenticatedResponse(user, adminGateVerified);
             }
 
             // Do not reset failed-password state until the OTP is completed. If the account
             // is locked concurrently after this snapshot, OTP verification will recheck it.
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.EMAIL_VERIFICATION, authenticatedVersion.getAuthVersion());
+                    emailOtpService.issueChallenge(
+                            user, EmailOtpPurpose.EMAIL_VERIFICATION,
+                            authenticatedVersion.getAuthVersion(), adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
         if (emailOtpService.isLoginOtpEnabled()) {
             EmailOtpChallengeResponse challenge =
-                    emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, authenticatedVersion.getAuthVersion());
+                    emailOtpService.issueChallenge(
+                            user, EmailOtpPurpose.LOGIN,
+                            authenticatedVersion.getAuthVersion(), adminGateVerified);
             return pendingVerificationResponse(user, challenge);
         }
 
         prepareDirectSession(user, authenticatedVersion.getAuthVersion());
-        return authenticatedResponse(user);
+        return authenticatedResponse(user, adminGateVerified);
+    }
+
+    /**
+     * Administrator sign-in requires the primary password, the server-verified
+     * secondary gate (when enabled), and a dedicated ADMIN_LOGIN email challenge.
+     */
+    @Transactional
+    public AuthResponse adminLogin(com.store.auth.dto.LoginRequest request, String clientIp) {
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (loginAttemptService.isLocked(email)) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
+        Authentication primaryAuthentication;
+        try {
+            primaryAuthentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(email, request.getPassword()));
+        } catch (AuthenticationException ex) {
+            loginAttemptService.recordFailure(email);
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
+        User user = userRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+        entityManager.refresh(user);
+        Object principal = primaryAuthentication.getPrincipal();
+        if (!(principal instanceof AccountVersionAware versionAware)
+                || versionAware.getAuthVersion() != user.getAuthVersion()
+                || !Boolean.TRUE.equals(user.getIsEnabled())
+                || (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now()))
+                || !isAdministrator(user)
+                || !Boolean.TRUE.equals(user.getEmailVerified())) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
+        boolean adminGateVerified = adminLoginGateService.verifyIfAdmin(user, request, clientIp);
+        EmailOtpChallengeResponse challenge = emailOtpService.issueChallenge(
+                user, EmailOtpPurpose.ADMIN_LOGIN, versionAware.getAuthVersion(), adminGateVerified);
+        return pendingVerificationResponse(user, challenge);
     }
 
     /*
@@ -173,10 +231,20 @@ public class AuthService {
                 EmailOtpPurpose.LOGIN);
         User user = challenge.getUser();
 
+        // Legacy generic OTP challenges must never authenticate administrator accounts.
+        if (isAdministrator(user)) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired verification challenge");
+        }
+
         // The challenge query may already have loaded this User into the persistence
         // context. Refresh under a row lock so concurrent failed logins cannot set a lock
         // that this transaction misses before it consumes the OTP and mints a JWT.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        if (isAdministrator(user)) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired verification challenge");
+        }
         if (challenge.getAuthVersion() != user.getAuthVersion()) {
             // The account changed after EmailOtpService's first version check. Permanently
             // invalidate this challenge and commit that invalidation rather than repeatedly
@@ -202,12 +270,43 @@ public class AuthService {
         }
 
         clearLoginAttemptState(user);
-        return authenticatedResponse(user);
+        AuthResponse response = authenticatedResponse(user, challenge.isAdminGateVerified());
+        response.setPurpose(challenge.getPurpose());
+        return response;
+    }
+
+    @Transactional(noRollbackFor = BusinessException.class)
+    public AuthResponse verifyAdminLoginCode(String challengeId, String code) {
+        UUID parsedChallengeId = parseChallengeId(challengeId);
+        EmailOtpChallenge challenge = emailOtpService.verifyChallenge(
+                parsedChallengeId, code, EmailOtpPurpose.ADMIN_LOGIN);
+        User user = challenge.getUser();
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+
+        if (challenge.getAuthVersion() != user.getAuthVersion()
+                || !Boolean.TRUE.equals(user.getIsEnabled())
+                || !Boolean.TRUE.equals(user.getEmailVerified())
+                || !isAdministrator(user)
+                || (user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now()))) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired administrator verification challenge");
+        }
+
+        clearLoginAttemptState(user);
+        AuthResponse response = authenticatedResponse(user, challenge.isAdminGateVerified());
+        response.setPurpose(challenge.getPurpose());
+        return response;
     }
 
     public EmailOtpChallengeResponse resendEmailCode(String challengeId) {
         UUID parsedChallengeId = parseChallengeId(challengeId);
         return emailOtpService.resend(parsedChallengeId);
+    }
+
+    public EmailOtpChallengeResponse resendAdminLoginCode(String challengeId) {
+        UUID parsedChallengeId = parseChallengeId(challengeId);
+        return emailOtpService.resendAdminLogin(parsedChallengeId);
     }
 
     /**
@@ -331,6 +430,12 @@ public class AuthService {
         }
     }
 
+    private boolean isAdministrator(User user) {
+        return user != null
+                && user.getRole() != null
+                && "ROLE_ADMIN".equalsIgnoreCase(user.getRole().getName());
+    }
+
     private AuthResponse pendingVerificationResponse(
             User user,
             EmailOtpChallengeResponse challenge) {
@@ -353,6 +458,10 @@ public class AuthService {
     }
 
     private AuthResponse authenticatedResponse(User user) {
+        return authenticatedResponse(user, false);
+    }
+
+    private AuthResponse authenticatedResponse(User user, boolean adminGateVerified) {
         var userDetails = new AccountUserDetails(
                 user.getEmail(),
                 user.getPassword(),
@@ -362,7 +471,12 @@ public class AuthService {
                         new SimpleGrantedAuthority(user.getRole().getName())),
                 user.getAuthVersion());
 
-        String jwtToken = jwtService.generateToken(userDetails);
+        java.util.Map<String, Object> claims =
+                adminGateVerified && user.getRole() != null
+                        && "ROLE_ADMIN".equals(user.getRole().getName())
+                        ? java.util.Map.of("admin_gate_verified", true)
+                        : Collections.emptyMap();
+        String jwtToken = jwtService.generateToken(claims, userDetails);
 
         return AuthResponse.builder()
                 .token(jwtToken)
@@ -372,3 +486,4 @@ public class AuthService {
                 .build();
     }
 }
+
