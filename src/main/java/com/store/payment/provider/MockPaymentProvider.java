@@ -9,9 +9,8 @@ import java.util.UUID;
 
 /**
  * Development/test-only stand-in for a real payment gateway. Deliberately
- * excluded from the "prod" profile: a production deployment with no real
- * {@link PaymentProvider} bean configured will fail to start rather than
- * silently accept fake payments.
+ * excluded from the "prod" profile. Production uses {@link UnavailablePaymentProvider}
+ * until a real gateway is configured; it must never silently accept fake payments.
  *
  * Does NOT implement real idempotency-key deduplication (no persistent state,
  * every call "succeeds") - a real gateway integration must actually honor
@@ -20,7 +19,7 @@ import java.util.UUID;
  * what has actually been verified, so it is intentionally left undone.
  */
 @Component
-@Profile("!prod")
+@Profile({"dev", "test"})
 public class MockPaymentProvider implements PaymentProvider {
 
     @Override

@@ -31,6 +31,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -64,14 +65,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * during ordinary `mvn test` - it only runs when explicitly requested
  * (`mvn test -Dtest=PostgresConcurrencyIT`), because it requires a working Docker daemon.
  *
- * STATUS IN THIS REPOSITORY'S DEVELOPMENT ENVIRONMENT: attempted and BLOCKED. Docker
- * Desktop is installed but fails to start ("Docker Desktop is unable to start") - most
- * likely because this sandboxed session has no nested virtualization available. This class
- * has not been executed here; it is provided ready-to-run for any environment with a
- * working Docker daemon (local dev machine, CI runner). Do not treat its presence as proof
- * these races were verified against real PostgreSQL - see the stabilization report.
+ * This test is intentionally run separately from the default Surefire suite because it
+ * requires a working Docker daemon. Run it with:
+ *   ./mvnw -B -Dtest=PostgresConcurrencyIT test
+ * The CI workflow includes a dedicated real-PostgreSQL job. Test results must be judged from
+ * the workflow run for the exact commit; the existence of this class alone is not proof that
+ * the database race checks passed.
  */
 @Testcontainers
+@ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 class PostgresConcurrencyIT {
@@ -94,6 +96,10 @@ class PostgresConcurrencyIT {
         // application.yml requires JWT_SECRET with no default, and this test activates no
         // profile that would otherwise supply one.
         registry.add("jwt.secret", () -> "dGVzdGNvbnRhaW5lcnMtcG9zdGdyZXMtaXQtc2lnbmluZy1rZXktbm90LWZvci1wcm9kdWN0aW9uLXVzZQ==");
+        // Explicitly enable the checkout readiness precondition only in this test class.
+        // No real supplier requests are made by these database concurrency tests.
+        registry.add("app.fulfillment.enabled", () -> "true");
+        registry.add("app.fulfillment.api-token", () -> "postgres-it-test-token");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -133,7 +139,11 @@ class PostgresConcurrencyIT {
         Category category = categoryRepository.save(Category.builder()
                 .name("Category-" + sku).slug("category-" + sku.toLowerCase()).active(true).build());
         Supplier supplier = supplierRepository.save(Supplier.builder()
-                .externalCode("SUP-" + sku).name("Test Supplier " + sku).build());
+                .externalCode("SUP-" + sku).name("Test Supplier " + sku)
+                .status(com.store.supplier.entity.SupplierStatus.ACTIVE)
+                .fulfillmentEnabled(true)
+                .apiBaseUrl("https://supplier.example")
+                .build());
         Product product = productRepository.save(Product.builder()
                 .name("Product " + sku).slug("product-" + sku.toLowerCase()).price(new BigDecimal("25.00"))
                 .currency("SAR").sku(sku).status(ProductStatus.ACTIVE).category(category)

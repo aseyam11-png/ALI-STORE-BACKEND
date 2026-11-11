@@ -67,6 +67,7 @@ class CartProductLifecycleTest {
                 .status(com.store.supplier.entity.SupplierStatus.ACTIVE)
                 .fulfillmentEnabled(true)
                 .inventorySyncEnabled(true)
+                .apiBaseUrl("https://supplier.example")
                 .build());
     }
 
@@ -88,7 +89,7 @@ class CartProductLifecycleTest {
                 .name("Lifecycle Product")
                 .slug("lifecycle-product-" + status.name().toLowerCase())
                 .price(new BigDecimal("25.00"))
-                .currency("USD")
+                .currency("SAR")
                 .sku("LIFE-" + status.name())
                 .status(status)
                 .category(category)

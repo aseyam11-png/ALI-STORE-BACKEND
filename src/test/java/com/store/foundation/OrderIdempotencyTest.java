@@ -84,7 +84,13 @@ class OrderIdempotencyTest {
                         .status(com.store.supplier.entity.SupplierStatus.ACTIVE)
                         .fulfillmentEnabled(true)
                         .inventorySyncEnabled(true)
+                        .apiBaseUrl("https://supplier.example")
                         .build()));
+        // Existing shared fixtures must not bypass the readiness contract.
+        supplier.setStatus(com.store.supplier.entity.SupplierStatus.ACTIVE);
+        supplier.setFulfillmentEnabled(true);
+        supplier.setApiBaseUrl("https://supplier.example");
+        supplierRepository.save(supplier);
     }
 
     @Test
@@ -103,7 +109,7 @@ class OrderIdempotencyTest {
                 .name("Idempotency Product")
                 .slug("idempotency-product")
                 .price(new BigDecimal("25.00"))
-                .currency("USD")
+                .currency("SAR")
                 .sku("IDEMP-001")
                 .status(ProductStatus.ACTIVE)
                 .category(category)

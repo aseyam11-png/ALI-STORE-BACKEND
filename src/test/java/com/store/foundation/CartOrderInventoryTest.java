@@ -86,7 +86,13 @@ class CartOrderInventoryTest {
                         Category.builder().name("General").slug("general").active(true).build()));
         supplier = supplierRepository.findByExternalCode("TEST-SUPPLIER")
                 .orElseGet(() -> supplierRepository.save(
-                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier").build()));
+                        Supplier.builder().externalCode("TEST-SUPPLIER").name("Test Supplier")
+                                .apiBaseUrl("https://supplier.example").build()));
+        // Other integration tests share the H2 database; normalize an existing fixture too.
+        supplier.setStatus(com.store.supplier.entity.SupplierStatus.ACTIVE);
+        supplier.setFulfillmentEnabled(true);
+        supplier.setApiBaseUrl("https://supplier.example");
+        supplierRepository.save(supplier);
     }
 
     private User createUser(String email) {
@@ -111,7 +117,7 @@ class CartOrderInventoryTest {
     private Product productWithStock(String sku, int quantity) {
         Product product = productRepository.save(Product.builder()
                 .name("Product " + sku).slug("product-" + sku.toLowerCase()).price(new BigDecimal("25.00"))
-                .currency("USD").sku(sku).status(ProductStatus.ACTIVE).category(category)
+                .currency("SAR").sku(sku).status(ProductStatus.ACTIVE).category(category)
                 .supplier(supplier).supplierSku("SUP-" + sku).supplierCost(new BigDecimal("10.00")).build());
         inventoryRepository.save(Inventory.builder().product(product).quantity(quantity).reservedQuantity(0).lowStockThreshold(5)
                 .source(InventorySource.MANUAL).lastSyncedAt(java.time.LocalDateTime.now()).build());
@@ -194,6 +200,31 @@ class CartOrderInventoryTest {
 
         mockMvc.perform(get("/api/v1/orders/" + orderId).header("Authorization", "Bearer " + tokenFor(intruder)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void orderCreation_rejectsSupplierThatIsNotReadyBeforeReservingStock() throws Exception {
+        User owner = createUser("supplier-not-ready@example.com");
+        supplier.setFulfillmentEnabled(false);
+        supplierRepository.save(supplier);
+        Product product = productWithStock("SUPPLIER-NOT-READY-1", 5);
+
+        mockMvc.perform(post("/api/v1/cart/items")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("productId", product.getId(), "quantity", 2))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/orders")
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("shippingAddress", "Readiness Test Address"))))
+                .andExpect(status().isBadRequest());
+
+        Inventory inventory = inventoryRepository.findByProductId(product.getId()).orElseThrow();
+        Assertions.assertEquals(0, inventory.getReservedQuantity(),
+                "An order with an unready supplier must be rejected before stock is reserved");
     }
 
     @Test
