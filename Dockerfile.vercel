@@ -1,0 +1,19 @@
+# Build the Spring Boot application with the repository's Java 17 toolchain.
+FROM maven:3.9.9-eclipse-temurin-17 AS build
+
+WORKDIR /workspace
+COPY . .
+RUN bash ./mvnw -B -DskipTests package
+
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+RUN addgroup -S spring && adduser -S spring -G spring
+COPY --from=build --chown=spring:spring /workspace/target/ecommerce-backend-0.0.1-SNAPSHOT.jar /app/app.jar
+
+USER spring:spring
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1"
+EXPOSE 80
+
+# Keep production as the default profile; Vercel supplies PORT at runtime.
+CMD ["sh", "-c", "exec java -Dserver.port=${PORT:-80} -jar /app/app.jar --spring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod}"]
