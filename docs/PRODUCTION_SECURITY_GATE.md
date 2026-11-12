@@ -7,6 +7,7 @@ Set `SPRING_PROFILES_ACTIVE=prod`. The production profile intentionally refuses 
 Configure these values in the backend hosting provider's secret/environment settings, not in Git:
 
 - `JWT_SECRET`: Base64-encoded random key of at least 32 bytes.
+- `AUTH_OTP_HASH_SECRET`: a separate Base64-encoded random key of at least 32 bytes for HMAC-hashing email OTP codes. Do not reuse `JWT_SECRET` or `AUTH_COOKIE_ENCRYPTION_KEY`; production startup fails when this key is absent or invalid.
 - `AUTH_COOKIE_ENCRYPTION_KEY`: a separate Base64-encoded random key of at least 32 bytes. Do not reuse `JWT_SECRET`.
 - `AUTH_COOKIE_SECURE=true` and `AUTH_COOKIE_SAME_SITE=Strict`.
 - `CORS_ALLOWED_ORIGINS`: exact storefront origin(s), comma-separated; never use `*` with credentials.
