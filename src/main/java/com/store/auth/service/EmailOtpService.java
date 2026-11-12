@@ -135,7 +135,7 @@ public class EmailOtpService {
 
     @Transactional
     public EmailOtpChallengeResponse issueChallenge(User user, EmailOtpPurpose purpose) {
-        return issueChallengeInternal(user, purpose, null);
+        return issueChallengeInternal(user, purpose, null, false);
     }
 
     /**
@@ -146,11 +146,20 @@ public class EmailOtpService {
     @Transactional
     public EmailOtpChallengeResponse issueChallenge(
             User user, EmailOtpPurpose purpose, long expectedAuthVersion) {
-        return issueChallengeInternal(user, purpose, expectedAuthVersion);
+        return issueChallengeInternal(user, purpose, expectedAuthVersion, false);
+    }
+
+    /**
+     * Carries successful administrator-gate proof through email verification/login OTP.
+     */
+    @Transactional
+    public EmailOtpChallengeResponse issueChallenge(
+            User user, EmailOtpPurpose purpose, long expectedAuthVersion, boolean adminGateVerified) {
+        return issueChallengeInternal(user, purpose, expectedAuthVersion, adminGateVerified);
     }
 
     private EmailOtpChallengeResponse issueChallengeInternal(
-            User requestedUser, EmailOtpPurpose purpose, Long expectedAuthVersion) {
+            User requestedUser, EmailOtpPurpose purpose, Long expectedAuthVersion, boolean adminGateVerified) {
         if (requestedUser == null || requestedUser.getId() == null) {
             throw new BusinessException("Invalid authentication challenge request");
         }
@@ -193,6 +202,7 @@ public class EmailOtpService {
                 .codeHash(hash(challengeId, code))
                 .expiresAt(now.plusSeconds(expirationSeconds))
                 .attemptCount(0)
+                .adminGateVerified(adminGateVerified)
                 .build();
 
         challengeRepository.save(challenge);
@@ -304,6 +314,20 @@ public class EmailOtpService {
 
     @Transactional
     public EmailOtpChallengeResponse resend(UUID challengeId) {
+        return resendInternal(
+                challengeId,
+                EmailOtpPurpose.EMAIL_VERIFICATION,
+                EmailOtpPurpose.LOGIN,
+                EmailOtpPurpose.PASSWORD_RESET);
+    }
+
+    @Transactional
+    public EmailOtpChallengeResponse resendAdminLogin(UUID challengeId) {
+        return resendInternal(challengeId, EmailOtpPurpose.ADMIN_LOGIN);
+    }
+
+    private EmailOtpChallengeResponse resendInternal(
+            UUID challengeId, EmailOtpPurpose... allowedPurposes) {
         // Do not expose whether a submitted handle belongs to a real email/account.
         // Unknown, expired, consumed, revoked, and cooldown-limited challenges share
         // the same public error; a genuinely resendable challenge returns a new handle.
@@ -313,6 +337,12 @@ public class EmailOtpService {
         Instant now = Instant.now();
         User challengeUser = current.getUser();
         entityManager.refresh(challengeUser);
+
+        if (allowedPurposes == null
+                || Arrays.stream(allowedPurposes).noneMatch(purpose -> purpose == current.getPurpose())) {
+            throw new BusinessException("Verification request is invalid or cannot be resent yet");
+        }
+
         if (current.getAuthVersion() != challengeUser.getAuthVersion()) {
             current.setRevokedAt(now);
             challengeRepository.save(current);
@@ -329,7 +359,11 @@ public class EmailOtpService {
         }
 
         try {
-            return issueChallengeInternal(current.getUser(), current.getPurpose(), current.getAuthVersion());
+            return issueChallengeInternal(
+                    current.getUser(),
+                    current.getPurpose(),
+                    current.getAuthVersion(),
+                    current.isAdminGateVerified());
         } catch (RuntimeException ex) {
             // If the account version changed between the initial check and replacement
             // issuance, persist invalidation of the stale challenge before normalizing
