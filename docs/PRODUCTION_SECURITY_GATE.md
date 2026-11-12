@@ -8,6 +8,7 @@ Configure these values in the backend hosting provider's secret/environment sett
 
 - `JWT_SECRET`: Base64-encoded random key of at least 32 bytes.
 - `AUTH_OTP_HASH_SECRET`: a separate Base64-encoded random key of at least 32 bytes for HMAC-hashing email OTP codes. Do not reuse `JWT_SECRET` or `AUTH_COOKIE_ENCRYPTION_KEY`; production startup fails when this key is absent or invalid.
+- `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, `MAIL_SMTP_AUTH`, and `MAIL_SMTP_STARTTLS`: configure a real SMTP provider, credentials where required, provider-supported TLS settings, and a verified sender address. Placeholder hosts such as `smtp.invalid` do not support OTP delivery and cause the mail health check to fail.
 - `AUTH_COOKIE_ENCRYPTION_KEY`: a separate Base64-encoded random key of at least 32 bytes. Do not reuse `JWT_SECRET`.
 - `AUTH_COOKIE_SECURE=true` and `AUTH_COOKIE_SAME_SITE=Strict`.
 - `CORS_ALLOWED_ORIGINS`: exact storefront origin(s), comma-separated; never use `*` with credentials.
@@ -15,7 +16,7 @@ Configure these values in the backend hosting provider's secret/environment sett
 - `TURNSTILE_SECRET_KEY`: Cloudflare Turnstile server-side secret.
 - `TURNSTILE_HOSTNAME`: exact hostname allowed by the Turnstile site configuration.
 - `NEXT_PUBLIC_TURNSTILE_SITE_KEY`: the corresponding public site key in the frontend/Vercel environment.
-- The storefront login form must submit `adminGatePassword` and the one-time `captchaToken` when the account is an administrator; normal customer login does not need either field. The corresponding frontend change and an end-to-end browser test are still required before enabling this gate for live administrator users.
+- The storefront login form must submit `adminGatePassword` and the one-time `captchaToken` when the account is an administrator; normal customer login does not need either field. The matching frontend implementation is under review in frontend PR #118. Do not enable this gate for live administrator accounts until the frontend and backend changes are integrated and a complete browser test passes with valid staging Turnstile and SMTP configuration.
 - `APP_TRUSTED_PROXIES`: exact trusted proxy IP literals, comma-separated, only when the deployment has fixed proxy addresses and the application is certain that only those addresses can connect directly.
 
 The application fails to start if the production admin gate is enabled without its password hash, Turnstile secret, and expected hostname. The admin password is checked with BCrypt; CAPTCHA is verified server-to-server with Cloudflare and the expected action/hostname are checked. CAPTCHA verification fails closed when Cloudflare is unavailable.
