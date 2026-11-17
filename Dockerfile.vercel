@@ -1,0 +1,24 @@
+# Multi-stage image for the Spring Boot API on Vercel Container Functions.
+FROM maven:3.9.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+
+COPY pom.xml .
+COPY src ./src
+
+# Build the executable Spring Boot JAR; CI remains responsible for the full test suite.
+RUN mvn -B -DskipTests package
+
+FROM eclipse-temurin:17-jre-jammy AS runtime
+WORKDIR /app
+
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home-dir /app app
+
+COPY --from=build --chown=app:app /workspace/target/ecommerce-backend-0.0.1-SNAPSHOT.jar /app/app.jar
+
+USER app
+EXPOSE 80
+
+# Vercel routes container requests to PORT (default 80). Override Spring's
+# application.yml server.port so the embedded server listens on that port.
+CMD ["sh", "-c", "exec java -Dserver.port=\"${PORT:-80}\" -jar /app/app.jar"]
