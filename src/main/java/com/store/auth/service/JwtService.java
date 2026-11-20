@@ -79,6 +79,16 @@ public class JwtService {
         return builder.signWith(getSignInKey()).compact();
     }
 
+    /** True only when the signed token records successful administrator gate verification. */
+    public boolean isAdminGateVerified(String token) {
+        try {
+            return Boolean.TRUE.equals(extractClaim(
+                    token, claims -> claims.get("admin_gate_verified", Boolean.class)));
+        } catch (JwtException | IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
     public boolean isTokenValid(String token, UserDetails userDetails) {
         if (token == null || token.isBlank() || userDetails == null) {
             return false;

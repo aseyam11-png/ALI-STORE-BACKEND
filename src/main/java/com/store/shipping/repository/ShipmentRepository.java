@@ -6,6 +6,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -22,6 +23,17 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     Optional<Shipment> findByOrderIdAndSupplierId(Long orderId, Long supplierId);
 
     Optional<Shipment> findBySupplierOrderId(String supplierOrderId);
+
+    @Query("""
+            select s
+            from Shipment s
+            join fetch s.supplier supplier
+            where s.supplierOrderId = :supplierOrderId
+              and supplier.externalCode = :supplierCode
+            """)
+    Optional<Shipment> findBySupplierOrderIdAndSupplierCode(
+            @Param("supplierOrderId") String supplierOrderId,
+            @Param("supplierCode") String supplierCode);
 
     Optional<Shipment> findByTrackingNumber(String trackingNumber);
 

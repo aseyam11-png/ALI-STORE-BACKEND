@@ -24,9 +24,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private static final Map<String, Integer> LIMITED_PATHS = Map.ofEntries(
             Map.entry("/api/v1/auth/login", 10),
+            Map.entry("/api/v1/auth/admin/login", 10),
             Map.entry("/api/v1/auth/register", 10),
             Map.entry("/api/v1/auth/email/verify", 5),
             Map.entry("/api/v1/auth/email/resend", 3),
+            Map.entry("/api/v1/auth/admin/email/verify", 5),
+            Map.entry("/api/v1/auth/admin/email/resend", 3),
             Map.entry("/api/v1/auth/password/forgot", 3),
             Map.entry("/api/v1/auth/password/reset", 5),
             Map.entry("/api/v1/auth/password/change", 5),
@@ -46,8 +49,14 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String path = request.getRequestURI();
         Integer maxRequests = LIMITED_PATHS.get(path);
+        String rateLimitScope = path;
+        if (maxRequests == null
+                && ("/api/v1/admin".equals(path) || path.startsWith("/api/v1/admin/"))) {
+            maxRequests = 120;
+            rateLimitScope = "/api/v1/admin";
+        }
         if (maxRequests != null) {
-            String key = clientIpResolver.resolve(request) + ":" + path;
+            String key = clientIpResolver.resolve(request) + ":" + rateLimitScope;
             if (!rateLimiter.tryConsume(key, maxRequests, WINDOW_MILLIS)) {
                 writeTooManyRequests(response);
                 return;

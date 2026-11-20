@@ -19,6 +19,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmailIgnoreCase(String email);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where lower(u.email) = lower(:email)")
     Optional<User> findByEmailIgnoreCaseForUpdate(@Param("email") String email);
 

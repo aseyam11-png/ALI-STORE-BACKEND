@@ -47,6 +47,7 @@ class AuthServiceLockoutTest {
     @Mock private AuthenticationManager authenticationManager;
     @Mock private EmailOtpService emailOtpService;
     @Mock private LoginAttemptService loginAttemptService;
+    @Mock private AdminLoginGateService adminLoginGateService;
     @Mock private EntityManager entityManager;
 
     private AuthService authService;
@@ -60,7 +61,8 @@ class AuthServiceLockoutTest {
                 jwtService,
                 authenticationManager,
                 emailOtpService,
-                loginAttemptService);
+                loginAttemptService,
+                adminLoginGateService);
         ReflectionTestUtils.setField(authService, "entityManager", entityManager);
     }
 
