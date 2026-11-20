@@ -23,6 +23,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,6 +43,7 @@ class EmailOtpServiceSecurityContractTest {
 
     private EmailOtpService service;
     private User user;
+    private final Map<UUID, EmailOtpChallenge> challenges = new HashMap<>();
 
     @BeforeEach
     void setUp() {
@@ -68,7 +71,17 @@ class EmailOtpServiceSecurityContractTest {
                 .emailVerified(true)
                 .build();
         user.setId(42L);
-        lenient().when(userRepository.findById(42L)).thenReturn(Optional.of(user));
+        lenient().when(userRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(user));
+        lenient().when(challengeRepository.save(any(EmailOtpChallenge.class)))
+                .thenAnswer(invocation -> {
+                    EmailOtpChallenge challenge = invocation.getArgument(0);
+                    challenges.put(challenge.getChallengeId(), challenge);
+                    return challenge;
+                });
+        lenient().when(challengeRepository.findByChallengeId(any(UUID.class)))
+                .thenAnswer(invocation -> Optional.ofNullable(challenges.get(invocation.getArgument(0))));
+        lenient().when(challengeRepository.findForVerification(any(UUID.class)))
+                .thenAnswer(invocation -> Optional.ofNullable(challenges.get(invocation.getArgument(0))));
     }
 
     @Test
@@ -258,6 +271,9 @@ class EmailOtpServiceSecurityContractTest {
                 .build();
         current.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
 
+        when(challengeRepository.findByChallengeId(challengeId))
+                .thenReturn(Optional.of(current));
+        when(userRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(user));
         when(challengeRepository.findForVerification(challengeId))
                 .thenReturn(Optional.of(current));
 
