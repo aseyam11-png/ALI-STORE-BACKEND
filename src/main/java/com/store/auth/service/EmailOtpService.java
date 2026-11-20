@@ -8,6 +8,9 @@ import com.store.common.exception.BusinessException;
 import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
@@ -43,6 +46,9 @@ public class EmailOtpService {
     private final Environment environment;
     private final UserRepository userRepository;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private byte[] hashSecret;
     private boolean verificationEnabled;
@@ -164,6 +170,7 @@ public class EmailOtpService {
         // parallel active challenges for the same account/purpose.
         User user = userRepository.findByIdForUpdate(requestedUser.getId())
                 .orElseThrow(() -> new BusinessException("Invalid authentication challenge request"));
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
         if (!Boolean.TRUE.equals(user.getIsEnabled())
                 || (expectedAuthVersion != null && user.getAuthVersion() != expectedAuthVersion)
                 || (expectedAuthVersion != null
@@ -263,6 +270,7 @@ public class EmailOtpService {
                 .orElseThrow(() -> invalidChallengeException(passwordResetFlow));
         User lockedUser = userRepository.findByIdForUpdate(probe.getUser().getId())
                 .orElseThrow(() -> invalidChallengeException(passwordResetFlow));
+        entityManager.refresh(lockedUser, LockModeType.PESSIMISTIC_WRITE);
         EmailOtpChallenge challenge = challengeRepository.findForVerification(challengeId)
                 .orElseThrow(() -> invalidChallengeException(passwordResetFlow));
 
@@ -362,6 +370,7 @@ public class EmailOtpService {
                 .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
         User challengeUser = userRepository.findByIdForUpdate(probe.getUser().getId())
                 .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
+        entityManager.refresh(challengeUser, LockModeType.PESSIMISTIC_WRITE);
         EmailOtpChallenge current = challengeRepository.findForVerification(challengeId)
                 .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
 
