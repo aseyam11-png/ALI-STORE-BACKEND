@@ -4,6 +4,8 @@ import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.common.exception.BusinessException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +31,7 @@ class EmailOtpServiceLockOrderTest {
     @Mock private EmailOtpSender emailOtpSender;
     @Mock private Environment environment;
     @Mock private UserRepository userRepository;
+    @Mock private EntityManager entityManager;
 
     private EmailOtpService service;
     private User user;
@@ -39,6 +42,7 @@ class EmailOtpServiceLockOrderTest {
     void setUp() {
         service = new EmailOtpService(
                 challengeRepository, emailOtpSender, environment, userRepository);
+        ReflectionTestUtils.setField(service, "entityManager", entityManager);
         ReflectionTestUtils.setField(service, "hashSecret", new byte[32]);
         ReflectionTestUtils.setField(service, "maxAttempts", 5);
         when(environment.getProperty("app.security.admin-gate.enabled", "false")).thenReturn("false");
@@ -74,9 +78,10 @@ class EmailOtpServiceLockOrderTest {
         assertThrows(BusinessException.class,
                 () -> service.verifyChallenge(challengeId, "123456", EmailOtpPurpose.LOGIN));
 
-        InOrder lockOrder = inOrder(challengeRepository, userRepository);
+        InOrder lockOrder = inOrder(challengeRepository, userRepository, entityManager);
         lockOrder.verify(challengeRepository).findByChallengeId(challengeId);
         lockOrder.verify(userRepository).findByIdForUpdate(42L);
+        lockOrder.verify(entityManager).refresh(user, LockModeType.PESSIMISTIC_WRITE);
         lockOrder.verify(challengeRepository).findForVerification(challengeId);
 
         assertEquals(1, challenge.getAttemptCount());
