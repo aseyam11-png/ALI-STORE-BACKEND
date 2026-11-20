@@ -9,8 +9,6 @@ import com.store.common.exception.UnauthorizedException;
 import com.store.user.entity.User;
 import com.store.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
@@ -45,9 +43,6 @@ public class EmailOtpService {
     private final Environment environment;
     private final UserRepository userRepository;
     private final SecureRandom secureRandom = new SecureRandom();
-
-    @PersistenceContext
-    private EntityManager entityManager;
 
     private byte[] hashSecret;
     private boolean verificationEnabled;
@@ -164,17 +159,22 @@ public class EmailOtpService {
             throw new BusinessException("Invalid authentication challenge request");
         }
 
-        User user = userRepository.findById(requestedUser.getId())
+        // Serialize issuance by account before touching any challenge row. Verification
+        // and resend use the same user -> challenge lock order to avoid deadlocks and
+        // parallel active challenges for the same account/purpose.
+        User user = userRepository.findByIdForUpdate(requestedUser.getId())
                 .orElseThrow(() -> new BusinessException("Invalid authentication challenge request"));
-        // Re-read detached or previously managed users; a stale snapshot must never cause
-        // the cooldown check to revoke a newer challenge or bless an old proof.
-        entityManager.refresh(user);
-        if (expectedAuthVersion != null
-                && (user.getAuthVersion() != expectedAuthVersion
-                || !Boolean.TRUE.equals(user.getIsEnabled())
-                || (user.getLoginLockedUntil() != null
-                && user.getLoginLockedUntil().isAfter(Instant.now())))) {
+        if (!Boolean.TRUE.equals(user.getIsEnabled())
+                || (expectedAuthVersion != null && user.getAuthVersion() != expectedAuthVersion)
+                || (expectedAuthVersion != null
+                && user.getLoginLockedUntil() != null
+                && user.getLoginLockedUntil().isAfter(Instant.now()))) {
             throw new UnauthorizedException("Invalid email or password");
+        }
+        if (purpose == EmailOtpPurpose.ADMIN_LOGIN
+                && isAdminGateEnabled()
+                && !adminGateVerified) {
+            throw new UnauthorizedException("Invalid administrator authentication challenge");
         }
 
         Instant now = Instant.now();
@@ -255,14 +255,26 @@ public class EmailOtpService {
             UUID challengeId, String code, EmailOtpPurpose... allowedPurposes) {
         boolean passwordResetFlow = allowedPurposes != null
                 && Arrays.stream(allowedPurposes).anyMatch(purpose -> purpose == EmailOtpPurpose.PASSWORD_RESET);
-        if (code == null || !code.matches("\\d{6}")) {
-            throw invalidChallengeException(passwordResetFlow);
-        }
 
+        // Always acquire locks in the same order: user row first, challenge row second.
+        // Taking the challenge lock first here could deadlock against issuance, which
+        // locks the user and then revokes/replaces active challenges.
+        EmailOtpChallenge probe = challengeRepository.findByChallengeId(challengeId)
+                .orElseThrow(() -> invalidChallengeException(passwordResetFlow));
+        User lockedUser = userRepository.findByIdForUpdate(probe.getUser().getId())
+                .orElseThrow(() -> invalidChallengeException(passwordResetFlow));
         EmailOtpChallenge challenge = challengeRepository.findForVerification(challengeId)
                 .orElseThrow(() -> invalidChallengeException(passwordResetFlow));
 
         Instant now = Instant.now();
+        if (!challenge.getUser().getId().equals(lockedUser.getId())
+                || !Boolean.TRUE.equals(lockedUser.getIsEnabled())) {
+            challenge.setRevokedAt(now);
+            challengeRepository.save(challenge);
+            throw invalidChallengeException(passwordResetFlow
+                    || challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
+        }
+
         if (challenge.getRevokedAt() != null
                 || challenge.getConsumedAt() != null
                 || !now.isBefore(challenge.getExpiresAt())) {
@@ -275,16 +287,28 @@ public class EmailOtpService {
             throw invalidChallengeException(passwordResetFlow);
         }
 
-        // Bind this OTP to the account version that existed when it was issued. This
-        // closes the race where a stale login/reset challenge is created while a password
-        // change is concurrently invalidating the account's previous authentication state.
-        User challengeUser = challenge.getUser();
-        entityManager.refresh(challengeUser);
-        if (challenge.getAuthVersion() != challengeUser.getAuthVersion()) {
+        if (challenge.getAuthVersion() != lockedUser.getAuthVersion()) {
             challenge.setRevokedAt(now);
             challengeRepository.save(challenge);
             throw invalidChallengeException(
                     passwordResetFlow || challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
+        }
+
+        if (challenge.getPurpose() == EmailOtpPurpose.ADMIN_LOGIN
+                && isAdminGateEnabled()
+                && !challenge.isAdminGateVerified()) {
+            challenge.setRevokedAt(now);
+            challengeRepository.save(challenge);
+            throw invalidChallengeException(false);
+        }
+
+        // Invalid formats count against the challenge too. Checking the code format
+        // before loading/locking the challenge used to let malformed guesses avoid
+        // consuming an attempt.
+        if (code == null || !code.matches("\\d{6}")) {
+            recordFailedAttempt(challenge, now);
+            throw invalidChallengeException(passwordResetFlow
+                    || challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
         }
 
         if (challenge.getAttemptCount() >= maxAttempts) {
@@ -298,12 +322,7 @@ public class EmailOtpService {
                 decodeHex(hash(challengeId, code)));
 
         if (!valid) {
-            int attempts = challenge.getAttemptCount() + 1;
-            challenge.setAttemptCount(attempts);
-            if (attempts >= maxAttempts) {
-                challenge.setRevokedAt(now);
-            }
-            challengeRepository.save(challenge);
+            recordFailedAttempt(challenge, now);
             throw invalidChallengeException(challenge.getPurpose() == EmailOtpPurpose.PASSWORD_RESET);
         }
 
@@ -312,7 +331,16 @@ public class EmailOtpService {
         return challenge;
     }
 
-    @Transactional
+    private void recordFailedAttempt(EmailOtpChallenge challenge, Instant now) {
+        int attempts = challenge.getAttemptCount() + 1;
+        challenge.setAttemptCount(attempts);
+        if (attempts >= maxAttempts) {
+            challenge.setRevokedAt(now);
+        }
+        challengeRepository.save(challenge);
+    }
+
+    @Transactional(noRollbackFor = BusinessException.class)
     public EmailOtpChallengeResponse resend(UUID challengeId) {
         return resendInternal(
                 challengeId,
@@ -321,22 +349,29 @@ public class EmailOtpService {
                 EmailOtpPurpose.PASSWORD_RESET);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = BusinessException.class)
     public EmailOtpChallengeResponse resendAdminLogin(UUID challengeId) {
         return resendInternal(challengeId, EmailOtpPurpose.ADMIN_LOGIN);
     }
 
     private EmailOtpChallengeResponse resendInternal(
             UUID challengeId, EmailOtpPurpose... allowedPurposes) {
-        // Do not expose whether a submitted handle belongs to a real email/account.
-        // Unknown, expired, consumed, revoked, and cooldown-limited challenges share
-        // the same public error; a genuinely resendable challenge returns a new handle.
+        // Probe without a row lock to discover the account, then lock user -> challenge.
+        // This matches issue/verify lock order and serializes all OTP operations per user.
+        EmailOtpChallenge probe = challengeRepository.findByChallengeId(challengeId)
+                .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
+        User challengeUser = userRepository.findByIdForUpdate(probe.getUser().getId())
+                .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
         EmailOtpChallenge current = challengeRepository.findForVerification(challengeId)
                 .orElseThrow(() -> new BusinessException("Verification request is invalid or cannot be resent yet"));
 
         Instant now = Instant.now();
-        User challengeUser = current.getUser();
-        entityManager.refresh(challengeUser);
+        if (!current.getUser().getId().equals(challengeUser.getId())
+                || !Boolean.TRUE.equals(challengeUser.getIsEnabled())) {
+            current.setRevokedAt(now);
+            challengeRepository.save(current);
+            throw new BusinessException("Verification request is invalid or cannot be resent yet");
+        }
 
         if (allowedPurposes == null
                 || Arrays.stream(allowedPurposes).noneMatch(purpose -> purpose == current.getPurpose())) {
@@ -360,20 +395,24 @@ public class EmailOtpService {
 
         try {
             return issueChallengeInternal(
-                    current.getUser(),
+                    challengeUser,
                     current.getPurpose(),
                     current.getAuthVersion(),
                     current.isAdminGateVerified());
         } catch (RuntimeException ex) {
-            // If the account version changed between the initial check and replacement
-            // issuance, persist invalidation of the stale challenge before normalizing
-            // the public error. Provider/cooldown failures remain indistinguishable.
-            if (current.getAuthVersion() != current.getUser().getAuthVersion()) {
+            // Normalize provider/cooldown failures. Any newly-created failed challenge
+            // is already revoked by issueChallengeInternal before it throws.
+            if (current.getAuthVersion() != challengeUser.getAuthVersion()) {
                 current.setRevokedAt(Instant.now());
                 challengeRepository.save(current);
             }
             throw new BusinessException("Verification request is invalid or cannot be resent yet");
         }
+    }
+
+    private boolean isAdminGateEnabled() {
+        return Boolean.parseBoolean(
+                environment.getProperty("app.security.admin-gate.enabled", "false"));
     }
 
     private BusinessException invalidChallengeException(boolean passwordResetFlow) {

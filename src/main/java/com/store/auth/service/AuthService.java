@@ -22,6 +22,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -49,6 +50,9 @@ public class AuthService {
 
     @PersistenceContext
     private EntityManager entityManager;
+
+    @Value("${app.security.admin-gate.enabled:false}")
+    private boolean adminGateEnabled;
 
     @Transactional
     public AuthResponse register(com.store.auth.dto.RegisterRequest request) {
@@ -281,6 +285,10 @@ public class AuthService {
         EmailOtpChallenge challenge = emailOtpService.verifyChallenge(
                 parsedChallengeId, code, EmailOtpPurpose.ADMIN_LOGIN);
         User user = challenge.getUser();
+        if (adminGateEnabled && !challenge.isAdminGateVerified()) {
+            challenge.setRevokedAt(Instant.now());
+            throw new BusinessException("Invalid or expired administrator verification challenge");
+        }
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
 
         if (challenge.getAuthVersion() != user.getAuthVersion()

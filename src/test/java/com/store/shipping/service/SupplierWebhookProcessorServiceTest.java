@@ -27,13 +27,14 @@ class SupplierWebhookProcessorServiceTest {
                 .build();
 
         when(eventService.recordIfNew("alpha", "evt-1")).thenReturn(false);
-        when(shipmentService.getBySupplierOrderId("SUP-100")).thenReturn(existing);
+        when(shipmentService.getBySupplierOrderIdForSupplier("alpha", "SUP-100")).thenReturn(existing);
 
         ShipmentResponse result =
                 processor.process("alpha", "evt-1", request);
 
         assertEquals(existing, result);
-        verify(shipmentService).getBySupplierOrderId("SUP-100");
+        verify(shipmentService).getBySupplierOrderIdForSupplier("alpha", "SUP-100");
+        verify(shipmentService, never()).getBySupplierOrderId(anyString());
         verify(shipmentService, never()).applySupplierUpdate(
                 anyString(), anyString(), any(), any(), any(), any());
     }

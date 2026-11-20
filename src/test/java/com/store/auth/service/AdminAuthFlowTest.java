@@ -175,6 +175,29 @@ class AdminAuthFlowTest {
     }
 
     @Test
+    void adminOtpWithoutPersistedGateProofCannotMintSessionWhenGateIsEnabled() {
+        ReflectionTestUtils.setField(service, "adminGateEnabled", true);
+        UUID challengeId = UUID.randomUUID();
+        EmailOtpChallenge challenge = EmailOtpChallenge.builder()
+                .challengeId(challengeId)
+                .user(admin)
+                .purpose(EmailOtpPurpose.ADMIN_LOGIN)
+                .authVersion(admin.getAuthVersion())
+                .codeHash("0".repeat(64))
+                .expiresAt(Instant.now().plusSeconds(600))
+                .adminGateVerified(false)
+                .build();
+        when(emailOtpService.verifyChallenge(
+                eq(challengeId), eq("482915"), eq(EmailOtpPurpose.ADMIN_LOGIN)))
+                .thenReturn(challenge);
+
+        assertThrows(BusinessException.class,
+                () -> service.verifyAdminLoginCode(challengeId.toString(), "482915"));
+        verifyNoInteractions(jwtService);
+        assertNotNull(challenge.getRevokedAt());
+    }
+
+    @Test
     void genericCustomerOtpEndpointCannotConsumeAdministratorChallenge() {
         UUID challengeId = UUID.randomUUID();
         EmailOtpChallenge challenge = EmailOtpChallenge.builder()
