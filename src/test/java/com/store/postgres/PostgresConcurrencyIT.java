@@ -3,7 +3,6 @@ package com.store.postgres;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
-import com.store.auth.repository.EmailOtpChallengeRepository;
 import com.store.auth.service.EmailOtpSender;
 import com.store.auth.service.EmailOtpService;
 import com.store.common.exception.BusinessException;
@@ -112,7 +111,6 @@ class PostgresConcurrencyIT {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private EmailOtpService emailOtpService;
-    @Autowired private EmailOtpChallengeRepository emailOtpChallengeRepository;
     @MockBean private EmailOtpSender emailOtpSender;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
