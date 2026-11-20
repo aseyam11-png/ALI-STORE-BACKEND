@@ -24,9 +24,11 @@ The application fails to start if the production admin gate is enabled without i
 
 ## Lockout and rate limits
 
-The login endpoint limits requests and temporarily blocks an IP after eight failed login/gate attempts within 15 minutes. The temporary block lasts 15 minutes and responses include `Retry-After`. All API paths also have a baseline per-IP request limit, with a tighter limit for admin API routes.
+The authentication endpoints have explicit per-path limits: login and administrator login are limited to 10 requests/minute; OTP verification endpoints to 5/minute; OTP resend endpoints to 3/minute; registration to 10/minute; password reset/change and other expensive routes have their own explicit limits. The admin API group has a 120-request/minute per-IP ceiling. These are not blanket limits for every API route.
 
-The current counters are process-local. They provide protection for a single backend instance, but do not coordinate across multiple instances or survive restarts. The admin API has a 120-request/minute per-IP ceiling and authentication/expensive routes have stricter endpoint limits. General catalog/product APIs should be protected by a production WAF/edge limit where the real client IP is known, rather than a blanket backend IP cap that could combine multiple customers behind one proxy. If the backend is scaled horizontally, move lockout counters to a shared atomic store (for example Redis) and keep edge/WAF limits enabled. Do not trust `X-Forwarded-For` unless the immediate peer is explicitly trusted; dynamic proxy networks should be rate-limited at the edge instead of adding broad unverified trust ranges.
+The login endpoints also apply a database-backed per-account failed-password lockout (five failures in a rolling 15-minute window), and each OTP challenge stores its own failed-code counter and is revoked after the configured maximum attempts. The additional IP request and failed-login guards are process-local: they do not coordinate across instances and do not survive restarts. Treat them as supplemental protection only, not as the distributed abuse-control boundary.
+
+**Production release requirement:** configure and verify edge/WAF rate limits for the authentication and administrator routes at the hosting layer, using the provider's actual client-IP semantics. If multiple backend instances are used, move IP-scoped counters/lockouts to a shared atomic store (for example Redis) or retain a verified edge enforcement boundary. Do not trust `X-Forwarded-For` unless the immediate peer is explicitly trusted; dynamic proxy networks should be rate-limited at the edge instead of adding broad unverified trust ranges.
 
 ## Payment safety
 
