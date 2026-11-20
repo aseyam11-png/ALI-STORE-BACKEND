@@ -45,7 +45,6 @@ class EmailOtpServiceLockOrderTest {
         ReflectionTestUtils.setField(service, "entityManager", entityManager);
         ReflectionTestUtils.setField(service, "hashSecret", new byte[32]);
         ReflectionTestUtils.setField(service, "maxAttempts", 5);
-        when(environment.getProperty("app.security.admin-gate.enabled", "false")).thenReturn("false");
 
         user = User.builder()
                 .firstName("Store")
