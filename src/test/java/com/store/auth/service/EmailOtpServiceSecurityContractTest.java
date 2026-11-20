@@ -290,7 +290,11 @@ class EmailOtpServiceSecurityContractTest {
                 eq(42L), any(EmailOtpPurpose.class), any(Instant.class)))
                 .thenReturn(0);
         when(challengeRepository.save(any(EmailOtpChallenge.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> {
+                    EmailOtpChallenge challenge = invocation.getArgument(0);
+                    challenges.put(challenge.getChallengeId(), challenge);
+                    return challenge;
+                });
 
         EmailOtpChallengeResponse response =
                 service.issueChallenge(user, EmailOtpPurpose.LOGIN);
