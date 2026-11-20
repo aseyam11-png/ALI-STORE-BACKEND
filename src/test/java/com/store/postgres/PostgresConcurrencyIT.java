@@ -1,6 +1,20 @@
 package com.store.postgres;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.store.auth.entity.EmailOtpChallenge;
+import com.store.auth.entity.EmailOtpPurpose;
+import com.store.auth.repository.EmailOtpChallengeRepository;
+import com.store.auth.service.EmailOtpSender;
+import com.store.auth.service.EmailOtpService;
+import com.store.common.exception.BusinessException;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import java.time.Duration;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import com.store.auth.service.JwtService;
 import com.store.category.entity.Category;
 import com.store.category.repository.CategoryRepository;
@@ -97,6 +111,9 @@ class PostgresConcurrencyIT {
     }
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private EmailOtpService emailOtpService;
+    @Autowired private EmailOtpChallengeRepository emailOtpChallengeRepository;
+    @MockBean private EmailOtpSender emailOtpSender;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private RoleRepository roleRepository;
@@ -150,6 +167,59 @@ class PostgresConcurrencyIT {
         // is itself the verification. Confirms real PostgreSQL syntax compatibility (this
         // repo's migrations were previously only exercised via H2's PostgreSQL-compat mode).
         Assertions.assertTrue(postgres.isRunning());
+    }
+
+    @Test
+    void otpIssueConcurrentRequests_createOnlyOneActiveChallengeForSameAccountPurpose() throws Exception {
+        User user = createUser("otp-race-pg@example.com");
+        doNothing().when(emailOtpSender).send(
+                anyString(), anyString(), eq(EmailOtpPurpose.LOGIN), any(Duration.class));
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        Callable<Boolean> issueChallenge = () -> {
+            try {
+                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, user.getAuthVersion());
+                return true;
+            } catch (BusinessException expectedCooldownOrConflict) {
+                return false;
+            }
+        };
+
+        try {
+            List<Future<Boolean>> results =
+                    executor.invokeAll(List.of(issueChallenge, issueChallenge));
+            long issuedCount = results.stream().filter(result -> {
+                try {
+                    return result.get();
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            }).count();
+
+            Assertions.assertEquals(1, issuedCount,
+                    "only one concurrent OTP issue request may be accepted for one account and purpose");
+
+            Integer activeChallenges = jdbcTemplate.queryForObject(
+                    """
+                    SELECT COUNT(*)
+                    FROM email_otp_challenges
+                    WHERE user_id = ?
+                      AND purpose = ?
+                      AND consumed_at IS NULL
+                      AND revoked_at IS NULL
+                      AND expires_at > CURRENT_TIMESTAMP
+                    """,
+                    Integer.class,
+                    user.getId(),
+                    EmailOtpPurpose.LOGIN.name());
+            Assertions.assertEquals(1, activeChallenges,
+                    "database must contain exactly one active login OTP challenge");
+
+            verify(emailOtpSender, times(1)).send(
+                    eq(user.getEmail()), anyString(), eq(EmailOtpPurpose.LOGIN), any(Duration.class));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test
