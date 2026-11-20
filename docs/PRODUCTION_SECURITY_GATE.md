@@ -30,6 +30,8 @@ The login endpoints also apply a database-backed per-account failed-password loc
 
 **Production release requirement:** configure and verify edge/WAF rate limits for the authentication and administrator routes at the hosting layer, using the provider's actual client-IP semantics. If multiple backend instances are used, move IP-scoped counters/lockouts to a shared atomic store (for example Redis) or retain a verified edge enforcement boundary. Do not trust `X-Forwarded-For` unless the immediate peer is explicitly trusted; dynamic proxy networks should be rate-limited at the edge instead of adding broad unverified trust ranges.
 
+Current Vercel Firewall observation rule (project `ali-store-backend`): request paths matching `^/api/v1/(auth|admin)/` are counted per IP with a fixed 60-second window and a 120-request threshold. The exceeded-limit action is deliberately `log`, not `deny` or `challenge`, so it does not block customers. Keep it in observation mode until realistic Preview traffic has been reviewed; only then tune and enable an enforcement action.
+
 ## Payment safety
 
 - The development mock provider is limited to explicit `dev` and `test` profiles.
