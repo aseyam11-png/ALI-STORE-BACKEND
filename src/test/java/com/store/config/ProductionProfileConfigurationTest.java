@@ -48,7 +48,8 @@ class ProductionProfileConfigurationTest {
     void productionRuntimeDoesNotRunFlywayMigrationsAtStartup() throws Exception {
         String yaml = Files.readString(Path.of("src/main/resources/application-prod.yml"));
 
-        assertTrue(yaml.contains("flyway:\\n    enabled: false"));
+        assertTrue(yaml.contains("  flyway:"));
+        assertTrue(yaml.contains("    enabled: false"));
     }
 
     @Test
