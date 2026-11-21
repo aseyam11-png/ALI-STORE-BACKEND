@@ -2,7 +2,7 @@
 
 ## Verified starting point
 
-The Neon `production` branch currently has an empty `alistore` schema. The full V1–V22 SQL chain was executed successfully on the isolated `prod-schema-rehearsal-20261121` branch. That rehearsal is not a Flyway execution and did not create `flyway_schema_history`; the protected workflow below performs the real Flyway run.
+The Neon `production` branch currently has an empty `alistore` schema. The full V1–V23 SQL chain was executed successfully on the isolated `prod-schema-rehearsal-20261121` branch. That rehearsal is not a Flyway execution and did not create `flyway_schema_history`; the protected workflow below performs the real Flyway run.
 
 The current production login role `alistore_app` has `CREATEDB`, `CREATEROLE`, and `BYPASSRLS`. Do not keep using that role as the application runtime identity.
 
@@ -128,7 +128,7 @@ Do not disable `alistore_app` before Vercel has switched to `alistore_runtime` a
 
 1. Provision roles and privileges on the intended Neon branch.
 2. Add the appropriate GitHub Environment secrets and production reviewer requirement.
-3. Dispatch the migration workflow against Preview and verify Flyway V1–V22.
+3. Dispatch the migration workflow against Preview and verify Flyway V1–V23.
 4. Dispatch the workflow against Production only after reviewing the exact commit, target branch, backup/restore readiness, and approval.
 5. Deploy Backend with `DB_USERNAME=alistore_runtime`; verify `/actuator/health`, authentication, and read/write paths.
 6. Disable the old `alistore_app` login only after the runtime cutover succeeds.
