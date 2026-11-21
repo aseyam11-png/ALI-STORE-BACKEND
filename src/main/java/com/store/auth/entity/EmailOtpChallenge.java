@@ -53,4 +53,9 @@ public class EmailOtpChallenge extends BaseEntity {
 
     @Column(name = "revoked_at")
     private Instant revokedAt;
+
+    // Preserve successful secondary administrator verification through email OTP.
+    @Column(name = "admin_gate_verified", nullable = false)
+    @Builder.Default
+    private boolean adminGateVerified = false;
 }

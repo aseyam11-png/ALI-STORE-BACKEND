@@ -20,7 +20,8 @@ public class SupplierWebhookProcessorService {
             SupplierShipmentUpdateRequest request) {
 
         if (!eventService.recordIfNew(supplierCode, eventId)) {
-            return shipmentService.getBySupplierOrderId(request.getSupplierOrderId().trim());
+            return shipmentService.getBySupplierOrderIdForSupplier(
+                    supplierCode, request.getSupplierOrderId().trim());
         }
 
         return shipmentService.applySupplierUpdate(

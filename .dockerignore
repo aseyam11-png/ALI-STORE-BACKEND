@@ -1,0 +1,10 @@
+.git
+.github
+.idea
+.vscode
+graphify-out
+target
+**/target
+.env
+.env.*
+*.log

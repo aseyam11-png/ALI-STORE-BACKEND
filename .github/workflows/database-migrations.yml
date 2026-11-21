@@ -1,0 +1,119 @@
+name: ALI STORE Database Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Neon database branch to migrate
+        required: true
+        type: choice
+        default: preview
+        options:
+          - preview
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ali-store-db-migration-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  migrate-preview:
+    name: Validate and migrate Preview database
+    if: github.ref == 'refs/heads/main' && inputs.target == 'preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: preview
+    env:
+      FLYWAY_URL: ${{ secrets.NEON_PREVIEW_DIRECT_URL }}
+      FLYWAY_USER: alistore_migrator
+      FLYWAY_PASSWORD: ${{ secrets.NEON_PREVIEW_MIGRATOR_PASSWORD }}
+    steps:
+      - name: Checkout reviewed main
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Validate migration target configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${FLYWAY_URL}" || -z "${FLYWAY_PASSWORD}" ]]; then
+            echo "::error::Preview Flyway secrets are not configured."
+            exit 1
+          fi
+          if [[ "${FLYWAY_URL}" == *"-pooler."* ]]; then
+            echo "::error::Flyway requires a direct Neon connection, not a pooled URL."
+            exit 1
+          fi
+          if [[ "${FLYWAY_USER}" != "alistore_migrator" ]]; then
+            echo "::error::Unexpected migration role."
+            exit 1
+          fi
+
+      - name: Validate applied migration checksums
+        run: ./mvnw -B -ntp flyway:validate
+
+      - name: Apply pending migrations
+        run: ./mvnw -B -ntp flyway:migrate
+
+      - name: Verify resulting migration state
+        run: ./mvnw -B -ntp flyway:info
+
+  migrate-production:
+    name: Validate and migrate Production database
+    if: github.ref == 'refs/heads/main' && inputs.target == 'production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      FLYWAY_URL: ${{ secrets.NEON_PRODUCTION_DIRECT_URL }}
+      FLYWAY_USER: alistore_migrator
+      FLYWAY_PASSWORD: ${{ secrets.NEON_PRODUCTION_MIGRATOR_PASSWORD }}
+    steps:
+      - name: Checkout reviewed main
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Validate migration target configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${FLYWAY_URL}" || -z "${FLYWAY_PASSWORD}" ]]; then
+            echo "::error::Production Flyway secrets are not configured."
+            exit 1
+          fi
+          if [[ "${FLYWAY_URL}" == *"-pooler."* ]]; then
+            echo "::error::Flyway requires a direct Neon connection, not a pooled URL."
+            exit 1
+          fi
+          if [[ "${FLYWAY_USER}" != "alistore_migrator" ]]; then
+            echo "::error::Unexpected migration role."
+            exit 1
+          fi
+
+      - name: Validate applied migration checksums
+        run: ./mvnw -B -ntp flyway:validate
+
+      - name: Apply pending migrations
+        run: ./mvnw -B -ntp flyway:migrate
+
+      - name: Verify resulting migration state
+        run: ./mvnw -B -ntp flyway:info
