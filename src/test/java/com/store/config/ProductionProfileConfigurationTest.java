@@ -45,6 +45,25 @@ class ProductionProfileConfigurationTest {
     }
 
     @Test
+    void productionRuntimeDoesNotRunFlywayMigrationsAtStartup() throws Exception {
+        String yaml = Files.readString(Path.of("src/main/resources/application-prod.yml"));
+
+        assertTrue(yaml.contains("flyway:\\n    enabled: false"));
+    }
+
+    @Test
+    void newOrdersDefaultToSarWithoutRewritingHistoricalOrders() throws Exception {
+        Path migration = Path.of(
+                "src/main/resources/db/migration/V23__default_order_currency_to_sar.sql");
+        assertTrue(Files.exists(migration));
+        String sql = Files.readString(migration);
+
+        assertTrue(sql.contains("ALTER TABLE orders"));
+        assertTrue(sql.contains("ALTER COLUMN currency SET DEFAULT 'SAR'"));
+        assertTrue(sql.contains("Existing order currency values are historical"));
+    }
+
+    @Test
     void productionProfileExistsAsExplicitDeploymentConfiguration() {
         assertTrue(Files.exists(Path.of("src/main/resources/application-prod.yml")));
     }
