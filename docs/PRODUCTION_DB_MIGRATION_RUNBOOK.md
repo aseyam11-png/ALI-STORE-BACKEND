@@ -2,7 +2,7 @@
 
 ## Verified starting point
 
-The Neon `production` branch currently has an empty `alistore` schema. The full V1–V23 SQL chain was executed successfully on the isolated `prod-schema-rehearsal-20261121` branch. That rehearsal is not a Flyway execution and did not create `flyway_schema_history`; the protected workflow below performs the real Flyway run.
+The Neon `production` branch currently has an empty `alistore` schema. The full V1–V22 SQL chain was executed successfully on the isolated `prod-schema-rehearsal-20261121` branch; V23 was also applied successfully on a separate child of the existing Preview branch. These rehearsals executed SQL directly and are not proof of Flyway checksum validation; the protected workflow below performs the real Flyway run.
 
 The current production login role `alistore_app` has `CREATEDB`, `CREATEROLE`, and `BYPASSRLS`. Do not keep using that role as the application runtime identity.
 
@@ -25,18 +25,45 @@ CREATE ROLE alistore_runtime
 
 GRANT CONNECT ON DATABASE alistore TO alistore_migrator, alistore_runtime;
 
--- Current owner needs membership/SET ROLE permission and CREATEDB temporarily
--- to transfer the database to the new owning role.
+-- The current owner already has CREATEDB and CREATEROLE. It creates the role,
+-- then grants itself SET ROLE access so ownership can be transferred. The new
+-- migrator must remain NOCREATEDB/NOCREATEROLE/NOBYPASSRLS.
 GRANT alistore_migrator TO alistore_app;
-ALTER ROLE alistore_migrator CREATEDB;
 
--- The database owner remains alistore_app during the schema transfer.
+-- The database owner remains alistore_app during the schema/object transfer.
 ALTER SCHEMA public OWNER TO alistore_migrator;
 GRANT USAGE, CREATE ON SCHEMA public TO alistore_migrator;
 GRANT USAGE ON SCHEMA public TO alistore_runtime;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
--- Grant runtime DML access to current objects (expected: no application tables yet).
+-- Preview already has tables and Flyway history; Production is currently empty.
+-- Transfer every existing public table and sequence so the migrator can validate
+-- and continue the existing Flyway history on Preview, and own all new objects.
+DO $
+DECLARE
+    object_row RECORD;
+BEGIN
+    FOR object_row IN
+        SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('ALTER TABLE public.%I OWNER TO alistore_migrator', object_row.tablename);
+    END LOOP;
+END $;
+
+DO $
+DECLARE
+    object_row RECORD;
+BEGIN
+    FOR object_row IN
+        SELECT sequence_name
+        FROM information_schema.sequences
+        WHERE sequence_schema = 'public'
+    LOOP
+        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO alistore_migrator', object_row.sequence_name);
+    END LOOP;
+END $;
+
+-- Grant runtime DML access to the existing objects after ownership transfer.
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO alistore_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO alistore_runtime;
 
@@ -47,12 +74,11 @@ ALTER DEFAULT PRIVILEGES FOR ROLE alistore_migrator IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE alistore_migrator IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO alistore_runtime;
 
--- PostgreSQL requires the current database owner to be able to SET ROLE to the
--- new owner and the new owner to temporarily hold CREATEDB.
+-- PostgreSQL requires the executing role to own the database, be able to SET ROLE
+-- to the new owner, and itself have CREATEDB. alistore_app already has CREATEDB.
 ALTER DATABASE alistore OWNER TO alistore_migrator;
 
--- Revoke temporary escalation only after the ownership transfer succeeds.
-ALTER ROLE alistore_migrator NOCREATEDB;
+-- Remove the temporary SET ROLE membership after all ownership changes.
 REVOKE alistore_migrator FROM alistore_app;
 
 -- These verification queries must show:
