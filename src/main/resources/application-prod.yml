@@ -22,6 +22,10 @@ server:
   forward-headers-strategy: native
 
 spring:
+  # Runtime instances must never run DDL. The protected release workflow owns Flyway.
+  flyway:
+    enabled: false
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
