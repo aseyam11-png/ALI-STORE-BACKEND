@@ -11,6 +11,10 @@ The current production login role `alistore_app` has `CREATEDB`, `CREATEROLE`, a
 Create two separate login roles in the production Neon branch. Generate both passwords in a password manager and enter them only in the Neon SQL editor. Never commit or paste them into GitHub source.
 
 ```sql
+-- Run these statements separately in the Neon SQL Editor, connected to the production
+-- branch as the current owner (alistore_app). Do not place them in one transaction:
+-- the database-owner handoff should be independently verified before continuing.
+
 CREATE ROLE alistore_migrator
     LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
     PASSWORD '<SET_MIGRATOR_PASSWORD_IN_NEON_ONLY>';
@@ -20,28 +24,64 @@ CREATE ROLE alistore_runtime
     PASSWORD '<SET_RUNTIME_PASSWORD_IN_NEON_ONLY>';
 
 GRANT CONNECT ON DATABASE alistore TO alistore_migrator, alistore_runtime;
-GRANT CREATE ON DATABASE alistore TO alistore_migrator;
 
--- Transfer the schema while the current database owner still has pg_database_owner rights.
+-- Current owner needs membership/SET ROLE permission and CREATEDB temporarily
+-- to transfer the database to the new owning role.
+GRANT alistore_migrator TO alistore_app;
+ALTER ROLE alistore_migrator CREATEDB;
+
+-- The database owner remains alistore_app during the schema transfer.
 ALTER SCHEMA public OWNER TO alistore_migrator;
 GRANT USAGE, CREATE ON SCHEMA public TO alistore_migrator;
 GRANT USAGE ON SCHEMA public TO alistore_runtime;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
--- Current production is empty, but these grants also cover any reviewed pre-existing objects.
+-- Grant runtime DML access to current objects (expected: no application tables yet).
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO alistore_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO alistore_runtime;
 
--- Temporarily let the current database owner set default privileges for the migration role.
-GRANT alistore_migrator TO alistore_app;
+-- Ensure objects created by Flyway as alistore_migrator automatically grant DML
+-- and sequence access to alistore_runtime.
 ALTER DEFAULT PRIVILEGES FOR ROLE alistore_migrator IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO alistore_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE alistore_migrator IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO alistore_runtime;
+
+-- PostgreSQL requires the current database owner to be able to SET ROLE to the
+-- new owner and the new owner to temporarily hold CREATEDB.
+ALTER DATABASE alistore OWNER TO alistore_migrator;
+
+-- Revoke temporary escalation only after the ownership transfer succeeds.
+ALTER ROLE alistore_migrator NOCREATEDB;
 REVOKE alistore_migrator FROM alistore_app;
 
--- The migration role becomes the database owner; the application role must not.
-ALTER DATABASE alistore OWNER TO alistore_migrator;
+-- These verification queries must show:
+-- database owner=alistore_migrator, public schema owner=alistore_migrator,
+-- runtime has USAGE on public, but no CREATE/TRUNCATE/CREATE DATABASE/CREATEROLE.
+SELECT
+    current_database() AS database_name,
+    pg_get_userbyid(datdba) AS database_owner
+FROM pg_database
+WHERE datname = current_database();
+
+SELECT
+    nspname,
+    pg_get_userbyid(nspowner) AS schema_owner,
+    has_schema_privilege('alistore_runtime', nspname, 'USAGE') AS runtime_usage,
+    has_schema_privilege('alistore_runtime', nspname, 'CREATE') AS runtime_create
+FROM pg_namespace
+WHERE nspname = 'public';
+
+SELECT
+    rolname,
+    rolsuper,
+    rolcreatedb,
+    rolcreaterole,
+    rolcanlogin,
+    rolbypassrls
+FROM pg_roles
+WHERE rolname IN ('alistore_app', 'alistore_migrator', 'alistore_runtime')
+ORDER BY rolname;
 ```
 
 Do not run this block until the two passwords have been generated and the target is explicitly confirmed as the Neon `production` branch. If any statement fails, stop and inspect the actual role/schema/database ownership before retrying; do not continue with a partial role setup.
