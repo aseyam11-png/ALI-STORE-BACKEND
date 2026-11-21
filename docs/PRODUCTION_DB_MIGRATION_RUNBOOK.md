@@ -132,6 +132,8 @@ Set these environment secrets:
 
 The workflow uses `FLYWAY_USER=alistore_migrator`, checks that the URL is not pooled, runs `flyway:validate`, then `flyway:migrate`, then `flyway:info`. It does not deploy the application and has no `clean`, `baseline`, or `repair` command.
 
+The repository's `main` branch was observed without required status checks or branch protection during this review. Before enabling the Production environment, require PR review and the relevant required CI checks on `main`, and configure the GitHub `production` environment with required reviewers. The workflow's branch condition alone is not a substitute for branch protection.
+
 Do not set the migration URL or migrator password in Vercel runtime environment variables.
 
 ## Vercel runtime configuration
@@ -144,11 +146,13 @@ After the roles are provisioned, point the Backend Vercel environment at the run
 
 The production Spring profile disables Flyway at application startup. Development and test profiles keep the existing Flyway behavior.
 
-After the new runtime role is deployed and health/auth smoke tests pass, retire the old role in a separate controlled cutover:
+After the new runtime role is deployed and health/auth smoke tests pass, retire the old role in a separate controlled cutover. The current Neon catalog shows `alistore_app` is a member of `neon_superuser`, but it does not have `ADMIN OPTION` on itself. Therefore do not assume a SQL session authenticated as `alistore_app` can change its own role attributes. Use a Neon administrative principal that has authority to alter this role:
+
 ```sql
 ALTER ROLE alistore_app NOLOGIN NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 ```
-Do not disable `alistore_app` before Vercel has switched to `alistore_runtime` and the new deployment is verified.
+
+Do not perform this step before Vercel has switched to `alistore_runtime` and the new deployment is verified. If a suitably privileged Neon administrative principal is not available, leave this as an explicit HIGH security follow-up; do not attempt to work around it by granting additional privileges to `alistore_runtime`.
 
 ## Release sequence
 
