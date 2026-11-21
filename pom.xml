@@ -165,9 +165,6 @@
                 <artifactId>flyway-maven-plugin</artifactId>
                 <version>${flyway.version}</version>
                 <configuration>
-                    <url>${env.FLYWAY_URL}</url>
-                    <user>${env.FLYWAY_USER}</user>
-                    <password>${env.FLYWAY_PASSWORD}</password>
                     <locations>
                         <location>filesystem:src/main/resources/db/migration</location>
                     </locations>
