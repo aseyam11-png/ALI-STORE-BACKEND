@@ -22,11 +22,12 @@ class AdminLoginGateServiceTest {
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
     @Mock private TurnstileVerifier turnstileVerifier;
+    @Mock private LoginAttemptService loginAttemptService;
     private AdminLoginGateService gate;
 
     @BeforeEach
     void setUp() {
-        gate = new AdminLoginGateService(encoder, turnstileVerifier);
+        gate = new AdminLoginGateService(encoder, turnstileVerifier, loginAttemptService);
     }
 
     @Test
@@ -77,6 +78,7 @@ class AdminLoginGateServiceTest {
                 validRequest("second-password-16chars"), "198.51.100.20"));
         verify(turnstileVerifier).verify(
                 "captcha-token", "198.51.100.20", "turnstile-secret", "store.example.com");
+        verifyNoInteractions(loginAttemptService);
     }
 
     @Test
@@ -89,6 +91,7 @@ class AdminLoginGateServiceTest {
         assertThrows(BadCredentialsException.class,
                 () -> gate.verifyIfAdmin(user("ROLE_ADMIN"),
                         validRequest("second-password-16chars"), "198.51.100.20"));
+        verifyNoInteractions(loginAttemptService);
     }
 
     @Test
@@ -101,6 +104,20 @@ class AdminLoginGateServiceTest {
         assertThrows(BadCredentialsException.class,
                 () -> gate.verifyIfAdmin(user("ROLE_ADMIN"),
                         validRequest("wrong-second-password"), "198.51.100.20"));
+        verify(loginAttemptService).recordFailure("admin@example.invalid");
+    }
+
+    @Test
+    void tooShortSecondPasswordAfterValidTurnstileCountsAsPersistentAccountFailure() {
+        enableGateWithSecrets();
+        ReflectionTestUtils.setField(gate, "passwordHash", encoder.encode("second-password-16chars"));
+        when(turnstileVerifier.verify("captcha-token", "198.51.100.20", "turnstile-secret", "store.example.com"))
+                .thenReturn(true);
+
+        assertThrows(BadCredentialsException.class,
+                () -> gate.verifyIfAdmin(user("ROLE_ADMIN"),
+                        validRequest("short"), "198.51.100.20"));
+        verify(loginAttemptService).recordFailure("admin@example.invalid");
     }
 
     private void enableGateWithSecrets() {
