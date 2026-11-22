@@ -52,6 +52,6 @@ app:
       turnstile-secret: ${TURNSTILE_SECRET_KEY:}
       turnstile-hostname: ${TURNSTILE_HOSTNAME:}
 
-# A real PaymentProvider bean MUST be supplied for this profile - MockPaymentProvider
-# is annotated @Profile("!prod") and will not be available here, so the application
-# fails to start rather than silently accepting fake payments (see payment.provider package).
+# UnavailablePaymentProvider is the production bean until a real gateway is integrated.
+# It supports no electronic methods; PaymentService rejects them with HTTP 503 before
+# reserving a payment attempt. COD uses its separate path. MockPaymentProvider is non-prod only.
