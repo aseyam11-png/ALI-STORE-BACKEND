@@ -1,89 +1,33 @@
 # Production database migration and role separation
 
-## Verified starting point
+## Verified Production state (2026-11-22)
 
-The Neon `production` branch currently has an empty `alistore` schema. The full V1–V22 SQL chain was executed successfully on the isolated `prod-schema-rehearsal-20261121` branch; V23 was also applied successfully on a separate child of the existing Preview branch. These rehearsals executed SQL directly and are not proof of Flyway checksum validation; the protected workflow below performs the real Flyway run.
+The Neon `production` branch is `br-shy-cherry-b9qv102l`. The `alistore` database currently has zero public application tables/relations; no Flyway migration has been run on Production.
 
-The current production login role `alistore_app` has `CREATEDB`, `CREATEROLE`, and `BYPASSRLS`. Do not keep using that role as the application runtime identity.
+The existing login role `alistore_app` still owns the `alistore` database and remains a member of `neon_superuser`. Its catalog attributes include `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, and `REPLICATION`. Do not use it as the application runtime identity after cutover, and do not disable it until the replacement runtime is deployed and verified.
 
-## Required roles
+The following Production roles were provisioned through Neon on 2026-11-22, scoped to database `alistore` and schema `public`:
 
-Create two separate login roles in the production Neon branch. Generate both passwords in a password manager and enter them only in the Neon SQL editor. Never commit or paste them into GitHub source.
+| Role | Neon access preset | Login/authentication | Schema privileges |
+|---|---|---|---|
+| `alistore_migrator` | `read_only` plus explicit schema ownership/CREATE | LOGIN, password | USAGE, CREATE; owns `public` |
+| `alistore_runtime` | `read_write` | LOGIN, password | USAGE only; no CREATE |
+
+Both roles were verified with `rolcanlogin=true`, `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOINHERIT`, `NOBYPASSRLS`, and `NOREPLICATION`. Both can connect to `alistore`. Direct role-scoped database checks confirmed the runtime role cannot CREATE in `public`.
+
+Default privileges for objects created by `alistore_migrator` in `public` grant `SELECT, INSERT, UPDATE, DELETE` on tables and `USAGE, SELECT` on sequences to `alistore_runtime`. The default ACL contains no `TRUNCATE` grant. No production application tables existed when these grants were established.
+
+The `public` schema owner is now `alistore_migrator`; the database owner remains `alistore_app`. This is intentional: PostgreSQL requires the new database owner to have `CREATEDB` for `ALTER DATABASE ... OWNER TO`. Giving `CREATEDB` to the migrator would violate the least-privilege requirement. Do not run `ALTER DATABASE alistore OWNER TO alistore_migrator`. See https://www.postgresql.org/docs/current/sql-alterdatabase.html.
+
+The Neon role-creation API also created provider-managed memberships from `alistore_app` to both new roles, with `ADMIN OPTION=true`, `INHERIT=false`, `SET=false`, granted by `cloud_admin`. An explicit `REVOKE alistore_migrator FROM alistore_app` was attempted as `alistore_app`; the provider-managed migrator membership remained. The runtime membership was observed in the catalog but was not independently targeted by REVOKE. These memberships do not let `alistore_app` inherit or SET ROLE to either role, but do allow it to administer membership. Treat them as an outstanding provider-admin follow-up; do not claim they were removed. The existing `alistore_app` membership in `neon_superuser` also remains and still requires a Neon administrative principal to review.
+
+The schema ACL already showed PUBLIC with USAGE but no CREATE, so no additional PUBLIC CREATE revocation was needed. The `alistore_app` login and its elevated attributes have not been disabled or modified.
+
+## Production role verification
+
+Run these read-only checks before migration dispatch:
 
 ```sql
--- Run these statements separately in the Neon SQL Editor, connected to the production
--- branch as the current owner (alistore_app). Do not place them in one transaction:
--- the database-owner handoff should be independently verified before continuing.
-
-CREATE ROLE alistore_migrator
-    LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
-    PASSWORD '<SET_MIGRATOR_PASSWORD_IN_NEON_ONLY>';
-
-CREATE ROLE alistore_runtime
-    LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
-    PASSWORD '<SET_RUNTIME_PASSWORD_IN_NEON_ONLY>';
-
-GRANT CONNECT ON DATABASE alistore TO alistore_migrator, alistore_runtime;
-
--- The current owner already has CREATEDB and CREATEROLE. It creates the role,
--- then grants itself SET ROLE access so ownership can be transferred. The new
--- migrator must remain NOCREATEDB/NOCREATEROLE/NOBYPASSRLS.
-GRANT alistore_migrator TO alistore_app;
-
--- The database owner remains alistore_app during the schema/object transfer.
-ALTER SCHEMA public OWNER TO alistore_migrator;
-GRANT USAGE, CREATE ON SCHEMA public TO alistore_migrator;
-GRANT USAGE ON SCHEMA public TO alistore_runtime;
-REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-
--- Preview already has tables and Flyway history; Production is currently empty.
--- Transfer every existing public table and sequence so the migrator can validate
--- and continue the existing Flyway history on Preview, and own all new objects.
-DO $
-DECLARE
-    object_row RECORD;
-BEGIN
-    FOR object_row IN
-        SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-    LOOP
-        EXECUTE format('ALTER TABLE public.%I OWNER TO alistore_migrator', object_row.tablename);
-    END LOOP;
-END $;
-
-DO $
-DECLARE
-    object_row RECORD;
-BEGIN
-    FOR object_row IN
-        SELECT sequence_name
-        FROM information_schema.sequences
-        WHERE sequence_schema = 'public'
-    LOOP
-        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO alistore_migrator', object_row.sequence_name);
-    END LOOP;
-END $;
-
--- Grant runtime DML access to the existing objects after ownership transfer.
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO alistore_runtime;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO alistore_runtime;
-
--- Ensure objects created by Flyway as alistore_migrator automatically grant DML
--- and sequence access to alistore_runtime.
-ALTER DEFAULT PRIVILEGES FOR ROLE alistore_migrator IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO alistore_runtime;
-ALTER DEFAULT PRIVILEGES FOR ROLE alistore_migrator IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO alistore_runtime;
-
--- PostgreSQL requires the executing role to own the database, be able to SET ROLE
--- to the new owner, and itself have CREATEDB. alistore_app already has CREATEDB.
-ALTER DATABASE alistore OWNER TO alistore_migrator;
-
--- Remove the temporary SET ROLE membership after all ownership changes.
-REVOKE alistore_migrator FROM alistore_app;
-
--- These verification queries must show:
--- database owner=alistore_migrator, public schema owner=alistore_migrator,
--- runtime has USAGE on public, but no CREATE/TRUNCATE/CREATE DATABASE/CREATEROLE.
 SELECT
     current_database() AS database_name,
     pg_get_userbyid(datdba) AS database_owner
@@ -99,23 +43,29 @@ FROM pg_namespace
 WHERE nspname = 'public';
 
 SELECT
-    rolname,
-    rolsuper,
-    rolcreatedb,
-    rolcreaterole,
-    rolcanlogin,
-    rolbypassrls
+    rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+    rolinherit, rolbypassrls, rolreplication
 FROM pg_roles
 WHERE rolname IN ('alistore_app', 'alistore_migrator', 'alistore_runtime')
 ORDER BY rolname;
+
+SELECT
+    pg_get_userbyid(m.roleid) AS granted_role,
+    pg_get_userbyid(m.member) AS member_role,
+    pg_get_userbyid(m.grantor) AS grantor,
+    m.admin_option, m.inherit_option, m.set_option
+FROM pg_auth_members m
+WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = 'alistore_app')
+ORDER BY granted_role;
 ```
 
-Do not run this block until the two passwords have been generated and the target is explicitly confirmed as the Neon `production` branch. If any statement fails, stop and inspect the actual role/schema/database ownership before retrying; do not continue with a partial role setup.
-
-After role creation, verify:
-- `alistore_migrator` owns the database and `public` schema and can create/alter objects.
-- `alistore_runtime` has DML and sequence privileges only; it cannot CREATE, TRUNCATE, or create databases/roles.
-- `alistore_app` is no longer the database owner.
+Required before Flyway:
+- `alistore_migrator` and `alistore_runtime` both have LOGIN and password authentication.
+- Both new roles have all elevated attributes listed above set to false.
+- `alistore_migrator` owns `public` and has CREATE there.
+- `alistore_runtime` has USAGE but not CREATE on `public`.
+- Migrator-owned table/sequence default privileges grant runtime DML and sequence USAGE/SELECT only.
+- Do not proceed to application cutover while `alistore_app` still supplies the runtime credentials. Its existing elevated role and Neon-managed memberships require separate retirement review.
 
 ## GitHub Actions migration workflow
 
@@ -146,13 +96,13 @@ After the roles are provisioned, point the Backend Vercel environment at the run
 
 The production Spring profile disables Flyway at application startup. Development and test profiles keep the existing Flyway behavior.
 
-After the new runtime role is deployed and health/auth smoke tests pass, retire the old role in a separate controlled cutover. The current Neon catalog shows `alistore_app` is a member of `neon_superuser`, but it does not have `ADMIN OPTION` on itself. Therefore do not assume a SQL session authenticated as `alistore_app` can change its own role attributes. Use a Neon administrative principal that has authority to alter this role:
+After the new runtime role is deployed and health/auth smoke tests pass, retire the old role in a separate controlled cutover. The current Neon catalog shows `alistore_app` is a member of `neon_superuser`, has `REPLICATION`, and does not have `ADMIN OPTION` on its `neon_superuser` membership. Therefore do not assume a SQL session authenticated as `alistore_app` can safely retire its own elevated attributes or revoke that membership. Use a Neon administrative principal that has authority to alter the role:
 
 ```sql
-ALTER ROLE alistore_app NOLOGIN NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+ALTER ROLE alistore_app NOLOGIN NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION;
 ```
 
-Do not perform this step before Vercel has switched to `alistore_runtime` and the new deployment is verified. If a suitably privileged Neon administrative principal is not available, leave this as an explicit HIGH security follow-up; do not attempt to work around it by granting additional privileges to `alistore_runtime`.
+Do not perform this step before Vercel has switched to `alistore_runtime`, connection pools have been recycled, and the new deployment is verified. Afterward, separately verify whether the `neon_superuser` membership can be revoked by the Neon administrative principal. Do not try to revoke it from `alistore_app` itself or grant additional privileges to `alistore_runtime`. If that membership cannot be safely revoked, record it as a HIGH security follow-up.
 
 ## Release sequence
 
