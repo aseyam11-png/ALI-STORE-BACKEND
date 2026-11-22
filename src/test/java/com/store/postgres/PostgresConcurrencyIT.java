@@ -5,6 +5,7 @@ import com.store.auth.entity.EmailOtpChallenge;
 import com.store.auth.entity.EmailOtpPurpose;
 import com.store.auth.service.EmailOtpSender;
 import com.store.auth.service.EmailOtpService;
+import com.store.auth.service.LoginAttemptService;
 import com.store.common.exception.BusinessException;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import java.time.Duration;
