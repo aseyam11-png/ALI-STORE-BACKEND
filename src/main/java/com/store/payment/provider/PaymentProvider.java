@@ -28,6 +28,15 @@ public interface PaymentProvider {
      *                       provider implementation actually honoring this key. Documented as a
      *                       known gap until a real gateway is integrated (see PaymentService).
      */
+    /**
+     * Whether this provider can execute a payment method right now.
+     *
+     * <p>PaymentService checks this before reserving a payment attempt. A provider
+     * that cannot handle a method must return false so the order is left unchanged
+     * and no payment record is created.</p>
+     */
+    boolean supports(PaymentMethod method);
+
     PaymentResult charge(Long orderId, BigDecimal amount, PaymentMethod method, String idempotencyKey);
 
     /**
