@@ -8,9 +8,6 @@ import java.math.BigDecimal;
 
 /**
  * Fail-closed production fallback until a real online payment gateway is integrated.
- *
- * This bean allows unrelated production APIs to start without simulating a charge.
- * Online payment attempts are declined and never receive a fabricated transaction ID.
  * Cash on delivery is handled separately by PaymentService.
  */
 @Component
@@ -18,11 +15,13 @@ import java.math.BigDecimal;
 public class UnavailablePaymentProvider implements PaymentProvider {
 
     @Override
+    public boolean supports(PaymentMethod method) {
+        return false;
+    }
+
+    @Override
     public PaymentResult charge(Long orderId, BigDecimal amount, PaymentMethod method, String idempotencyKey) {
-        return new PaymentResult(
-                false,
-                null,
-                "Online payments are not configured. Please choose cash on delivery or try again later."
-        );
+        throw new UnsupportedOperationException(
+                "Electronic payments are disabled until a production gateway is configured");
     }
 }
