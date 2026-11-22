@@ -41,7 +41,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 -- Preview already has tables and Flyway history; Production is currently empty.
 -- Transfer every existing public table and sequence so the migrator can validate
 -- and continue the existing Flyway history on Preview, and own all new objects.
-DO $
+DO $$
 DECLARE
     object_row RECORD;
 BEGIN
@@ -50,9 +50,9 @@ BEGIN
     LOOP
         EXECUTE format('ALTER TABLE public.%I OWNER TO alistore_migrator', object_row.tablename);
     END LOOP;
-END $;
+END $$;
 
-DO $
+DO $$
 DECLARE
     object_row RECORD;
 BEGIN
@@ -63,7 +63,7 @@ BEGIN
     LOOP
         EXECUTE format('ALTER SEQUENCE public.%I OWNER TO alistore_migrator', object_row.sequence_name);
     END LOOP;
-END $;
+END $$;
 
 -- Grant runtime DML access to the existing objects after ownership transfer.
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO alistore_runtime;
