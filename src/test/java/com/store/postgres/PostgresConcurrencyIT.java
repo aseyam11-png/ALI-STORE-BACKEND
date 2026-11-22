@@ -116,6 +116,7 @@ class PostgresConcurrencyIT {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private RoleRepository roleRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private LoginAttemptService loginAttemptService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtService jwtService;
     @Autowired private CategoryRepository categoryRepository;
@@ -135,6 +136,16 @@ class PostgresConcurrencyIT {
         return userRepository.save(User.builder()
                 .firstName("Test").lastName("User").email(email)
                 .password(passwordEncoder.encode("Password123")).phoneNumber("0").isEnabled(true).role(userRole()).build());
+    }
+
+    private User createAdmin(String email) {
+        Role adminRole = roleRepository.findByName("ROLE_ADMIN")
+                .orElseGet(() -> roleRepository.save(Role.builder()
+                        .name("ROLE_ADMIN").description("Administrator role").build()));
+        return userRepository.save(User.builder()
+                .firstName("Test").lastName("Admin").email(email)
+                .password(passwordEncoder.encode("Password123")).phoneNumber("0")
+                .isEnabled(true).emailVerified(true).role(adminRole).build());
     }
 
     private String tokenFor(User user) {
@@ -165,6 +176,45 @@ class PostgresConcurrencyIT {
         // is itself the verification. Confirms real PostgreSQL syntax compatibility (this
         // repo's migrations were previously only exercised via H2's PostgreSQL-compat mode).
         Assertions.assertTrue(postgres.isRunning());
+    }
+
+    @Test
+    void concurrentAdministratorSecondFactorFailuresPersistAndLockTheAccount() throws Exception {
+        User admin = createAdmin("admin-gate-lockout-pg@example.com");
+
+        // Each invocation represents a wrong secondary password submitted only after
+        // a valid Turnstile proof. LoginAttemptService must serialize these failures
+        // on the persisted users row, including across application threads/instances.
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        Callable<Void> failedSecondFactor = () -> {
+            loginAttemptService.recordFailure(admin.getEmail());
+            return null;
+        };
+
+        try {
+            List<Future<Void>> attempts =
+                    executor.invokeAll(Collections.nCopies(8, failedSecondFactor));
+            for (Future<Void> attempt : attempts) {
+                attempt.get();
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        User persisted = userRepository.findById(admin.getId()).orElseThrow();
+        Assertions.assertEquals(5, persisted.getFailedLoginAttempts(),
+                "only the first five concurrent failures should count before the persistent lock activates");
+        Assertions.assertNotNull(persisted.getLoginLockedUntil(),
+                "the fifth persisted failure must establish an account lock");
+        Assertions.assertTrue(persisted.getLoginLockedUntil().isAfter(java.time.Instant.now()),
+                "the account lock must remain active for its configured duration");
+        Assertions.assertTrue(loginAttemptService.isLocked(admin.getEmail()),
+                "subsequent admin login checks must observe the database-backed lock");
+
+        loginAttemptService.recordFailure(admin.getEmail());
+        User stillLocked = userRepository.findById(admin.getId()).orElseThrow();
+        Assertions.assertEquals(5, stillLocked.getFailedLoginAttempts(),
+                "additional attempts during an active lock must not extend or reset the failure counter");
     }
 
     @Test
