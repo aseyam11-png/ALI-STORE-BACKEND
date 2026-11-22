@@ -22,6 +22,7 @@ public class AdminLoginGateService {
 
     private final PasswordEncoder passwordEncoder;
     private final TurnstileVerifier turnstileVerifier;
+    private final LoginAttemptService loginAttemptService;
 
     @Value("${app.security.admin-gate.enabled:false}")
     private boolean enabled;
@@ -82,13 +83,25 @@ public class AdminLoginGateService {
         String captchaToken = request.getCaptchaToken();
         String secondPassword = request.getAdminGatePassword();
 
-        // Do not disclose which part of the secondary check failed.
+        // CAPTCHA failures stay within the IP/edge abuse controls. Counting an invalid
+        // CAPTCHA against the account would let an unauthenticated caller lock out an
+        // administrator without proving possession of a valid Turnstile token.
         if (isBlank(captchaToken)
-                || !turnstileVerifier.verify(captchaToken, clientIp, turnstileSecret, expectedHostname)
-                || isBlank(secondPassword)
-                || secondPassword.getBytes(StandardCharsets.UTF_8).length < 16
-                || secondPassword.getBytes(StandardCharsets.UTF_8).length > 72
-                || !safePasswordMatches(secondPassword, passwordHash)) {
+                || !turnstileVerifier.verify(captchaToken, clientIp, turnstileSecret, expectedHostname)) {
+            throw new BadCredentialsException("Invalid credentials or security verification failed");
+        }
+
+        // Once Turnstile has succeeded, a bad secondary password is an account-level
+        // authentication failure. recordFailure uses REQUIRES_NEW and a row lock, so the
+        // failed attempt is durable even though this login transaction returns an error.
+        int secondPasswordBytes = secondPassword == null
+                ? 0
+                : secondPassword.getBytes(StandardCharsets.UTF_8).length;
+        boolean validSecondPassword = secondPasswordBytes >= 16
+                && secondPasswordBytes <= 72
+                && safePasswordMatches(secondPassword, passwordHash);
+        if (!validSecondPassword) {
+            loginAttemptService.recordFailure(user.getEmail());
             throw new BadCredentialsException("Invalid credentials or security verification failed");
         }
 
