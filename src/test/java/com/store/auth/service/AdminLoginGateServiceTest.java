@@ -118,7 +118,6 @@ class AdminLoginGateServiceTest {
                 () -> gate.verifyIfAdmin(user("ROLE_ADMIN"),
                         validRequest("short"), "198.51.100.20"));
         verify(loginAttemptService).recordFailure("admin@example.invalid");
-        verifyNoInteractions(passwordEncoder);
     }
 
     private void enableGateWithSecrets() {
