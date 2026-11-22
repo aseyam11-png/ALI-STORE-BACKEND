@@ -24,6 +24,11 @@ import java.util.UUID;
 public class MockPaymentProvider implements PaymentProvider {
 
     @Override
+    public boolean supports(PaymentMethod method) {
+        return method == PaymentMethod.CREDIT_CARD || method == PaymentMethod.PAYPAL;
+    }
+
+    @Override
     public PaymentResult charge(Long orderId, BigDecimal amount, PaymentMethod method, String idempotencyKey) {
         String transactionId = "MOCK-TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         return new PaymentResult(true, transactionId, "Simulated success (development/test environment only, no real gateway is configured)");
