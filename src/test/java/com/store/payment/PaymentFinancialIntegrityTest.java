@@ -3,6 +3,7 @@ package com.store.payment;
 import com.store.category.entity.Category;
 import com.store.category.repository.CategoryRepository;
 import com.store.common.exception.ConflictException;
+import com.store.common.exception.ServiceUnavailableException;
 import com.store.inventory.entity.Inventory;
 import com.store.inventory.enums.InventorySource;
 import com.store.inventory.repository.InventoryRepository;
@@ -49,6 +50,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import org.mockito.ArgumentCaptor;
 
 @SpringBootTest
@@ -83,6 +86,7 @@ class PaymentFinancialIntegrityTest {
         request.setAmount(new BigDecimal("25.00"));
         request.setMethod(PaymentMethod.CREDIT_CARD);
 
+        when(paymentProvider.supports(PaymentMethod.CREDIT_CARD)).thenReturn(true);
         when(paymentProvider.charge(
                 eq(order.getId()),
                 eq(new BigDecimal("25.00")),
@@ -133,6 +137,7 @@ class PaymentFinancialIntegrityTest {
         Product product = product("FIN-RECON", "FIN-RECON-SUP");
         Order order = order(user, product, new BigDecimal("25.00"));
 
+        when(paymentProvider.supports(PaymentMethod.CREDIT_CARD)).thenReturn(true);
         when(paymentProvider.charge(any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("gateway timeout"));
 
@@ -149,6 +154,51 @@ class PaymentFinancialIntegrityTest {
         Assertions.assertEquals(PaymentStatus.REQUIRES_RECONCILIATION, payment.getStatus());
         Assertions.assertEquals("order-" + order.getId(), payment.getIdempotencyKey());
         Assertions.assertTrue(payment.getProviderError().contains("gateway timeout"));
+    }
+
+    @Test
+    void unsupportedElectronicPayment_isRejectedBeforeReservation() {
+        User user = user();
+        Product product = product("FIN-DISABLED", "FIN-DISABLED-SUP");
+        Order order = order(user, product, new BigDecimal("25.00"));
+
+        PaymentRequest request = new PaymentRequest();
+        request.setOrderId(order.getId());
+        request.setAmount(new BigDecimal("25.00"));
+        request.setMethod(PaymentMethod.CREDIT_CARD);
+
+        when(paymentProvider.supports(PaymentMethod.CREDIT_CARD)).thenReturn(false);
+
+        Assertions.assertThrows(
+                ServiceUnavailableException.class,
+                () -> paymentService.processPayment(user.getEmail(), request));
+
+        Assertions.assertTrue(paymentRepository.findByOrderId(order.getId()).isEmpty());
+        Assertions.assertEquals(OrderStatus.PENDING,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+        verify(paymentProvider).supports(PaymentMethod.CREDIT_CARD);
+        verify(paymentProvider, never()).charge(any(), any(), any(), any());
+    }
+
+    @Test
+    void cashOnDelivery_remainsAvailableWithoutCallingPaymentProvider() {
+        User user = user();
+        Product product = product("FIN-COD-CREATE", "FIN-COD-CREATE-SUP");
+        Order order = order(user, product, new BigDecimal("25.00"));
+
+        PaymentRequest request = new PaymentRequest();
+        request.setOrderId(order.getId());
+        request.setAmount(new BigDecimal("25.00"));
+        request.setMethod(PaymentMethod.CASH_ON_DELIVERY);
+
+        var response = paymentService.processPayment(user.getEmail(), request);
+
+        Assertions.assertEquals(PaymentMethod.CASH_ON_DELIVERY, response.getMethod());
+        Assertions.assertEquals(PaymentStatus.PENDING, response.getStatus());
+        Assertions.assertEquals(PaymentCollectionStatus.PENDING, response.getCollectionStatus());
+        Assertions.assertEquals(OrderStatus.PROCESSING,
+                orderRepository.findById(order.getId()).orElseThrow().getStatus());
+        verifyNoInteractions(paymentProvider);
     }
 
     @Test

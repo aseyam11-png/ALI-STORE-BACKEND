@@ -5,6 +5,7 @@ import com.store.common.exception.ConflictException;
 import com.store.common.exception.ForbiddenException;
 import com.store.common.exception.OrderExpiredException;
 import com.store.common.exception.ResourceNotFoundException;
+import com.store.common.exception.ServiceUnavailableException;
 import com.store.order.entity.Order;
 import com.store.order.entity.OrderStatus;
 import com.store.order.repository.OrderRepository;
@@ -97,6 +98,14 @@ public class PaymentService {
 
             orderService.updateOrderStatus(order.getId(), OrderStatus.PROCESSING);
             return mapToResponse(codPayment);
+        }
+
+        // Check provider capability before reserving or reopening a payment attempt.
+        // A disabled/unconfigured gateway must not create a FAILED or
+        // REQUIRES_RECONCILIATION record because no external charge was attempted.
+        if (!paymentProvider.supports(request.getMethod())) {
+            throw new ServiceUnavailableException(
+                    "Electronic payments are temporarily unavailable. Choose cash on delivery.");
         }
 
         Payment reserved = existingPayment == null
