@@ -35,6 +35,9 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Verify isolated Flyway migration plugin is resolvable
+        run: bash ./mvnw -B -ntp help:describe -Dplugin=org.flywaydb:flyway-maven-plugin -Ddetail=false
+
       - name: Run Maven test suite
         run: bash ./mvnw -B test
 

@@ -154,6 +154,40 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!--
+                Production migrations run only from the protected GitHub Actions workflow.
+                The plugin version is kept aligned with Spring Boot 3.2.3's Flyway 9.22.3
+                dependency so migration checksums/behavior match runtime Flyway.
+                Connection details are supplied only through FLYWAY_* environment variables.
+            -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>${flyway.version}</version>
+                <configuration>
+                    <locations>
+                        <location>filesystem:src/main/resources/db/migration</location>
+                    </locations>
+                    <schemas>
+                        <schema>public</schema>
+                    </schemas>
+                    <defaultSchema>public</defaultSchema>
+                    <createSchemas>false</createSchemas>
+                    <cleanDisabled>true</cleanDisabled>
+                    <baselineOnMigrate>false</baselineOnMigrate>
+                    <validateOnMigrate>true</validateOnMigrate>
+                    <validateMigrationNaming>true</validateMigrationNaming>
+                    <outOfOrder>false</outOfOrder>
+                    <connectRetries>3</connectRetries>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.postgresql</groupId>
+                        <artifactId>postgresql</artifactId>
+                        <version>42.6.0</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
         </plugins>
     </build>
 </project>

@@ -1,6 +1,20 @@
 package com.store.postgres;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.store.auth.entity.EmailOtpChallenge;
+import com.store.auth.entity.EmailOtpPurpose;
+import com.store.auth.service.EmailOtpSender;
+import com.store.auth.service.EmailOtpService;
+import com.store.auth.service.LoginAttemptService;
+import com.store.common.exception.BusinessException;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import java.time.Duration;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import com.store.auth.service.JwtService;
 import com.store.category.entity.Category;
 import com.store.category.repository.CategoryRepository;
@@ -97,10 +111,13 @@ class PostgresConcurrencyIT {
     }
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private EmailOtpService emailOtpService;
+    @MockBean private EmailOtpSender emailOtpSender;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private RoleRepository roleRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private LoginAttemptService loginAttemptService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtService jwtService;
     @Autowired private CategoryRepository categoryRepository;
@@ -120,6 +137,16 @@ class PostgresConcurrencyIT {
         return userRepository.save(User.builder()
                 .firstName("Test").lastName("User").email(email)
                 .password(passwordEncoder.encode("Password123")).phoneNumber("0").isEnabled(true).role(userRole()).build());
+    }
+
+    private User createAdmin(String email) {
+        Role adminRole = roleRepository.findByName("ROLE_ADMIN")
+                .orElseGet(() -> roleRepository.save(Role.builder()
+                        .name("ROLE_ADMIN").description("Administrator role").build()));
+        return userRepository.save(User.builder()
+                .firstName("Test").lastName("Admin").email(email)
+                .password(passwordEncoder.encode("Password123")).phoneNumber("0")
+                .isEnabled(true).emailVerified(true).role(adminRole).build());
     }
 
     private String tokenFor(User user) {
@@ -144,12 +171,104 @@ class PostgresConcurrencyIT {
     }
 
     @Test
+    void concurrentAdministratorSecondFactorFailuresPersistAndLockTheAccount() throws Exception {
+        User admin = createAdmin("admin-gate-lockout-pg@example.com");
+
+        // Each invocation represents a wrong secondary password submitted only after
+        // a valid Turnstile proof. LoginAttemptService must serialize these failures
+        // on the persisted users row, including across application threads/instances.
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        Callable<Void> failedSecondFactor = () -> {
+            loginAttemptService.recordFailure(admin.getEmail());
+            return null;
+        };
+
+        try {
+            List<Future<Void>> attempts =
+                    executor.invokeAll(Collections.nCopies(8, failedSecondFactor));
+            for (Future<Void> attempt : attempts) {
+                attempt.get();
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        User persisted = userRepository.findById(admin.getId()).orElseThrow();
+        Assertions.assertEquals(5, persisted.getFailedLoginAttempts(),
+                "only the first five concurrent failures should count before the persistent lock activates");
+        Assertions.assertNotNull(persisted.getLoginLockedUntil(),
+                "the fifth persisted failure must establish an account lock");
+        Assertions.assertTrue(persisted.getLoginLockedUntil().isAfter(java.time.Instant.now()),
+                "the account lock must remain active for its configured duration");
+        Assertions.assertTrue(loginAttemptService.isLocked(admin.getEmail()),
+                "subsequent admin login checks must observe the database-backed lock");
+
+        loginAttemptService.recordFailure(admin.getEmail());
+        User stillLocked = userRepository.findById(admin.getId()).orElseThrow();
+        Assertions.assertEquals(5, stillLocked.getFailedLoginAttempts(),
+                "additional attempts during an active lock must not extend or reset the failure counter");
+    }
+
+    @Test
     void flywayMigrations_applyCleanlyAgainstRealPostgres() {
         // The Spring context only finishes starting if all configured Flyway migrations
         // applied without error against the real container - reaching this assertion at all
         // is itself the verification. Confirms real PostgreSQL syntax compatibility (this
         // repo's migrations were previously only exercised via H2's PostgreSQL-compat mode).
         Assertions.assertTrue(postgres.isRunning());
+    }
+
+    @Test
+    void otpIssueConcurrentRequests_createOnlyOneActiveChallengeForSameAccountPurpose() throws Exception {
+        User user = createUser("otp-race-pg@example.com");
+        doNothing().when(emailOtpSender).send(
+                anyString(), anyString(), eq(EmailOtpPurpose.LOGIN), any(Duration.class));
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        Callable<Boolean> issueChallenge = () -> {
+            try {
+                emailOtpService.issueChallenge(user, EmailOtpPurpose.LOGIN, user.getAuthVersion());
+                return true;
+            } catch (BusinessException expectedCooldownOrConflict) {
+                return false;
+            }
+        };
+
+        try {
+            List<Future<Boolean>> results =
+                    executor.invokeAll(List.of(issueChallenge, issueChallenge));
+            long issuedCount = results.stream().filter(result -> {
+                try {
+                    return result.get();
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            }).count();
+
+            Assertions.assertEquals(1, issuedCount,
+                    "only one concurrent OTP issue request may be accepted for one account and purpose");
+
+            Integer activeChallenges = jdbcTemplate.queryForObject(
+                    """
+                    SELECT COUNT(*)
+                    FROM email_otp_challenges
+                    WHERE user_id = ?
+                      AND purpose = ?
+                      AND consumed_at IS NULL
+                      AND revoked_at IS NULL
+                      AND expires_at > CURRENT_TIMESTAMP
+                    """,
+                    Integer.class,
+                    user.getId(),
+                    EmailOtpPurpose.LOGIN.name());
+            Assertions.assertEquals(1, activeChallenges,
+                    "database must contain exactly one active login OTP challenge");
+
+            verify(emailOtpSender, times(1)).send(
+                    eq(user.getEmail()), anyString(), eq(EmailOtpPurpose.LOGIN), any(Duration.class));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test
