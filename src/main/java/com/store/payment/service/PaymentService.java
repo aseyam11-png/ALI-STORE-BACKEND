@@ -99,6 +99,14 @@ public class PaymentService {
             return mapToResponse(codPayment);
         }
 
+        // Check provider capability before reserving or reopening a payment attempt.
+        // A disabled/unconfigured gateway must not create a FAILED or
+        // REQUIRES_RECONCILIATION record because no external charge was attempted.
+        if (!paymentProvider.supports(request.getMethod())) {
+            throw new com.store.common.exception.ServiceUnavailableException(
+                    "Electronic payments are temporarily unavailable. Choose cash on delivery.");
+        }
+
         Payment reserved = existingPayment == null
                 ? paymentReservationService.reserve(
                         request.getOrderId(),
