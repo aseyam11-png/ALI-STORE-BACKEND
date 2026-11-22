@@ -6,18 +6,20 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class UnavailablePaymentProviderTest {
 
     @Test
-    void declinesOnlineChargesWithoutInventingATransaction() {
-        PaymentProvider.PaymentResult result = new UnavailablePaymentProvider().charge(
-                42L, new BigDecimal("125.00"), PaymentMethod.CREDIT_CARD, "order-42");
+    void reportsNoSupportedMethodsAndNeverExecutesACharge() {
+        UnavailablePaymentProvider provider = new UnavailablePaymentProvider();
 
-        assertFalse(result.success());
-        assertNull(result.transactionId());
-        assertTrue(result.message().contains("not configured"));
+        for (PaymentMethod method : PaymentMethod.values()) {
+            assertFalse(provider.supports(method));
+        }
+
+        assertThrows(UnsupportedOperationException.class,
+                () -> provider.charge(42L, new BigDecimal("125.00"),
+                        PaymentMethod.CREDIT_CARD, "order-42"));
     }
 }
